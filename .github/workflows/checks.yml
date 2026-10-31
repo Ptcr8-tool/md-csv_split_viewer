@@ -1,0 +1,93 @@
+name: Build and check
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run check:version
+      - run: npm test
+      - run: dotnet run --project tests/native/NativeChecks.csproj -c Release
+      - run: npx playwright install chromium
+      - run: npm run publish:win
+      - name: Verify the production web bundle
+        run: node scripts/check-production.mjs
+      - run: choco install nsis --yes --no-progress
+      - name: Check installer directory validation on Windows
+        shell: pwsh
+        run: |
+          $makeNsisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          & ./tests/installer/Run-DirectoryChecks.ps1 -MakeNsis $makeNsisPath
+      # Cache only the original CAB, never extracted executables. The packaging
+      # script validates the CAB size and SHA-256 against installer/runtime.json.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: release/runtime-cache/runtime.cab
+          key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
+      - name: Package complete offline setup
+        shell: pwsh
+        run: |
+          $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          python scripts/package-installer.py
+      - name: Verify Japanese setup text in the actual wizard
+        shell: powershell
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
+          & ./tests/installer/Check-SetupJapanese.ps1 -Setup $setups[0].FullName
+      - name: Smoke test install, repair and uninstall on Windows
+        shell: pwsh
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
+          & ./tests/installer/Run-SetupSmoke.ps1 -Setup $setups[0].FullName
+      - name: Verify CSV clipboard in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify both print dialogs in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-PrintWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify session restoration in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify mixed line endings in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MD-Split-Windows-setup
+          path: |
+            release/MD-Split-*-Setup.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+

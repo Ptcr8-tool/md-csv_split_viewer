@@ -1,0 +1,183 @@
+[
+  {
+    "name": "literal forward CRLF",
+    "request": {
+      "text": "red\r\nblue red",
+      "pattern": "red",
+      "action": "find",
+      "from": 1,
+      "to": 1
+    },
+    "expected": {
+      "count": 2,
+      "from": 10,
+      "to": 13
+    }
+  },
+  {
+    "name": "literal backward wrap",
+    "request": {
+      "text": "red blue red",
+      "pattern": "red",
+      "action": "find",
+      "direction": -1,
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 2,
+      "from": 9,
+      "to": 12
+    }
+  },
+  {
+    "name": "case insensitive",
+    "request": {
+      "text": "Cat cat CAT",
+      "pattern": "cat",
+      "action": "find",
+      "ignoreCase": true,
+      "from": 4,
+      "to": 4
+    },
+    "expected": {
+      "count": 3,
+      "from": 4,
+      "to": 7
+    }
+  },
+  {
+    "name": "literal replacement",
+    "request": {
+      "text": "a.b a.b",
+      "pattern": ".",
+      "replacement": "-",
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 2,
+      "text": "a-b a-b",
+      "from": 5,
+      "to": 6
+    }
+  },
+  {
+    "name": "replacement capture and escapes",
+    "request": {
+      "text": "name=1 cat=2",
+      "pattern": "(\\w+)=(\\d+)",
+      "regex": true,
+      "replacement": "$2:$1\\t",
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 2,
+      "text": "1:name\t 2:cat\t",
+      "from": 8,
+      "to": 14
+    }
+  },
+  {
+    "name": "regex lookbehind",
+    "request": {
+      "text": "foo123 foo45",
+      "pattern": "(?<=foo)(\\d+)",
+      "replacement": "[$1]",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 2,
+      "text": "foo[123] foo[45]",
+      "from": 12,
+      "to": 16
+    }
+  },
+  {
+    "name": "empty replacement",
+    "request": {
+      "text": "old old",
+      "pattern": "old",
+      "replacement": "",
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 2,
+      "text": " ",
+      "from": 1,
+      "to": 1
+    }
+  },
+  {
+    "name": "zero width start",
+    "request": {
+      "text": "a\nb",
+      "pattern": "^",
+      "replacement": "> ",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 2,
+      "text": "> a\n> b",
+      "from": 4,
+      "to": 6
+    }
+  },
+  {
+    "name": "not found",
+    "request": {
+      "text": "hello",
+      "pattern": "world",
+      "action": "find",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 0
+    }
+  },
+  {
+    "name": "replace matched selection",
+    "request": {
+      "text": "one one",
+      "pattern": "one",
+      "replacement": "two",
+      "action": "replace",
+      "from": 4,
+      "to": 7
+    },
+    "expected": {
+      "count": 1,
+      "text": "one two",
+      "from": 4,
+      "to": 7
+    }
+  },
+  {
+    "name": "replace unmatched finds next",
+    "request": {
+      "text": "one one",
+      "pattern": "one",
+      "replacement": "two",
+      "action": "replace",
+      "from": 1,
+      "to": 1
+    },
+    "expected": {
+      "count": 2,
+      "from": 4,
+      "to": 7
+    }
+  }
+]

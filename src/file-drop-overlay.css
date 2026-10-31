@@ -1,0 +1,28 @@
+.file-drop-overlay[hidden] { display: none; }
+.file-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, .38);
+  pointer-events: none;
+}
+.file-drop-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: min(520px, 100%);
+  padding: 22px 30px;
+  border: 2px dashed #b4d7ff;
+  border-radius: 14px;
+  background: #142235ed;
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 12px 40px #0007;
+  font: 15px/1.5 system-ui, sans-serif;
+}
+.file-drop-overlay__symbol { font-size: 27px; line-height: 1; }
+.file-drop-overlay__detail { color: #e2ebf5; font-size: 13px; }

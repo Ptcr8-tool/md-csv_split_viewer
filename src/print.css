@@ -1,0 +1,16 @@
+#print-root{display:none}
+@media print {
+  html,body{height:auto!important;min-height:0!important;overflow:visible!important;background:white!important;color:#111!important}
+  body>*:not(#print-root){display:none!important}
+  #print-root{display:block!important;color:#111;background:#fff;font:12pt/1.5 'Yu Gothic UI',sans-serif}
+  #print-root .document{display:block!important;overflow:visible!important;height:auto!important;min-height:0!important;padding:0!important;color:#111!important;background:white!important;--text:#111;--muted:#555;--line:#bbb;--green:#165b9b;--source:#f7f7f7;--green-soft:#eee;--quote-border:#777;--link-underline:#555}
+  #print-root .document.is-empty::before,#print-root .document:empty::before{content:none!important}
+  #print-root .print-source{font:10pt/1.5 Consolas,'Yu Gothic UI',monospace;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4}
+  #print-root .table-wrap,#print-root .mermaid-stage{overflow:visible}
+  #print-root img,#print-root svg{max-width:100%;height:auto}
+  #print-root .print-csv,#print-root .print-html table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:9pt}
+  #print-root .print-csv td,#print-root .print-csv th,#print-root .print-html td,#print-root .print-html th{border:1px solid #888;padding:4px;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}
+  #print-root .print-csv th{background:#eee}
+  #print-root tr,#print-root img,#print-root svg{break-inside:avoid}
+  #print-root .spoiler{color:#111;background:transparent}
+}

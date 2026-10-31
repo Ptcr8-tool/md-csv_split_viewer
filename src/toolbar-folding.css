@@ -1,0 +1,77 @@
+/* display:contents preserves the existing flex layout and selectors while
+   allowing the entire set of header actions to be hidden as one region. */
+.topbar-action-group { display: contents; }
+.topbar-action-group[hidden] { display: none !important; }
+.section-fold-toggle {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--bg);
+  font-size: 11px;
+  padding: 5px 7px;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.topbar > .section-fold-toggle { margin-left: auto; }
+.tabbar-row { display:flex; align-items:center; min-width:0; background:var(--bg); flex-shrink:0; }
+.tabbar-row > .tabbar { flex:1; min-width:0; }
+.tabbar-row > .section-fold-toggle { margin: 3px 12px 3px auto; }
+.formatbar > .section-fold-toggle { margin-left:auto; order:1; }
+.section-fold-toggle:hover, .section-fold-toggle:focus-visible {
+  color: var(--text);
+  background: var(--green-soft);
+}
+/* Zero-height anchors keep the drawer at the original row boundary. */
+.fold-edge { position:relative; height:0; flex:0 0 0; min-height:0; z-index:6; }
+.fold-edge .section-fold-toggle {
+  position:absolute; right:var(--fold-offset, 0px); top:3px;
+  width:30px; height:27px; padding:0 1px; margin:0;
+  display:flex; align-items:center; justify-content:center; gap:1px;
+  border-right:0; border-radius:5px 0 0 5px;
+  background:var(--source); color:var(--text); box-shadow:-2px 2px 8px #0002;
+  font-size:12px; letter-spacing:-1px;
+}
+.fold-edge-caption { font-size:9px; letter-spacing:0; }
+/* The following visible header makes room for drawers at its right edge. */
+.tabbar-row[data-fold-reserved] { padding-right:var(--fold-reserve); }
+.formatbar[data-fold-reserved] { padding-right:calc(20px + var(--fold-reserve)); }
+#search-panel[data-fold-reserved], .notice[data-fold-reserved], .update-progress[data-fold-reserved] { padding-right:calc(18px + var(--fold-reserve)); }
+.workspace[data-fold-reserved] .editor-panes:not([data-view=source]) > .preview-pane > .pane-heading,
+.workspace[data-fold-reserved] .editor-panes[data-view=source] > .source-pane > .pane-heading {
+  padding-right:calc(20px + var(--fold-reserve));
+}
+.workspace[data-fold-reserved] > .chunks-panel:not([hidden]) .chunks-heading {
+  padding-right:calc(4px + var(--fold-reserve));
+}
+@media (max-width: 500px) {
+  #app:has(.fold-edge:not([hidden])) .statusbar { gap: 1px; padding-inline: 4px; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #count,
+  #app:has(.fold-edge:not([hidden])) .statusbar #position,
+  #app:has(.fold-edge:not([hidden])) .statusbar .status-separator { display: none; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #save-state { flex: 0 0 auto; font-size: 0; white-space: nowrap; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #save-state::after { content: '保存済'; font-size: 10px; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #save-state.unsaved::after { content: '未保存'; }
+  #app:has(.fold-edge:not([hidden])) .statusbar :is(#line-endings,#encoding) { flex: 0 0 auto; min-width: 32px; }
+  #app:has(.fold-edge:not([hidden])) .statusbar .discord-controls { flex: 0 0 auto; gap: 4px; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #limit-status { font-size: 10px; white-space: nowrap; }
+  #app:has(.fold-edge:not([hidden])) .statusbar .discord-controls label { font-size: 0; white-space: nowrap; }
+  #app:has(.fold-edge:not([hidden])) .statusbar .discord-controls button { flex: 0 0 auto; white-space: nowrap; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #zoom-label { flex: 0 0 auto; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #show-chunks { font-size: 0; min-width: 32px; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #show-chunks svg { margin-right: 0; }
+}
+@media (max-width: 360px) {
+  #app:has(.fold-edge:not([hidden])) .statusbar { gap: 0; padding-inline: 0; }
+  #app:has(.fold-edge:not([hidden])) .statusbar .discord-controls { gap: 1px; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #line-endings { font-size: 0 !important; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #line-endings::after { content: '↵'; font-size: 13px; }
+  #app:has(.fold-edge:not([hidden])) .statusbar #zoom-label { display: none; }
+}
+#app[data-document-kind]:not([data-document-kind=markdown]) .fold-edge[data-fold-anchor="format"] { display:none; }
+:root[data-pane-window] .fold-edge[data-fold-anchor="tabs"] { display:none; }
+@media (max-width: 900px) {
+  .section-fold-toggle { padding: 5px; }
+}
+/* Detached editor windows do not have tabs or most topbar actions. */
+:root[data-pane-window] .tabbar-row { display: none; }

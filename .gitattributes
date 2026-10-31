@@ -1,0 +1,9 @@
+* text=auto
+*.md text eol=lf
+*.nsi text eol=lf
+*.nsh text eol=lf
+*.png binary
+*.ico binary
+# Preserve the exact third-party notice and license bytes.
+licenses/** -text
+THIRD_PARTY_NOTICES.txt -text

@@ -1,0 +1,15 @@
+#new-format{width:65px;min-width:0;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--text);font-size:10px;padding:4px;align-self:center;height:28px}
+#app[data-document-kind]:not([data-document-kind=markdown]) .formatbar{min-height:37px;padding-top:3px;padding-bottom:3px}
+#app[data-document-kind]:not([data-document-kind=markdown]) .formatbar>:not(.target-label):not(.toolbar-spacer):not([data-cmd=undo]):not([data-cmd=redo]){display:none}
+#app[data-document-kind]:not([data-document-kind=markdown]) .target-label{font-size:11px;min-width:0}
+#app[data-document-kind]:not([data-document-kind=markdown]) .pane-heading{letter-spacing:1px}
+#app[data-document-kind]:not([data-document-kind=markdown]) .preview-active-line-layer{display:none}
+.encoding-button.guessed{text-decoration:underline dotted;text-underline-offset:4px}
+:root[data-pane-window] #new-format{display:none}
+@media(max-width:900px){.brand>span{display:none}.brand{margin-right:0}.topbar{gap:5px}#new-format{width:58px}}
+
+#app[data-document-kind]:not([data-document-kind=markdown]) .formatbar{display:none}
+#text-edit-actions{display:flex;align-items:center;gap:3px}
+
+#source-wrap-mode{min-width:0;width:96px;flex:0 1 96px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--text);font-size:10px;letter-spacing:0;padding:3px 2px;height:27px}
+.source-pane .pane-note{min-width:0;overflow:hidden;white-space:nowrap}

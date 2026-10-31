@@ -1,0 +1,39 @@
+#modal.settings-dialog{width:min(760px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:min(790px,calc(100dvh - 36px));padding:0;overflow:hidden}
+#modal.settings-dialog>form{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:min(786px,calc(100dvh - 40px));min-height:0}
+#modal.settings-dialog .dialog-heading{margin:0;padding:20px 24px 16px;border-bottom:1px solid var(--line)}
+#modal.settings-dialog #dialog-body{overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:0 24px 24px;scrollbar-gutter:stable}
+#modal.settings-dialog .dialog-actions{margin:0;padding:15px 24px;border-top:1px solid var(--line);background:var(--paper)}
+#modal.settings-dialog .settings-first{border:0;padding-top:0;margin-top:10px}
+#modal.settings-dialog .settings-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+#modal.settings-dialog .settings-section h3,#modal.settings-dialog .settings-update h3{font-size:13px}
+#modal.settings-dialog .theme-choice{padding:10px 8px;min-height:42px}
+#modal.settings-dialog .settings-association{margin-top:22px}
+#modal.settings-dialog .settings-update{border-top:1px solid var(--line);padding-top:12px;margin-top:22px}
+.whitespace-settings{display:grid;gap:8px;margin-top:12px}
+.whitespace-style-row{margin:0;padding:10px 12px;display:grid;grid-template-columns:minmax(140px,1fr) auto minmax(170px,1.3fr);gap:14px;align-items:center;border:1px solid var(--line);border-radius:6px;min-width:0}
+.whitespace-style-row .checkbox{margin:0}
+.ws-enable{min-width:0}
+.ws-setting-sample{display:inline-block;min-width:1em;font-family:Consolas,'Yu Gothic UI',monospace;font-size:15px}
+.ws-color-control,.ws-opacity-control{display:flex;align-items:center;gap:8px;font-size:11px;min-width:0}
+.ws-color-control input{width:34px;height:28px;padding:2px;border:1px solid var(--line);border-radius:4px;background:var(--source);cursor:pointer}
+.ws-opacity-control input{flex:1;min-width:55px;width:80px;accent-color:var(--green)}
+.ws-opacity-control output{width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.settings-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+:root .visible-whitespace.ws-line-break::before,:root .cm-eol-marker{color:var(--ws-line-break-color,#87909a);opacity:var(--ws-line-break-opacity,.45)}
+:root .visible-whitespace.ws-wide-space::before{color:var(--ws-wide-space-color,#87909a);opacity:var(--ws-wide-space-opacity,.4)}
+:root .visible-whitespace.ws-tab::before{color:var(--ws-tab-color,#87909a);opacity:var(--ws-tab-opacity,.4)}
+:root .visible-whitespace.ws-space::before{color:var(--ws-space-color,#87909a);opacity:var(--ws-space-opacity,.3)}
+@media(max-width:620px){#modal.settings-dialog .dialog-heading{padding:16px}#modal.settings-dialog #dialog-body{padding:0 16px 18px}#modal.settings-dialog .dialog-actions{padding:12px 16px}.whitespace-style-row{grid-template-columns:minmax(140px,1fr) auto;gap:10px}.ws-opacity-control{grid-column:1/-1}.ws-opacity-control input{width:auto}.ws-opacity-control output{margin-left:auto}}
+@media(max-width:420px){#modal.settings-dialog .settings-fields{grid-template-columns:1fr}.theme-grid{grid-template-columns:1fr 1fr}}
+
+.settings-brightness{border:0;margin:0 0 16px;padding:0;min-width:0}
+.settings-brightness legend{padding:0;margin-bottom:7px;font-size:12px}
+.settings-theme-toggle{display:inline-flex;max-width:100%;padding:3px;gap:2px;border:1px solid var(--line);border-radius:6px;background:var(--source)}
+.settings-theme-toggle label{position:relative;margin:0;cursor:pointer}
+.settings-theme-toggle input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:inherit}
+.settings-theme-toggle span{display:flex;align-items:center;gap:5px;padding:7px 9px;border-radius:4px;font-size:11px;white-space:nowrap;color:var(--muted)}
+.settings-theme-toggle svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.settings-theme-toggle input:checked+span{color:var(--text);background:var(--paper);box-shadow:0 0 0 1px var(--line)}
+.settings-theme-toggle input:focus-visible+span{outline:2px solid var(--green);outline-offset:1px}
+.settings-brightness:disabled .settings-theme-toggle{opacity:.45}
+.settings-brightness:disabled label{cursor:default}

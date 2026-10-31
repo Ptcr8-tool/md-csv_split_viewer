@@ -1,0 +1,20 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+# NSIS detects UTF-8 by BOM on all supported compiler versions.
+[*.{nsi,nsh}]
+charset = utf-8-bom
+
+[licenses/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+
+[THIRD_PARTY_NOTICES.txt]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset

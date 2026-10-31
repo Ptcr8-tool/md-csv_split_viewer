@@ -1,0 +1,5 @@
+Microsoft Edge WebView2 Runtime (Fixed Version) license from Microsoft official download page API.
+Source: https://developer.microsoft.com/microsoft-edge/api/eula/webview2?locale=en-us&fixed=true
+Retrieved: 2026-10-26
+Bundled runtime: 156.0.4314.42 x64
+The text copy preserves paragraph text; the HTML copy preserves the API fixedHtml field.
