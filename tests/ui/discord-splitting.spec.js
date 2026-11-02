@@ -79,3 +79,34 @@ test('shows the split point beside the Discord document and drags it on the docu
   expect(await page.evaluate(()=>window.__mdSplit.getText())).toBe(text);
   await page.locator('#close-chunks').click();await expect(page.locator('.discord-preview-boundary')).toHaveCount(0);
 });
+
+test('TXT supports split, source marker dragging, copying and red overflow without editing the file',async({page,context})=>{
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
+  const text='最初の文章です。続きの文章です。\r\n次の行です。';
+  await page.evaluate(t=>window.__mdSplit.openDocument({name:'sample.txt',text:t}),text);
+  await expect(page.locator('#show-chunks')).toBeVisible();await expect(page.locator('.render-toggle')).toBeHidden();
+  await page.locator('#show-chunks').click();await expect(page.locator('.chunk')).toHaveCount(1);
+  const point=await bodyPoint(page.locator('.chunk-body').first(),6);await page.mouse.click(point.x,point.y);await page.locator('.chunk-add').click();
+  await expect(page.locator('.chunk')).toHaveCount(2);
+  const marker=page.getByRole('button',{name:'テキストの区切り 1 を移動'});await expect(marker).toBeVisible();
+  const first=await page.locator('.chunk-body').first().textContent();
+  const target=await page.evaluate(()=>{const r=window.__mdSplit.editor().coordsAtPos(13);return{x:r.left,y:(r.top+r.bottom)/2};});
+  const from=await marker.boundingBox();await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();await page.mouse.move(target.x,target.y,{steps:15});await page.mouse.up();
+  await expect.poll(()=>page.locator('.chunk-body').first().textContent()).not.toBe(first);
+  expect(await page.evaluate(()=>window.__mdSplit.getText())).toBe(text);
+  await page.locator('.chunk-head button').first().click();const copied=await page.evaluate(()=>navigator.clipboard.readText());
+  expect(text.startsWith(copied)).toBe(true);
+  await page.getByRole('button',{name:'区切り 1 を削除'}).click();await expect(page.locator('.chunk')).toHaveCount(1);
+  await page.evaluate(()=>window.__mdSplit.setText('あ'.repeat(2050)));await expect(page.locator('.chunk')).toHaveCount(1);
+  await expect(page.locator('.chunk-over')).toHaveCount(1);
+  await page.getByRole('button',{name:'自動分割に戻す'}).click();await expect(page.locator('.chunk')).toHaveCount(2);
+  await page.locator('#close-chunks').click();await expect(page.locator('.discord-source-overlay button')).toHaveCount(0);
+});
+
+test('TXT split points remain separate from Markdown and CSV hides split controls',async({page})=>{
+  await page.evaluate(()=>window.__mdSplit.openDocument({name:'notes.txt',text:'これはテキストの文章です。'}));await page.locator('#show-chunks').click();
+  const point=await bodyPoint(page.locator('.chunk-body').first(),5);await page.mouse.click(point.x,point.y);await page.locator('.chunk-add').click();await expect(page.locator('.chunk')).toHaveCount(2);
+  await page.evaluate(()=>window.__mdSplit.openDocument({name:'other.txt',text:'別の文書'}));await expect(page.locator('.chunk')).toHaveCount(1);
+  await page.locator('.tab-name').filter({hasText:'notes.txt'}).click();await expect(page.locator('.chunk')).toHaveCount(2);
+  await page.evaluate(()=>window.__mdSplit.openDocument({name:'rows.csv',text:'a,b\n1,2'}));await expect(page.locator('#show-chunks')).toBeHidden();await expect(page.locator('.chunks-panel')).toBeHidden();
+});
