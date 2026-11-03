@@ -21,3 +21,23 @@
 /* Keep a long file menu reachable on short or narrow screens. */
 .session-menu-list{max-height:min(75vh,600px);overflow-y:auto}
 .session-menu-list button small{display:inline;float:right;padding:0;margin-left:8px;font-size:10px}
+
+/* Search notation and examples are separate, readable reference views. */
+dialog.regex-dialog{width:min(680px,90vw);max-height:min(780px,calc(100dvh - 36px));padding:0;overflow:hidden}
+.regex-dialog>form{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:min(780px,calc(100dvh - 40px));min-height:0}
+.regex-dialog .dialog-heading{margin:0;padding:18px 24px 14px;border-bottom:1px solid var(--line)}
+.regex-dialog #dialog-body{overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:0 24px 20px;scrollbar-gutter:stable}
+.regex-dialog .dialog-actions{margin:0;padding:12px 24px;border-top:1px solid var(--line);background:var(--paper)}
+.regex-note{font-size:12px;line-height:1.65;color:var(--muted)}
+.regex-reference-nav{display:flex;flex-wrap:wrap;gap:6px}
+.regex-reference-nav button{font-size:11px;padding:5px 8px}
+.regex-reference-group{margin-top:20px}
+.regex-reference-group h3{font-size:13px;margin:0 0 8px}
+.regex-reference-list{margin:0;border-top:1px solid var(--line)}
+.regex-reference-row{display:grid;grid-template-columns:minmax(110px,40%) minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;line-height:1.5}
+.regex-reference-row dt,.regex-reference-row dd{margin:0;min-width:0}
+.regex-reference-row code,.regex-sample-value code{font:12px/1.5 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.regex-reference-row code{color:var(--green)}
+.regex-sample-value{display:grid;grid-template-columns:38px minmax(0,1fr);width:100%;gap:8px;font-size:11px}
+.regex-sample-value>span{color:var(--muted)}
+@media(max-width:500px){.regex-reference-row{grid-template-columns:1fr;gap:3px}.regex-dialog .dialog-heading{padding:14px 16px}.regex-dialog #dialog-body{padding:0 16px 16px}.regex-dialog .dialog-actions{padding:10px 16px}}

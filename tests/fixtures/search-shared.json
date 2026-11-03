@@ -179,5 +179,128 @@
       "from": 4,
       "to": 7
     }
+  },
+  {
+    "name": "single CRLF, LF and CR are not treated as multiple breaks",
+    "request": {
+      "text": "A\r\nB\nC\rD",
+      "pattern": "(\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)(?:\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)+",
+      "replacement": "$1",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 0
+    }
+  },
+  {
+    "name": "collapse CRLF without changing other CRLF",
+    "request": {
+      "text": "a\r\n\r\nb\r\nc",
+      "pattern": "(\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)(?:\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)+",
+      "replacement": "$1",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 1,
+      "text": "a\r\nb\r\nc",
+      "from": 1,
+      "to": 3
+    }
+  },
+  {
+    "name": "collapse three LF and keep a single LF",
+    "request": {
+      "text": "a\n\n\nb\nc",
+      "pattern": "(\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)(?:\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)+",
+      "replacement": "$1",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 1,
+      "text": "a\nb\nc",
+      "from": 1,
+      "to": 2
+    }
+  },
+  {
+    "name": "collapse CR and keep a single CR",
+    "request": {
+      "text": "a\r\rb\rc",
+      "pattern": "(\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)(?:\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)+",
+      "replacement": "$1",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 1,
+      "text": "a\rb\rc",
+      "from": 1,
+      "to": 2
+    }
+  },
+  {
+    "name": "collapse mixed line endings using the first break",
+    "request": {
+      "text": "A\r\n\nB\r\r\nC\n\rD\r\nE",
+      "pattern": "(\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)(?:\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)+",
+      "replacement": "$1",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 3,
+      "text": "A\r\nB\rC\nD\r\nE",
+      "from": 6,
+      "to": 7
+    }
+  },
+  {
+    "name": "replace one selected pair of CRLF breaks",
+    "request": {
+      "text": "A\r\n\r\nB",
+      "pattern": "(\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)(?:\\r\\n|\\r(?!\\n)|(?<!\\r)\\n)+",
+      "replacement": "$1",
+      "regex": true,
+      "action": "replace",
+      "from": 1,
+      "to": 5
+    },
+    "expected": {
+      "count": 1,
+      "text": "A\r\nB",
+      "from": 1,
+      "to": 3
+    }
+  },
+  {
+    "name": "Japanese named group replacement",
+    "request": {
+      "text": "猫 猫",
+      "pattern": "(?<単語>猫)",
+      "replacement": "<${単語}>",
+      "regex": true,
+      "action": "all",
+      "from": 0,
+      "to": 0
+    },
+    "expected": {
+      "count": 2,
+      "text": "<猫> <猫>",
+      "from": 4,
+      "to": 7
+    }
   }
 ]
