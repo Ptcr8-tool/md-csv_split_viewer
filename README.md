@@ -25,7 +25,7 @@ READMEやメモの作成、AIから受け取ったMarkdownの確認、Discordの
 
 ## ダウンロード
 
-[最新版のリリースページ](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/tag/v1.0.0)から **Setup.exe 1本** をダウンロードしてインストールできます。Pythonなどを別途用意する必要はありません。.NETと固定版WebView2 Runtimeを同梱し、セットアップ中の追加ダウンロードは行いません。
+[最新版のリリースページ](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/latest)から **Setup.exe 1本** をダウンロードしてインストールできます。Pythonなどを別途用意する必要はありません。.NETと固定版WebView2 Runtimeを同梱し、セットアップ中の追加ダウンロードは行いません。
 
 <!-- downloads:start -->
 | バージョン | 対応環境 | ダウンロード | 主な内容 |
@@ -35,7 +35,7 @@ READMEやメモの作成、AIから受け取ったMarkdownの確認、Discordの
 
 ### Windowsの警告について
 
-このセットアップにはコード署名がありません。Microsoft Defender SmartScreenなどの警告や「発行元が不明」という表示が出る場合があります。Smart App Controlが有効な環境では実行できない場合があります。組織管理のPCでは管理者の方針に従ってください。詳しくは[リリースページ](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/tag/v1.0.0)をご覧ください。
+現在のセットアップにはコード署名がありません。Microsoft Defender SmartScreenなどの警告や「発行元が不明」という表示が出る場合があります。Smart App Controlが有効な環境では実行できない場合があります。組織管理のPCでは管理者の方針に従ってください。詳しくは[リリースページ](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/latest)をご覧ください。
 
 ### インストールの流れ
 
@@ -202,7 +202,7 @@ Ctrl+Fで検索、Ctrl+Hで置換します。「正規表現」をオンにす�
 
 起動時の更新確認は **なし／毎回／1日／7日／30日／指定した日数** から選べます。公開されたGitHub Releasesへバックグラウンドで問い合わせ、新しい版がある場合に確認します。更新を選んだ後にダウンロードし、署名・サイズ・SHA-256などの検証に成功したファイルだけを使用します。
 
-現在公開中のv1.0.0には自動更新用の署名ファイルがないため、今後の更新はリリースページから手動でダウンロードしてください。
+v1.0.1には自動更新の検証に必要な署名ファイルがないため、v1.0.0などからはアプリ内で自動更新できません。リリースページからセットアップを手動でダウンロードし、アプリを終了してから実行してください。Windowsの発行元証明書と、自動更新の検証に使う署名は別のものです。
 
 更新先へ接続できない場合は、小さな通知で知らせて編集を続けられます。セットアップ自体はネットワークへ接続しませんが、アプリの更新確認・ダウンロード、URL画像の表示、外部リンクを開く操作では通信が発生します。
 
@@ -215,3 +215,5 @@ Ctrl+Fで検索、Ctrl+Hで置換します。「正規表現」をオンにす�
 [変更履歴](CHANGELOG.md) · [安全性と更新処理](SECURITY.md) · [検証結果](VALIDATION.md) · [ビルド・配布手順](docs/Releasing.md) · [第三者ライセンス](THIRD_PARTY_NOTICES.txt)
 
 本プロジェクトのコードは [GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0-only）で提供します。Copyright (c) 2026 Ptcr8-tool。第三者コンポーネントにはそれぞれのライセンスが適用されます。
+
+[Code signing policy](CODE_SIGNING.md)（署名方針・申請準備中）

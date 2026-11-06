@@ -1,0 +1,233 @@
+# One-time v1.0.1 manual-update release. This workflow is not a reusable
+# publisher: only introducing or changing this file on main can trigger it,
+# and publication refuses an existing tag or release.
+name: Release v1.0.1
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v1.0.1.yml'
+      - 'docs/releases/v1.0.1.md'
+      - 'tests/installer/Run-UpgradeSmoke.ps1'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v1.0.1.yml'
+
+permissions: {}
+
+jobs:
+  build-and-test:
+    if: github.repository == 'Ptcr8-tool/md-csv_split_viewer' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    runs-on: windows-2025
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      exe_sha256: ${{ steps.release-hashes.outputs.exe_sha256 }}
+      exe_bytes: ${{ steps.release-hashes.outputs.exe_bytes }}
+      sums_sha256: ${{ steps.release-hashes.outputs.sums_sha256 }}
+      notes_sha256: ${{ steps.release-hashes.outputs.notes_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run check:version
+      - run: npm test
+      - run: dotnet run --project tests/native/NativeChecks.csproj -c Release
+      - run: npx playwright install chromium
+      - run: npm run publish:win
+      - name: Verify production web bundle
+        run: node scripts/check-production.mjs
+      - run: choco install nsis --yes --no-progress
+      - name: Check installer directory validation
+        shell: pwsh
+        run: |
+          & ./tests/installer/Run-DirectoryChecks.ps1 -MakeNsis "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: release/runtime-cache/runtime.cab
+          key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
+      - name: Build complete offline setup
+        shell: pwsh
+        run: |
+          $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          python scripts/package-installer.py
+          if ($LASTEXITCODE -ne 0) { throw 'Setup packaging failed.' }
+      - name: Verify setup wizard
+        shell: powershell
+        run: |
+          & ./tests/installer/Check-SetupJapanese.ps1 -Setup 'release/MD-Split-1.0.1-Setup.exe'
+      - name: Test install, repair, and uninstall
+        shell: pwsh
+        run: |
+          & ./tests/installer/Run-SetupSmoke.ps1 -Setup 'release/MD-Split-1.0.1-Setup.exe'
+      - name: Download and verify v1.0.0 setup
+        shell: pwsh
+        run: |
+          $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.0-Setup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.0/MD-Split-1.0.0-Setup.exe' -OutFile $old
+          if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'beee428089e2071d665c3997bb539e2e1fbd8dff8d277b3e41750b4e39772350') { throw 'Published v1.0.0 setup hash mismatch.' }
+      - name: Verify upgrade from v1.0.0
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-UpgradeSmoke.ps1 -OldSetup (Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.0-Setup.exe') -NewSetup 'release/MD-Split-1.0.1-Setup.exe'
+      - name: Verify CSV clipboard in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify both print dialogs in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-PrintWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify session restoration in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify mixed line endings in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify optional startup trace in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-StartupTraceWebView2.ps1 -Payload 'release/MD-Split'
+      - run: npm run test:ui
+      - name: Hash release files after tests
+        id: release-hashes
+        shell: pwsh
+        run: |
+          $exe = Get-Item -LiteralPath 'release/MD-Split-1.0.1-Setup.exe'
+          $hash = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $line = [IO.File]::ReadAllText((Resolve-Path 'release/SHA256SUMS.txt').Path).Trim()
+          if ($line -cne "$hash  MD-Split-1.0.1-Setup.exe") { throw 'Setup does not match SHA256SUMS.txt.' }
+          $sumsHash = (Get-FileHash -LiteralPath 'release/SHA256SUMS.txt' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $notesHash = (Get-FileHash -LiteralPath 'docs/releases/v1.0.1.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "exe_sha256=$hash" >> $env:GITHUB_OUTPUT
+          "exe_bytes=$($exe.Length)" >> $env:GITHUB_OUTPUT
+          "sums_sha256=$sumsHash" >> $env:GITHUB_OUTPUT
+          "notes_sha256=$notesHash" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MD-Split-v1.0.1-release-input
+          path: |
+            release/MD-Split-1.0.1-Setup.exe
+            release/SHA256SUMS.txt
+            docs/releases/v1.0.1.md
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.repository == 'Ptcr8-tool/md-csv_split_viewer' && github.ref == 'refs/heads/main'
+    needs: build-and-test
+    runs-on: windows-2025
+    timeout-minutes: 30
+    concurrency:
+      group: release-v1.0.1-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: MD-Split-v1.0.1-release-input
+          path: release-input
+      - name: Publish verified release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_EXE_SHA256: ${{ needs.build-and-test.outputs.exe_sha256 }}
+          EXPECTED_EXE_BYTES: ${{ needs.build-and-test.outputs.exe_bytes }}
+          EXPECTED_SUMS_SHA256: ${{ needs.build-and-test.outputs.sums_sha256 }}
+          EXPECTED_NOTES_SHA256: ${{ needs.build-and-test.outputs.notes_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $exe = 'release-input/release/MD-Split-1.0.1-Setup.exe'
+          $sums = 'release-input/release/SHA256SUMS.txt'
+          $notes = 'release-input/docs/releases/v1.0.1.md'
+          foreach ($value in @($env:EXPECTED_EXE_SHA256, $env:EXPECTED_SUMS_SHA256, $env:EXPECTED_NOTES_SHA256)) {
+            if ($value -notmatch '^[0-9a-f]{64}$') { throw 'Missing or invalid expected hash.' }
+          }
+          if ($env:EXPECTED_EXE_BYTES -notmatch '^\d+$') { throw 'Missing or invalid setup size.' }
+          if ((Get-Item -LiteralPath $exe).Length -ne [long]$env:EXPECTED_EXE_BYTES -or (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_EXE_SHA256) { throw 'Setup changed after testing.' }
+          if ((Get-FileHash -LiteralPath $sums -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_SUMS_SHA256 -or (Get-FileHash -LiteralPath $notes -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_NOTES_SHA256) { throw 'Release metadata changed after testing.' }
+          $line = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $sums).Path).Trim()
+          if ($line -cne "$($env:EXPECTED_EXE_SHA256)  MD-Split-1.0.1-Setup.exe") { throw 'Invalid setup checksum file.' }
+
+          function Require-Absent([string]$Endpoint) {
+            $result = & gh api $Endpoint 2>&1
+            if ($LASTEXITCODE -eq 0) { throw 'Release or tag already exists; refusing to overwrite.' }
+            if (($result | Out-String) -notmatch 'HTTP 404') { throw 'Could not confirm release/tag absence.' }
+          }
+          $repo = $env:GITHUB_REPOSITORY
+          if ($repo -cne 'Ptcr8-tool/md-csv_split_viewer' -or $env:GITHUB_REF -cne 'refs/heads/main') { throw 'Unexpected release repository or branch.' }
+          $main = & gh api "repos/$repo/git/ref/heads/main" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $main.object.sha -cne $env:GITHUB_SHA) { throw 'Main no longer matches the tested commit.' }
+          Require-Absent "repos/$repo/git/ref/tags/v1.0.1"
+          # The by-tag endpoint can omit drafts. Inspect the complete paginated
+          # release list so an existing draft is never accidentally reused.
+          $existing = @(& gh api --paginate "repos/$repo/releases?per_page=100" --jq '.[] | select(.tag_name == "v1.0.1") | .id')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not confirm release absence.' }
+          if ($existing.Count -ne 0) { throw 'Release already exists; refusing to overwrite.' }
+
+          # An unsuccessful create or any validation failure leaves a draft.
+          & gh release create v1.0.1 $exe $sums --repo $repo --target $env:GITHUB_SHA --title 'MD-CSV Split Editor 1.0.1' --notes-file $notes --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release.' }
+          # Draft releases do not necessarily materialize their tag. If the
+          # create operation already made it, validate; only a 404 permits us
+          # to create the missing lightweight tag.
+          $tagResponse = & gh api "repos/$repo/git/ref/tags/v1.0.1" 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            if (($tagResponse | Out-String) -notmatch 'HTTP 404') { throw 'Could not check draft tag; draft remains unpublished.' }
+            & gh api --method POST "repos/$repo/git/refs" -f 'ref=refs/tags/v1.0.1' -f "sha=$($env:GITHUB_SHA)" --silent
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the release tag; draft remains unpublished.' }
+            $tagResponse = & gh api "repos/$repo/git/ref/tags/v1.0.1" 2>&1
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read the created release tag.' }
+          }
+          $tag = ($tagResponse | Out-String) | ConvertFrom-Json
+          if ($tag.object.type -cne 'commit' -or $tag.object.sha -cne $env:GITHUB_SHA) { throw 'Draft tag does not point at the tested commit.' }
+          $ids = @(& gh api --paginate "repos/$repo/releases?per_page=100" --jq '.[] | select(.tag_name == "v1.0.1") | .id')
+          if ($LASTEXITCODE -ne 0 -or $ids.Count -ne 1 -or $ids[0] -notmatch '^\d+$') { throw 'Could not identify the unique draft release.' }
+          $draft = & gh api "repos/$repo/releases/$($ids[0])" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $draft.draft -or $draft.prerelease -or $draft.tag_name -cne 'v1.0.1') { throw 'Draft release metadata is invalid.' }
+          function Assert-Assets($Release) {
+            $assets = @($Release.assets)
+            if ($assets.Count -ne 2) { throw 'Release must contain exactly two assets.' }
+            foreach ($item in @(@{ Name='MD-Split-1.0.1-Setup.exe'; Bytes=[long]$env:EXPECTED_EXE_BYTES; Hash=$env:EXPECTED_EXE_SHA256 }, @{ Name='SHA256SUMS.txt'; Bytes=(Get-Item -LiteralPath $sums).Length; Hash=$env:EXPECTED_SUMS_SHA256 })) {
+              $matching = @($assets | Where-Object { $_.name -ceq $item.Name })
+              if ($matching.Count -ne 1 -or $matching[0].state -cne 'uploaded' -or $matching[0].size -ne $item.Bytes -or $matching[0].digest -cne ('sha256:' + $item.Hash)) { throw 'Release asset size, digest, name, or state did not match.' }
+            }
+          }
+          Assert-Assets $draft
+          # A separate actor could have changed state while assets were being
+          # uploaded. Recheck the exact source, tag, and draft immediately
+          # before publication. Same-workflow publishers are serialized.
+          $mainBeforePublish = & gh api "repos/$repo/git/ref/heads/main" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $mainBeforePublish.object.sha -cne $env:GITHUB_SHA) { throw 'Main changed before publication; draft remains unpublished.' }
+          $tagBeforePublish = & gh api "repos/$repo/git/ref/tags/v1.0.1" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $tagBeforePublish.object.type -cne 'commit' -or $tagBeforePublish.object.sha -cne $env:GITHUB_SHA) { throw 'Tag changed before publication; draft remains unpublished.' }
+          $draftBeforePublish = & gh api "repos/$repo/releases/$($ids[0])" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $draftBeforePublish.draft -or $draftBeforePublish.prerelease -or $draftBeforePublish.tag_name -cne 'v1.0.1') { throw 'Draft changed before publication.' }
+          Assert-Assets $draftBeforePublish
+          & gh release edit v1.0.1 --repo $repo --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the verified draft.' }
+          $published = & gh api "repos/$repo/releases/tags/v1.0.1" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $published.draft -or $published.prerelease -or $published.tag_name -cne 'v1.0.1') { throw 'Release publication could not be verified.' }
+          Assert-Assets $published
+          $latest = & gh api "repos/$repo/releases/latest" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $latest.tag_name -cne 'v1.0.1') { throw 'The release was published but could not be verified as latest.' }
+          $finalTag = & gh api "repos/$repo/git/ref/tags/v1.0.1" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $finalTag.object.type -cne 'commit' -or $finalTag.object.sha -cne $env:GITHUB_SHA) { throw 'The published tag could not be verified against the tested commit.' }
+          Write-Output 'Published v1.0.1 after verification of both release assets and the tag.'
