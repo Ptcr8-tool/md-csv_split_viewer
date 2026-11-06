@@ -208,4 +208,4 @@ Ctrl+Fで検索、Ctrl+Hで置換します。「正規表現」をオンにす�
 
 [変更履歴](CHANGELOG.md) · [安全性と更新処理](SECURITY.md) · [検証結果](VALIDATION.md) · [ビルド・配布手順](docs/Releasing.md) · [第三者ライセンス](THIRD_PARTY_NOTICES.txt)
 
-本体の配布・ソース利用に関するライセンスは公開前に確定します。第三者コンポーネントのライセンス・著作権表示は、同梱の資料を参照してください。
+本プロジェクトのコードは [GNU Affero General Public License v3.0](LICENSE)（AGPL-3.0-only）で提供します。Copyright (c) 2026 Ptcr8-tool。第三者コンポーネントにはそれぞれのライセンスが適用されます。
