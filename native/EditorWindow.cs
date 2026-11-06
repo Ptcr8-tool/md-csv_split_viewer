@@ -34,7 +34,7 @@ internal sealed class EditorWindow : Form
     public EditorWindow(EditorContext context, RecoveryData? initial = null, bool recovered = false, string? recoveryFile = null, string? sessionFile = null)
     {
         this.context = context; this.initial = initial ?? new(); this.recovered = recovered; this.sourceSessionFile = sessionFile; this.recoveryFile=recoveryFile??Path.Combine(Storage.RecoveryPath,Guid.NewGuid().ToString("N")+".json");recoveryStore=new RecoveryStore(this.recoveryFile);preserveRecovery=recovered;
-        Text = AppInfo.Title; Width = 1300; Height = 860; MinimumSize = new Size(800, 560); StartPosition = FormStartPosition.CenterScreen;
+        Text = AppInfo.Title; Width = 1400; Height = 860; MinimumSize = new Size(800, 560); StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(245, 245, 241); AutoScaleMode = AutoScaleMode.Dpi;
         var icon = Path.Combine(AppContext.BaseDirectory, "app.ico"); if (File.Exists(icon)) Icon = new Icon(icon);
         foreach (var d in this.initial.Documents) Track(d);
