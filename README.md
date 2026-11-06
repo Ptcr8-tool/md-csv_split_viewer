@@ -30,6 +30,7 @@ READMEやメモの作成、AIから受け取ったMarkdownの確認、Discordの
 <!-- downloads:start -->
 | バージョン | 対応環境 | ダウンロード | 主な内容 |
 |---|---|---|---|
+| 1.0.1 | Windows 10／11・x64 | [⬇ Setup.exe](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.1/MD-Split-1.0.1-Setup.exe) | 分割コピー・検索・メニューの改善、起動時の読み込み見直し |
 | 1.0.0 | Windows 10／11・x64 | [ダウンロード](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/tag/v1.0.0) | Markdown・CSVの両側編集、CSVの左右連動、種類別表示設定 |
 <!-- downloads:end -->
 
