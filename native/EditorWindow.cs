@@ -46,6 +46,7 @@ internal sealed class EditorWindow : Form
     public void CloseForUpdate(){preserveRecovery=true;allowClose=true;Close();}
     public void BringForward() { if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal; Show(); Activate(); }
     public void AddDocument(DocumentData doc) { Track(doc); if (ready) Emit(new { type = "files-opened", documents = new[] { doc } }); else if (!initial.Documents.Any(d => d.Id == doc.Id)) initial.Documents.Add(doc); }
+    public void AddNewDocument(DocumentData doc) { Track(doc); Emit(new { type = "new-document", document = doc }); }
     public void Emit(object message) { if (!ready) { queued.Enqueue(message); return; } if (!IsDisposed) web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, Storage.Json)); }
     private void Track(DocumentData doc)
     {
@@ -284,7 +285,7 @@ internal sealed class EditorWindow : Form
                 if (!pendingExternal.TryGetValue(changedId!, out var pending) || pending.Changed.Fingerprint != changedFingerprint || currentDoc.Fingerprint != pending.PreviousFingerprint || !string.Equals(currentDoc.Path, pending.Changed.Path, StringComparison.OrdinalIgnoreCase))
                     throw new IOException("ファイルの変更状態が更新されました。開き直してください。");
                 Track(pending.Changed); pendingExternal.Remove(changedId!); return true;
-            case "file.new": context.NewFile(this, args.TryGetProperty("name", out var newName) ? newName.GetString() : null); return true;
+            case "file.new": context.NewFile(this, args.TryGetProperty("name", out var newName) ? newName.GetString() : null, args.TryGetProperty("encoding", out var newEncoding) ? newEncoding.GetString() : null); return true;
             case "file.open":
                 var openEncoding = args.TryGetProperty("encoding", out var requestedEncoding) ? requestedEncoding.GetString() : null;
                 using (var dialog = new OpenFileDialog { Filter = TextFileTypes.OpenFilter, Multiselect = true, RestoreDirectory = true, Title = "テキスト・ソースファイルを開く" })

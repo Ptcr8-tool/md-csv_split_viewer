@@ -9,6 +9,10 @@ internal static class DocumentAuthorityChecks
         var created = DocumentAuthority.RegisterUnsaved(documents, id, "note.md");
         assert(created.Path is null && created.Fingerprint is null && created.Name == "note.md", "new document registration cannot create file access");
         assert(ReferenceEquals(created, DocumentAuthority.RegisterUnsaved(documents,id,"other.csv")) && created.Name == "note.md", "repeat registration cannot replace native state");
+        var nativeNew = TextFileTypes.NewDocument("無題.yml", "utf16be");
+        documents[nativeNew.Id] = nativeNew;
+        var repeat = DocumentAuthority.RegisterUnsaved(documents, nativeNew.Id, "changed.txt");
+        assert(ReferenceEquals(repeat,nativeNew) && repeat.Name == "無題.yml" && repeat.Encoding == "utf16be" && repeat.SavedEncoding == "utf16be" && repeat.HasBom == true && repeat.SavedHasBom == true, "registration preserves a native-created document's selected type and encoding");
         var forged = new DocumentData { Id=id, Path=Path.Combine(root,"secret.txt"), Name="evil.txt", SavedText="forged", Fingerprint="forged", SavedEncoding="utf16le", SavedHasBom=true, Text="hello", Encoding="utf8", HasBom=false, Format="csv" };
         var merged = DocumentAuthority.Merge(documents, forged);
         assert(merged.Path is null && merged.Fingerprint is null && merged.SavedText == "" && merged.SavedEncoding == "utf8" && merged.Name == "note.md" && merged.Format == "markdown", "forged path and saved metadata do not affect unsaved document");

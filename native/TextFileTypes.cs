@@ -58,7 +58,7 @@ internal static class TextFileTypes
         return Kinds.FirstOrDefault(k => k.Extensions.Contains(extension, StringComparer.OrdinalIgnoreCase))?.Format ?? "text";
     }
     public static bool IsMarkdown(string? pathOrName) => FormatFor(pathOrName) == "markdown";
-    public static DocumentData NewDocument(string? name = null)
+    public static DocumentData NewDocument(string? name = null, string? encoding = null)
     {
         name = string.IsNullOrWhiteSpace(name) ? "無題.md" : name.Trim();
         var invalid = name.Length > 200 || name is "." or ".." || name.EndsWith('.') || name.Any(c => char.IsControl(c) || "<>:\"/\\|?*".Contains(c));
@@ -66,7 +66,9 @@ internal static class TextFileTypes
         var stem = name.Split('.')[0].TrimEnd(' ').ToUpperInvariant();
         if (stem is "CON" or "PRN" or "AUX" or "NUL" || stem.Length == 4 && (stem.StartsWith("COM") || stem.StartsWith("LPT")) && stem[3] is >= '1' and <= '9') invalid = true;
         if (invalid) name = "無題.md";
-        return new DocumentData { Name = name, Format = FormatFor(name), Encoding = "utf8", SavedEncoding = "utf8", HasBom = false, SavedHasBom = false };
+        var selectedEncoding = TextCodec.CanonicalId(encoding ?? "utf8");
+        var hasBom = TextCodec.DefaultBom(selectedEncoding);
+        return new DocumentData { Name = name, Format = FormatFor(name), Encoding = selectedEncoding, SavedEncoding = selectedEncoding, HasBom = hasBom, SavedHasBom = hasBom };
     }
     public static bool ShouldMigrateImages(DocumentData document, string destination) => IsMarkdown(document.Path ?? document.Name) && IsMarkdown(destination);
     public sealed record SaveSpec(string FileName, string DefaultExtension, string Filter, int FilterIndex);

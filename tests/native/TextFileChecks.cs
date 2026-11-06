@@ -57,6 +57,14 @@ internal static class TextFileChecks
         assert(TextFileTypes.ResolveSavePath("note.md", Path.Combine(root, "chosen.custom"), 4) == Path.Combine(root, "chosen.custom"), "explicit custom extension remains the user's choice");
         assert(TextFileTypes.ResolveSavePath("a.b.json", Path.Combine(root, "a.b"), dotted.Filter.Split('|').Length / 2) == Path.Combine(root, "a.b"), "all-files selection retains the exact requested multi-dot name");
         assert(TextFileTypes.NewDocument("無題.json").Format == "json" && TextFileTypes.NewDocument("note.custom").Name == "note.custom", "new-file requests accept general text names and preserve unknown extensions");
+        var chosenYaml = TextFileTypes.NewDocument("無題.yml", "utf-16be");
+        assert(chosenYaml.Name == "無題.yml" && chosenYaml.Format == "yaml" && chosenYaml.Encoding == "utf16be" && chosenYaml.SavedEncoding == "utf16be" && chosenYaml.HasBom == true && chosenYaml.SavedHasBom == true, "new YAML retains selected encoding and BOM as its initial baseline");
+        assert((await Storage.EncodeDocument("あ", chosenYaml)).SequenceEqual(new byte[] { 0xfe, 0xff, 0x30, 0x42 }), "new document actually saves with its chosen UTF-16 BE encoding and BOM");
+        var chosenLegacy = TextFileTypes.NewDocument("無題.txt", "shiftjis");
+        assert(chosenLegacy.Encoding == "shiftjis" && chosenLegacy.HasBom == false && (await Storage.EncodeDocument("日本", chosenLegacy)).SequenceEqual(new byte[] { 0x93, 0xfa, 0x96, 0x7b }), "new document saves with its chosen Shift JIS encoding");
+        var invalidNewEncoding = false;
+        try { TextFileTypes.NewDocument("無題.txt", "unsupported"); } catch (IOException) { invalidNewEncoding = true; }
+        assert(invalidNewEncoding, "new-file requests reject unsupported encodings");
         foreach (var unsafeName in new[] { "../other.txt", "C:\\private\\note.txt", "bad|name.txt", "NUL.txt", "NUL.tar.gz", "CON", "COM1.backup.txt", "LPT9 .csv", "line\nbreak.md" })
             assert(TextFileTypes.NewDocument(unsafeName).Name == "無題.md", "unsafe new-file name falls back without creating or exposing a path");
         assert(TextFileTypes.NewDocument("COM10.notes.txt").Name == "COM10.notes.txt" && TextFileTypes.NewDocument("CONSOLE.txt").Name == "CONSOLE.txt", "ordinary names resembling reserved device names remain available");

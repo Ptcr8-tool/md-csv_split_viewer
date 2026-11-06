@@ -17,6 +17,7 @@ import {initialViewMode,isViewMode,presentationFor,presentationCapabilities,norm
 import {APP_TITLE} from './brand.js';
 import {applicationShell} from './app-shell.js';
 import {installToolbarFolding} from './toolbar-folding.js';
+import {chooseNewFile} from './new-file-dialog.js';
 import {encodingChoices,defaultBom,readBrowserFile,encodeBrowserText,MAX_BROWSER_FILE_BYTES} from './text-codecs.js';
 import './file-editor.css';
 import { DiscordSplitPanel } from './discord-split-panel.js';
@@ -462,6 +463,13 @@ listen('#image-input','change',guard(async e=>{await importImages(Array.from(e.t
 function searchDialog(){if(paneSession&&!md()&&detachedSide==='preview'){const selected=features.pendingSearchSelection||features.captureSearchSelection();features.pendingSearchSelection=null;return paneSession.search(true,{text:selected.text,richSelection:selected.richSelection});}features.openSearch(true);}
 function settingsDialog(){const documentAtOpen=current(),kindAtOpen=fileKind(documentAtOpen);return showSettings({settings:()=>settings,fileKind:()=>kindAtOpen,dialog,setSettings:async change=>{const before=presentationFor(settings,kindAtOpen),after=presentationFor({...settings,...change},kindAtOpen);if(isViewMode(after.defaultViewMode)&&after.defaultViewMode!==before.defaultViewMode)documentAtOpen.previewViewMode=after.defaultViewMode;await setSettings(change);saveRecovery();},previewSettings(change){settings={...settings,...change};applySettings();},updates,host,notify,guard});}
 async function openWelcome(){const {welcomeDocument}=await import('./welcome.js');newDocument(welcomeDocument());}
+async function newDocumentWithOptions(){
+  const options=await chooseNewFile({dialog,isDesktop,defaultFormat:$('#new-format').value});
+  if(!options)return;
+  const name='無題.'+options.extension;
+  if(isDesktop)await host('file.new',{name,encoding:options.encoding});
+  else newDocument({name,encoding:options.encoding,hasBom:defaultBom(options.encoding)});
+}
 
 function help(){return showHelp(dialog,guard(()=>updates.check(true)),guard(openWelcome));}
 const splitMarkers=new DiscordSplitPreview($('#preview'),rich,()=>({enabled:showChunks&&md()&&mode==='discord',doc:current(),limit:settings.limit,panel:splitPanel}));
@@ -477,7 +485,7 @@ const commands={
   'view-split':()=>setViewSettings({viewMode:'split'}),'view-source':()=>setViewSettings({viewMode:'source'}),'view-preview':()=>setViewSettings({viewMode:'preview'}),
   'theme-light':()=>setSettings({theme:'light'}),'theme-dark':()=>setSettings({theme:'dark'}),'theme-system':()=>setSettings({theme:'system'}),'popout-source':()=>paneHub?.open('source'),'popout-preview':()=>paneHub?.open('preview'),'focus-owner':()=>paneSession?.focusOwner(),
   recent:()=>features.recent(),outline:toggleOutline,sync:()=>setPresentationSettings({sync:!viewSettings().sync}),replace:searchDialog,
-  new:async()=>{const name='無題.'+$('#new-format').value;if(isDesktop)await host('file.new',{name});else newDocument({name});},open:openFiles,save:()=>saveDocument(),saveas:()=>saveDocument(current(),true),closetab:()=>closeDocument(activeId),closeall:()=>closeAllDocuments(),closewindow:()=>closeWindow(),'exit-clear':()=>closeWindow('clear'),'exit-all':()=>closeWindow('all'),'exit-active':()=>closeWindow('active'),undo:()=>history(false),redo:()=>history(true),
+  new:async()=>{const name='無題.'+$('#new-format').value;if(isDesktop)await host('file.new',{name});else newDocument({name});},'new-options':newDocumentWithOptions,open:openFiles,save:()=>saveDocument(),saveas:()=>saveDocument(current(),true),closetab:()=>closeDocument(activeId),closeall:()=>closeAllDocuments(),closewindow:()=>closeWindow(),'exit-clear':()=>closeWindow('clear'),'exit-all':()=>closeWindow('all'),'exit-active':()=>closeWindow('active'),undo:()=>history(false),redo:()=>history(true),
   'layout-windows':()=>setSettings({openPolicy:'windows'}),'layout-tabs':()=>setSettings({openPolicy:'tabs'}),
   'mode-normal':()=>setMode('normal'),'mode-discord':()=>setMode('discord'),
   bold:()=>wrap('**'),italic:()=>wrap('*'),strike:()=>wrap('~~'),underline:()=>wrap('__'),spoiler:()=>wrap('||'),inlinecode:()=>wrap('`','`','コード'),

@@ -123,10 +123,10 @@ internal sealed class EditorContext : ApplicationContext
         window.FormClosed += (_, _) => { if(preparingUpdate)AbortUpdate(); Windows.Remove(window); if (lastActive == window) lastActive = Windows.LastOrDefault(); if (Windows.Count == 0) { cancellation.Cancel(); ExitThread(); } };
         window.Show(); return window;
     }
-    public void NewFile(EditorWindow origin, string? name = null)
+    public void NewFile(EditorWindow origin, string? name = null, string? encoding = null)
     {
-        var document = TextFileTypes.NewDocument(name);
-        if (Settings.OpenPolicy == "windows") AddWindow(new RecoveryData { Documents = [document], ActiveId = document.Id }); else origin.Emit(new { type = "new-document", document });
+        var document = TextFileTypes.NewDocument(name, encoding);
+        if (Settings.OpenPolicy == "windows") AddWindow(new RecoveryData { Documents = [document], ActiveId = document.Id }); else origin.AddNewDocument(document);
     }
     public void RouteFiles(IEnumerable<string> paths, EditorWindow? origin, string? forceEncoding = null)
     {

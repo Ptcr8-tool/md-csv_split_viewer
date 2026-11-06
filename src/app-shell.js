@@ -18,7 +18,36 @@ const btn=(cmd,label,content,cls='')=>`<button type="button" class="tool ${cls}"
 export function applicationShell() {
   return `
 <header class="topbar"><div class="brand"><img src="./icon.svg" alt=""><span>${APP_TITLE}</span><small>Text · Markdown · CSV · 1.0.1 開発版</small></div>
-<details class="session-menu"><summary aria-label="ファイルメニュー">ファイル</summary><div class="session-menu-list"><p>ファイル操作</p><button type="button" data-file-action="new">新規作成 <small>Ctrl+N</small></button><button type="button" data-file-action="open">ファイルを開く <small>Ctrl+O</small></button><button type="button" data-file-action="recent">最近開いたファイル</button><button type="button" data-file-action="save">上書き保存 <small>Ctrl+S</small></button><button type="button" data-file-action="saveas">名前を付けて保存 <small>Ctrl+Shift+S</small></button><button type="button" data-file-action="closetab">このタブを閉じる <small>Ctrl+W</small></button><button type="button" data-file-action="closeall">すべてのタブを閉じる</button><p>今回の終了方法</p><button type="button" data-cmd="exit-clear">次回は新規ファイルで開始</button><button type="button" data-cmd="exit-all">全タブを次回開く</button><button type="button" data-cmd="exit-active">表示中のタブだけを次回開く</button><small>この選択は今回のみ有効です</small></div></details>
+<details class="session-menu">
+<summary aria-label="ファイルメニュー">ファイル</summary>
+<div class="session-menu-list">
+  <section class="session-menu-group" aria-labelledby="file-menu-open-heading">
+    <p class="session-menu-group-title" id="file-menu-open-heading">新規・開く</p>
+    <button type="button" data-file-action="new-options"><span>新規作成…</span></button>
+    <button type="button" data-file-action="open"><span>ファイルを開く</span><kbd aria-hidden="true">Ctrl+O</kbd></button>
+    <button type="button" data-file-action="recent"><span>最近開いたファイル</span></button>
+  </section>
+  <section class="session-menu-group" aria-labelledby="file-menu-save-heading">
+    <p class="session-menu-group-title" id="file-menu-save-heading">保存</p>
+    <button type="button" data-file-action="save"><span>上書き保存</span><kbd aria-hidden="true">Ctrl+S</kbd></button>
+    <button type="button" data-file-action="saveas"><span>名前を付けて保存</span><kbd aria-hidden="true">Ctrl+Shift+S</kbd></button>
+  </section>
+  <section class="session-menu-group" aria-labelledby="file-menu-tabs-heading">
+    <p class="session-menu-group-title" id="file-menu-tabs-heading">タブ</p>
+    <button type="button" data-file-action="closetab"><span>このタブを閉じる</span><kbd aria-hidden="true">Ctrl+W</kbd></button>
+    <button type="button" data-file-action="closeall"><span>すべてのタブを閉じる</span></button>
+  </section>
+  <details class="session-menu-exit">
+    <summary><span>終了して次回の状態を選ぶ</span><span class="session-menu-arrow" aria-hidden="true">›</span></summary>
+    <div class="session-menu-children">
+      <p>選ぶとウィンドウを閉じます。この選択は今回のみ有効です。</p>
+      <button type="button" data-cmd="exit-clear">次回は新規ファイルで開始</button>
+      <button type="button" data-cmd="exit-all">全タブを次回開く</button>
+      <button type="button" data-cmd="exit-active">表示中のタブだけを次回開く</button>
+    </div>
+  </details>
+</div>
+</details>
 <div class="file-actions">${btn('new','新規作成 · Ctrl+N','new')}<select id="new-format" aria-label="新規ファイルの種類" title="新規ファイルの種類"><option value="md">MD</option><option value="txt">TXT</option><option value="html">HTML</option><option value="json">JSON</option><option value="csv">CSV</option><option value="tsv">TSV</option><option value="xml">XML</option></select>${btn('open','ファイルを開く · Ctrl+O','open')}${btn('recent','最近開いたファイル','◷')}${btn('save','保存 · Ctrl+S','save','save-button')}${btn('saveas','名前を付けて保存 · Ctrl+Shift+S','saveas')}</div><div id="text-edit-actions" hidden></div>
 <span class="header-spacer"></span>
 <div class="toggle-group" aria-label="次に開くファイルの開き方">${btn('layout-windows','次のファイルを別ウィンドウで開く','windows')}${btn('layout-tabs','次のファイルをタブで開く','tabs')}</div>

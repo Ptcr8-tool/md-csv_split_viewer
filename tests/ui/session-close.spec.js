@@ -36,7 +36,7 @@ test('discard preserves original active tab and records only trusted document ID
   expect(session).not.toHaveProperty('documents');
 });
 test('the menu can override the default for this close without changing settings',async({page})=>{
-  await desktop(page,{sessionPolicy:'all'});await page.getByText('ファイル',{exact:true}).first().click();await page.getByRole('button',{name:'表示中のタブだけを次回開く'}).click();
+  await desktop(page,{sessionPolicy:'all'});await page.getByText('ファイル',{exact:true}).first().click();await page.locator('.session-menu-exit summary').click();await page.getByRole('button',{name:'表示中のタブだけを次回開く'}).click();
   await expect.poll(()=>page.evaluate(()=>window._sessionCalls.some(c=>c.method==='window.close'))).toBe(true);
   const calls=await page.evaluate(()=>window._sessionCalls);expect(calls.find(c=>c.method==='session.save').args.policy).toBe('active');expect(calls.filter(c=>c.method==='settings.set')).toHaveLength(0);
 });
