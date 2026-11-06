@@ -45,6 +45,7 @@ installToolbarFolding();
 let settings={openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:false,showFullWidthSpaces:false,showTabs:false,showSpaces:false};
 let textPreview={visible:false,editing:null,parsed:null,clear(){},finishEdit(){return true;},render(){return false;}};
 let textPreviewLoad=null;
+let pendingPreviewScroll=null;
 const textPreviewApi={
   dialogOpen(open){csvDialogOpen=!!open;if(paneSession)paneSession.setDialogOpen(open);else paneHub?.refresh();},
   viewChanged(id,view){const d=documents.find(d=>d.id===id);if(d){d.csvView=normalizeCsvView(view);publishPeers();}},
@@ -89,7 +90,8 @@ async function toggleOutline(){const next=!viewSettings().outlineVisible;autoHid
 async function setViewSettings(change){if(isViewMode(change.viewMode)&&presentationCapabilities(fileKind(current())).view)current().previewViewMode=change.viewMode;await setPresentationSettings(change);}
 const listen=(selector,event,fn)=>$(selector).addEventListener(event,fn);
 $('[data-cmd="outline"]').id='outline-toggle';$('[data-cmd="sync"]').id='sync-toggle';
-const features=new WorkspaceFeatures({current,editor:()=>cm,settings:viewSettings,isMarkdown:md,isHtml,textPreview:()=>textPreview,rich,guard,notify,render,dialog,apply,openLink,onScrollAnchor(anchor){if(paneSession)paneSession.scroll(anchor);else paneHub?.scroll(activeId,anchor);},selectSource(s){if(!md()&&!isHtml()&&effectiveView()==='preview'){current().previewViewMode='split';updateDocumentLayout();updateView();cm?.requestMeasure();}lastSelection=current().selection=s;if(md()&&effectiveView()==='preview'){side='preview';rich.restoreSelection(s.from,s.to);return;}side='source';cm.dispatch({selection:EditorSelection.range(rawToLf(current().raw,s.from),rawToLf(current().raw,s.to)),effects:EditorView.scrollIntoView(rawToLf(current().raw,s.from),{y:'center'})});cm.focus();}});
+function rememberPendingPreviewScroll(anchor){if(current()&&['csv','tsv'].includes(previewKind(current()))&&!textPreview.visible)pendingPreviewScroll={id:current().id,anchor};}
+const features=new WorkspaceFeatures({current,editor:()=>cm,settings:viewSettings,isMarkdown:md,isHtml,textPreview:()=>textPreview,rich,guard,notify,render,dialog,apply,openLink,onPendingPreviewScroll:rememberPendingPreviewScroll,onScrollAnchor(anchor){rememberPendingPreviewScroll(anchor);if(paneSession)paneSession.scroll(anchor);else paneHub?.scroll(activeId,anchor);},selectSource(s){if(!md()&&!isHtml()&&effectiveView()==='preview'){current().previewViewMode='split';updateDocumentLayout();updateView();cm?.requestMeasure();}lastSelection=current().selection=s;if(md()&&effectiveView()==='preview'){side='preview';rich.restoreSelection(s.from,s.to);return;}side='source';cm.dispatch({selection:EditorSelection.range(rawToLf(current().raw,s.from),rawToLf(current().raw,s.to)),effects:EditorView.scrollIntoView(rawToLf(current().raw,s.from),{y:'center'})});cm.focus();}});
 async function toggleOutlineFromPane(focusTarget){if(sourceBusy||composing||current()?.composing){notify('入力の変換を確定してから操作してください。');return;}await toggleOutline();$(focusTarget).focus();}
 listen('#source-wrap-mode','change',guard(async event=>{const wrapMode=event.target.value;await setSettings({wrapMode,wrap:wrapMode!=='none'});}));
 listen('#outline-close','click',guard(()=>toggleOutlineFromPane('#outline-drawer')));
@@ -134,6 +136,8 @@ function render(options={}){
   updateDocumentLayout();
   if(rightActive)rich.restoreSelection(lastSelection.from,lastSelection.to,true);
   features.render();updateView();refreshing=false;renderTabs();updateToolbar();updateStatus();updateTitle();
+  if(pendingPreviewScroll?.id===d.id&&!viewSettings().sync)pendingPreviewScroll=null;
+  if(pendingPreviewScroll?.id===d.id&&textPreview.visible&&viewSettings().sync){const pending=pendingPreviewScroll;requestAnimationFrame(()=>{if(pendingPreviewScroll!==pending||current()?.id!==pending.id||!viewSettings().sync)return;if(textPreview.scrollToPosition(pending.anchor.position,{bottom:pending.anchor.bottom}))pendingPreviewScroll=null;});}
   if(showChunks)renderChunks();
 }
 function apply(from,to,insert,kind='command',options={}){
@@ -540,7 +544,7 @@ async function start(){
     const initial=await host('bootstrap');settings={...settings,...initial.settings};settings.fileTypeSettings=normalizeFileTypeSettings(settings);mode=initial.mode||'normal';
     if(initial.documents?.length){for(const d of initial.documents)newDocument(d,{activate:false});activeId=documents.some(d=>d.id===initial.activeId)?initial.activeId:documents.at(-1).id;lastSelection=current().selection;side=md()&&effectiveView()==='preview'?'preview':'source';}
     else if(initial.showWelcome||!isDesktop&&!settings.welcomeShown){await openWelcome();settings.welcomeShown=true;await host('settings.set',settings);}
-    else newDocument({name:'無題.'+(['md','csv','txt','html','json','tsv','xml'].includes(settings.startupFormat)?settings.startupFormat:'md')});
+    else{const d=newDocument({name:'無題.'+(['md','csv','txt','html','json','tsv','xml'].includes(settings.startupFormat)?settings.startupFormat:'md')},{activate:false});activeId=d.id;lastSelection=d.selection;side=md()&&effectiveView()==='preview'?'preview':'source';}
     paneHub=createPaneHub({current,documents:()=>documents,settings:id=>({...settings,...presentationFor(settings,fileKind(documents.find(d=>d.id===id)||current()))}),mode:()=>mode,locked:()=>!!$('#app').inert||$('#modal').open||csvDialogOpen,notify,save:saveDocument,setSettings,setMode,csvSidecar,
       changed(id){if(id===activeId){lastSelection=current().selection;if(!sourceBusy&&!composing)render();else scheduleRender();}else renderTabs();saveRecovery();},
       position(id,at){if(id===activeId)features.active(at);},followScroll(id,anchor){if(id===activeId)features.followScroll(anchor);},

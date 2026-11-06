@@ -73,7 +73,7 @@ export class WorkspaceFeatures{
     const cm=this.api.editor(),d=this.api.current(),p=$('#preview');if(!cm||!d||!this.api.settings().sync)return;
     const at=Math.min(d.raw.length,Math.max(0,Number.isFinite(position)?position:0));this.suppressUntil=performance.now()+150;
     if(cm.scrollDOM.clientHeight>0){if(bottom)cm.scrollDOM.scrollTop=cm.scrollDOM.scrollHeight;else cm.dispatch({effects:EditorView.scrollIntoView(rawToLf(d.raw,at),{y:'start',yMargin:0})});}
-    const grid=this.grid();if(grid)grid.scrollToPosition(at,{bottom});else if(p.clientHeight>0){if(bottom)p.scrollTop=p.scrollHeight;else this.scrollPreview(at);}
+    const grid=this.grid();if(grid)grid.scrollToPosition(at,{bottom});else{this.api.onPendingPreviewScroll?.({position:at,bottom});if(p.clientHeight>0){if(bottom)p.scrollTop=p.scrollHeight;else this.scrollPreview(at);}}
     this.suppressUntil=performance.now()+150;
   }
   onScroll(owner){

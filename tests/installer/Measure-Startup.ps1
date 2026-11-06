@@ -29,6 +29,8 @@ try {
         $script:active = $Variant
     }
     function Measure-File([string]$File) {
+        # The filename reaches the window title after the document is rendered.
+        # This measures process launch to that signal, not a simulated keystroke.
         $clock = [Diagnostics.Stopwatch]::StartNew()
         $script:process = Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -ArgumentList ('"' + $File + '"') -PassThru
         $name = [IO.Path]::GetFileName($File)
@@ -69,5 +71,9 @@ try {
     if (Test-Path -LiteralPath $uninstall) {
         $uninstaller = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru
         if (-not $uninstaller.WaitForExit(180000)) { throw 'Benchmark uninstall timed out.' }
+        # NSIS may hand off deletion to a temporary child process.
+        $deadline = [DateTime]::UtcNow.AddMinutes(3)
+        while ((Test-Path -LiteralPath $app) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 1 }
+        if (Test-Path -LiteralPath $app) { throw 'Benchmark uninstall did not remove the application.' }
     }
 }
