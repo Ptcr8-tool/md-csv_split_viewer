@@ -17,7 +17,7 @@ const btn=(cmd,label,content,cls='')=>`<button type="button" class="tool ${cls}"
 
 export function applicationShell() {
   return `
-<header class="topbar"><div class="brand"><img src="./icon.svg" alt=""><span>${APP_TITLE}</span><small>Text · Markdown · CSV · 1.0.1 開発版</small></div>
+<header class="topbar"><div class="brand"><img src="./icon.svg" alt=""><span>${APP_TITLE}</span></div>
 <details class="session-menu">
 <summary aria-label="ファイルメニュー">ファイル</summary>
 <div class="session-menu-list">
