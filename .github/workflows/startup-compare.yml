@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/startup-compare.yml'
       - 'tests/installer/Measure-NativeStartup.ps1'
+      - 'native/StartupTrace.cs'
 
 permissions:
   contents: read

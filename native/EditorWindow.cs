@@ -40,12 +40,18 @@ internal sealed class EditorWindow : Form
         this.context = context; this.initial = initial ?? new(); this.recovered = recovered; this.sourceSessionFile = sessionFile; this.recoveryFile=recoveryFile??Path.Combine(Storage.RecoveryPath,Guid.NewGuid().ToString("N")+".json");recoveryStore=new RecoveryStore(this.recoveryFile);preserveRecovery=recovered;
         Text = AppInfo.Title; Width = 1400; Height = 860; MinimumSize = new Size(800, 560); StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(245, 245, 241); AutoScaleMode = AutoScaleMode.Dpi;
+        if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowIconStart);
         var icon = Path.Combine(AppContext.BaseDirectory, "app.ico"); if (File.Exists(icon)) Icon = new Icon(icon);
+        if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowIconComplete);
         foreach (var d in this.initial.Documents) Track(d);
-        Controls.Add(web); Shown += async (_, _) => { if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowShown); await InitializeWeb(); };
+        if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowControlsAddStart);
+        Controls.Add(web);
+        if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowControlsAddComplete);
+        Shown += async (_, _) => { if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowShown); await InitializeWeb(); };
         FormClosing += (_, e) => { if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else ClosePaneWindows(); };
         FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); ClosePaneWindows(); web.Dispose(); if(!preserveRecovery) RecoveryStore.Delete(recoveryFile); if(startupTraceEnabled){StartupTrace.Mark(StartupStage.WindowClosed);_ = Task.Run(StartupTrace.FlushAsync);} };
         timer.Tick += async (_, _) => await PollFiles();
+        if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowConstructorComplete);
     }
     public void CloseForUpdate(){preserveRecovery=true;allowClose=true;Close();}
     public void BringForward() { if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal; Show(); Activate(); }

@@ -37,6 +37,18 @@ try {
     function Close-Editor {
         if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(45000) -or $process.ExitCode -ne 0) { throw 'Editor did not close normally.' }
     }
+    function Assert-WindowTrace($Trace) {
+        $stages = @('WindowCreated','WindowIconStart','WindowIconComplete','WindowControlsAddStart','WindowControlsAddComplete','WindowConstructorComplete','WindowShowStart','WindowShowComplete')
+        $previous = 0.0
+        foreach ($stage in $stages) {
+            $prop = $Trace.elapsedFromMainMs.PSObject.Properties[$stage]
+            if ($null -eq $prop -or $prop.Value -isnot [ValueType] -or [double]::IsNaN([double]$prop.Value) -or [double]::IsInfinity([double]$prop.Value) -or $prop.Value -lt $previous) { throw "Missing, invalid, or out-of-order window stage: $stage" }
+            $previous = [double]$prop.Value
+        }
+        $shown = $Trace.elapsedFromMainMs.PSObject.Properties['WindowShown']
+        $rendered = $Trace.elapsedFromMainMs.PSObject.Properties['EditorRendered']
+        if ($null -eq $shown -or $null -eq $rendered -or $shown.Value -lt $Trace.elapsedFromMainMs.WindowShowStart -or $rendered.Value -lt $shown.Value -or $rendered.Value -lt $previous) { throw 'Window show and render timing is out of order.' }
+    }
     $process = Start-Editor $false
     Wait-Title; Close-Editor
     if (@(Get-ChildItem -LiteralPath $data -Filter 'startup-trace-*.json' -File).Count -ne 0) { throw 'Ordinary startup unexpectedly produced a trace.' }
@@ -62,6 +74,7 @@ try {
         $prop = $trace.elapsedFromMainMs.PSObject.Properties[$stage]
         if ($null -eq $prop -or $prop.Value -isnot [ValueType] -or [double]::IsNaN([double]$prop.Value) -or [double]::IsInfinity([double]$prop.Value) -or $prop.Value -lt 0) { throw "Missing or invalid startup stage: $stage" }
     }
+    Assert-WindowTrace $trace
     if ($text.Contains($root) -or $text.Contains($root.Replace('\','\\')) -or $text.Contains([IO.Path]::GetFileName($file)) -or $text.Contains($content)) { throw 'Trace exposed a local path, filename or document content.' }
     # Even if a command file is routed to the traced window, a restored window
     # can initially render another active tab. This isolated fixture starts
@@ -113,6 +126,7 @@ try {
     } while ([DateTime]::UtcNow -lt $deadline)
     if (-not $restoredTrace) { throw 'Restored session did not render.' }
     if ($restored.windowScope -ne 'first-created' -or -not $restored.elapsedFromMainMs.PSObject.Properties['SingleCommandFile'] -or -not $restored.elapsedFromMainMs.PSObject.Properties['RestoredWindowPresent'] -or -not $restored.elapsedFromMainMs.PSObject.Properties['CommandFileInTracedWindow'] -or $restored.elapsedFromMainMs.PSObject.Properties['CommandFileInOtherWindow']) { throw 'Restored-session scope was not recorded correctly.' }
+    Assert-WindowTrace $restored
     if ($restoredText.Contains($root) -or $restoredText.Contains($root.Replace('\','\\')) -or $restoredText.Contains([IO.Path]::GetFileName($file)) -or $restoredText.Contains([IO.Path]::GetFileName($secondFile)) -or $restoredText.Contains($content) -or $restoredText.Contains($secondContent)) { throw 'Restored trace exposed a path, filename or document content.' }
     # A restored window may render a different active tab even when the new
     # command file is in that window. EditorRendered is not target-file proof.

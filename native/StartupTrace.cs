@@ -15,7 +15,9 @@ internal enum StartupStage
     PipeConnectStart, PipeConnectComplete, PipeConnectFailed,
     NoCommandFile, SingleCommandFile, MultipleCommandFiles, RestoredWindowPresent,
     CommandFileInTracedWindow, CommandFileInOtherWindow,
-    WebInitializationFailed, NavigationFailed, WindowClosed
+    WebInitializationFailed, NavigationFailed, WindowClosed,
+    WindowIconStart, WindowIconComplete, WindowControlsAddStart, WindowControlsAddComplete,
+    WindowConstructorComplete, WindowShowStart, WindowShowComplete
 }
 
 internal sealed class StartupTraceSession

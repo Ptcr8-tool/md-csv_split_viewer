@@ -133,7 +133,10 @@ internal sealed class EditorContext : ApplicationContext
         var window = new EditorWindow(this, initial, recovered, recoveryFile, sessionFile); Windows.Add(window); lastActive = window;
         window.Activated += (_, _) => lastActive = window;
         window.FormClosed += (_, _) => { if(preparingUpdate)AbortUpdate(); Windows.Remove(window); if (lastActive == window) lastActive = Windows.LastOrDefault(); if (Windows.Count == 0) { cancellation.Cancel(); ExitThread(); } };
-        window.Show(); return window;
+        if (window.IsStartupTraceWindow) StartupTrace.Mark(StartupStage.WindowShowStart);
+        window.Show();
+        if (window.IsStartupTraceWindow) StartupTrace.Mark(StartupStage.WindowShowComplete);
+        return window;
     }
     public void NewFile(EditorWindow origin, string? name = null, string? encoding = null)
     {
