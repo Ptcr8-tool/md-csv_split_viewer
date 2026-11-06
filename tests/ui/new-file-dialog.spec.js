@@ -52,6 +52,15 @@ test('cancel leaves the current document alone and browser-only unsupported enco
   expect(await page.evaluate(()=>({count:window.__mdSplit.documents().length,text:window.__mdSplit.getText()}))).toEqual({count:before,text:'keep'});
 });
 
+test('format and encoding choices fit on a small desktop window',async({page})=>{
+  await page.setViewportSize({width:800,height:560});await browserPage(page);await openNew(page);
+  await page.locator('#new-file-more summary').click();
+  const body=await page.locator('#dialog-body').boundingBox(),encoding=await page.locator('#new-file-encoding').boundingBox(),hint=await page.locator('.new-file-hint').boundingBox();
+  expect(encoding.y).toBeGreaterThanOrEqual(body.y);
+  expect(encoding.y+encoding.height).toBeLessThanOrEqual(body.y+body.height);
+  expect(hint.y+hint.height).toBeLessThanOrEqual(body.y+body.height);
+});
+
 test('switching back to a common format replaces the advanced choice',async({page})=>{
   await browserPage(page);await openNew(page);
   await page.locator('#new-file-more summary').click();

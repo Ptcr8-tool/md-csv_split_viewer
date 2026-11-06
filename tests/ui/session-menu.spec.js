@@ -26,3 +26,10 @@ test('file menu remains visible and fits the narrow window',async({page})=>{
   expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(400);
   expect(box.y).toBeGreaterThanOrEqual(0);expect(box.y+box.height).toBeLessThanOrEqual(700);
 });
+
+test('all exit choices fit in a small desktop window',async({page})=>{
+  await page.setViewportSize({width:800,height:560});await page.goto('/');await page.waitForFunction(()=>window.__mdSplit);
+  await page.getByText('ファイル',{exact:true}).first().click();await page.locator('.session-menu-exit summary').click();
+  const menu=await page.locator('.session-menu-list').boundingBox(),last=await page.getByRole('button',{name:'表示中のタブだけを次回開く'}).boundingBox();
+  expect(last.y+last.height).toBeLessThanOrEqual(menu.y+menu.height);
+});

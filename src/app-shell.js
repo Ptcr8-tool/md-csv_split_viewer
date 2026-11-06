@@ -40,7 +40,7 @@ export function applicationShell() {
   <details class="session-menu-exit">
     <summary><span>終了して次回の状態を選ぶ</span><span class="session-menu-arrow" aria-hidden="true">›</span></summary>
     <div class="session-menu-children">
-      <p>選ぶとウィンドウを閉じます。この選択は今回のみ有効です。</p>
+      <p>選ぶと終了します（今回のみ有効）。</p>
       <button type="button" data-cmd="exit-clear">次回は新規ファイルで開始</button>
       <button type="button" data-cmd="exit-all">全タブを次回開く</button>
       <button type="button" data-cmd="exit-active">表示中のタブだけを次回開く</button>
