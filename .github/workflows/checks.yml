@@ -10,6 +10,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 jobs:
   checks:
     runs-on: windows-2025
@@ -66,6 +67,17 @@ jobs:
           $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
           if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
           & ./tests/installer/Run-SetupSmoke.ps1 -Setup $setups[0].FullName
+      # One-off comparison against the last released development build. The
+      # benchmark can later be run manually with any trusted baseline setup.
+      - name: Compare Windows startup against baseline
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[startup-benchmark]')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 42166185411 --repo '${{ github.repository }}' --name MD-Split-Windows-setup --dir baseline-startup
+          if ($LASTEXITCODE -ne 0) { throw 'Could not obtain baseline setup.' }
+          & ./tests/installer/Measure-Startup.ps1 -BaselineSetup 'baseline-startup/MD-Split-1.0.1-Setup.exe' -CandidateWeb 'dist'
       - name: Verify CSV clipboard in real WebView2
         shell: powershell
         run: |
