@@ -18,6 +18,8 @@ internal sealed class EditorWindow : Form
     private readonly RecoveryData initial;
     private readonly SearchTextCache searchTextCache = new();
     private readonly bool recovered;
+    private readonly bool startupTraceEnabled;
+    internal bool IsStartupTraceWindow => startupTraceEnabled;
     private bool ready, allowClose, pollBusy, preserveRecovery;
     private SessionSnapshot? pendingSession;
     private string? sourceSessionFile;
@@ -33,14 +35,16 @@ internal sealed class EditorWindow : Form
     public Dictionary<string, DocumentData> Documents { get; } = [];
     public EditorWindow(EditorContext context, RecoveryData? initial = null, bool recovered = false, string? recoveryFile = null, string? sessionFile = null)
     {
+        startupTraceEnabled = StartupTrace.ClaimFirstWindow();
+        if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowCreated);
         this.context = context; this.initial = initial ?? new(); this.recovered = recovered; this.sourceSessionFile = sessionFile; this.recoveryFile=recoveryFile??Path.Combine(Storage.RecoveryPath,Guid.NewGuid().ToString("N")+".json");recoveryStore=new RecoveryStore(this.recoveryFile);preserveRecovery=recovered;
         Text = AppInfo.Title; Width = 1400; Height = 860; MinimumSize = new Size(800, 560); StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(245, 245, 241); AutoScaleMode = AutoScaleMode.Dpi;
         var icon = Path.Combine(AppContext.BaseDirectory, "app.ico"); if (File.Exists(icon)) Icon = new Icon(icon);
         foreach (var d in this.initial.Documents) Track(d);
-        Controls.Add(web); Shown += async (_, _) => await InitializeWeb();
+        Controls.Add(web); Shown += async (_, _) => { if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowShown); await InitializeWeb(); };
         FormClosing += (_, e) => { if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else ClosePaneWindows(); };
-        FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); ClosePaneWindows(); web.Dispose(); if(!preserveRecovery) RecoveryStore.Delete(recoveryFile); };
+        FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); ClosePaneWindows(); web.Dispose(); if(!preserveRecovery) RecoveryStore.Delete(recoveryFile); if(startupTraceEnabled){StartupTrace.Mark(StartupStage.WindowClosed);_ = Task.Run(StartupTrace.FlushAsync);} };
         timer.Tick += async (_, _) => await PollFiles();
     }
     public void CloseForUpdate(){preserveRecovery=true;allowClose=true;Close();}
@@ -62,20 +66,25 @@ internal sealed class EditorWindow : Form
         {
             var contentFolder = UiContent.GetFolder(AppContext.BaseDirectory);
             var runtime=Path.Combine(AppContext.BaseDirectory,"WebView2Runtime");if(!File.Exists(Path.Combine(runtime,"msedgewebview2.exe")))throw new IOException("同梱の表示環境が見つかりません。セットアップの「修復」を実行してください。");
+            if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WebEnvironmentStart);
             var environment = await CoreWebView2Environment.CreateAsync(runtime, Path.Combine(Storage.Root, "WebView2"),new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments="--disable-background-networking --disable-component-update", IsCustomCrashReportingEnabled=true });
+            if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WebEnvironmentReady);
             await web.EnsureCoreWebView2Async(environment);
+            if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WebControllerReady);
             var core = web.CoreWebView2;
             PrepareWebView(core, contentFolder);
             AttachEditorAccelerators(web, core);
             AttachWebViewHandlers(core, environment, contentFolder);
+            if (startupTraceEnabled) StartupTrace.Mark(StartupStage.NavigationStart);
             UiContent.Navigate(core.Navigate); timer.Start();
         }
         catch (WebView2RuntimeNotFoundException)
         {
+            if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.WebInitializationFailed); _ = Task.Run(StartupTrace.FlushAsync); }
             MessageBox.Show(this,"同梱のWebView2 Runtimeを起動できません。セットアップの「修復」を実行してください。",AppInfo.Title,MessageBoxButtons.OK,MessageBoxIcon.Warning);
             allowClose = true; Close();
         }
-        catch (Exception ex) { Storage.Log(ex); MessageBox.Show(this, "起動できませんでした。\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); allowClose = true; Close(); }
+        catch (Exception ex) { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.WebInitializationFailed); _ = Task.Run(StartupTrace.FlushAsync); } Storage.Log(ex); MessageBox.Show(this, "起動できませんでした。\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); allowClose = true; Close(); }
     }
     private static void PrepareWebView(CoreWebView2 core, string contentFolder)
     {
@@ -124,7 +133,9 @@ internal sealed class EditorWindow : Form
         };
         core.NavigationCompleted += (_, e) =>
         {
+            if (popup is null && startupTraceEnabled && e.IsSuccess) StartupTrace.Mark(StartupStage.NavigationComplete);
             if (e.IsSuccess || e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
+            if (popup is null && startupTraceEnabled) { StartupTrace.Mark(StartupStage.NavigationFailed); _ = Task.Run(StartupTrace.FlushAsync); }
             Storage.Log(new IOException($"UI navigation failed: {core.Source}; error={e.WebErrorStatus}; contentFolder={contentFolder}"));
             if (popup is not null) { popup.ForceClose(); NotifyPane(new { type = "pane-window-error", pane = popup.Pane, message = "別ウィンドウを読み込めませんでした。" }); }
             else if (!ready && !allowClose)
@@ -187,7 +198,7 @@ internal sealed class EditorWindow : Form
                 if (popup is not null && method == "window.title") { popup.Text = root.GetProperty("args").GetProperty("title").GetString(); result = true; }
                 else if (popup is not null && method == "window.close") { popup.BeginInvoke(popup.ForceClose); result = true; }
                 else if (method == "print.show") { core.ShowPrintUI(); result = true; }
-                else if (popup is not null && method is "bootstrap" or "recovery.write" or "update.ready") throw new IOException("別ウィンドウは元の編集ウィンドウを通して操作してください。");
+                else if (popup is not null && method is "bootstrap" or "recovery.write" or "update.ready" or "startup.ready" or "startup.firstInput") throw new IOException("別ウィンドウは元の編集ウィンドウを通して操作してください。");
                 else if (method == "file.drop")
                 {
                     // Accept native-backed File objects rather than paths supplied in JSON.
@@ -263,11 +274,19 @@ internal sealed class EditorWindow : Form
         switch (method)
         {
             case "bootstrap":
+                if (startupTraceEnabled) StartupTrace.Mark(StartupStage.BootstrapStart);
                 var showWelcome = await context.ClaimWelcome(initial.Documents.Count == 0);
                 ready = true; preserveRecovery=false;
                 // Deliver queued opens only after the page has applied its initial documents.
                 _ = Task.Delay(200).ContinueWith(_ => { if(!IsDisposed) BeginInvoke(() => { while(queued.Count>0) Emit(queued.Dequeue()); }); });
-                return new { settings = context.Settings, documents = initial.Documents, mode = initial.Mode, activeId = initial.ActiveId, recoveryReason=initial.Reason, recovered, showWelcome };
+                if (startupTraceEnabled) StartupTrace.Mark(StartupStage.BootstrapReady);
+                return new { settings = context.Settings, documents = initial.Documents, mode = initial.Mode, activeId = initial.ActiveId, recoveryReason=initial.Reason, recovered, showWelcome, startupTraceEnabled };
+            case "startup.ready":
+                if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.EditorRendered); return await StartupTrace.FlushAsync(); }
+                return false;
+            case "startup.firstInput":
+                if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.FirstInput); return await StartupTrace.FlushAsync(); }
+                return false;
             case "window.title": Text = args.GetProperty("title").GetString(); return true;
             case "window.focus": BringForward(); return true;
             case "document.register":

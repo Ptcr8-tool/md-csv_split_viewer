@@ -90,6 +90,7 @@ try
     Assert(!Storage.ApproveLargeFile(big,size=>{confirmations++;return false;})&&confirmations==3,"file growth requires renewed approval");
     var encodingFailed=false;try{Storage.Encode("🙂","shiftjis");}catch(EncoderFallbackException){encodingFailed=true;}Assert(encodingFailed,"unrepresentable Shift JIS text fails without silent replacement");
     await TextCodecChecks.Run(root,Assert);
+    await StartupTraceChecks.Run(root,Assert);
     await TextFileChecks.Run(root,Assert);
     DocumentAuthorityChecks.Run(root,Assert);
     await RecoveryChecks.Run(root,Assert);
