@@ -120,6 +120,22 @@ test('collapsed drawers stay at their original boundaries and do not block pane 
   await expect(page.locator('[data-cmd="open"]')).toBeVisible();
 });
 
+test('collapsed controls show readable, complete section names', async ({page}) => {
+  for (const width of [400, 800, 1280]) {
+    await page.setViewportSize({width,height:800});
+    for (const label of ['タブ','書式','操作']) await page.getByRole('button',{name:`${label}を折りたたむ`}).click();
+    for (const label of ['操作','タブ','書式']) {
+      const button=page.getByRole('button',{name:`${label}を展開`});
+      await expect(button).toHaveText(`${label} ▾`);
+      expect(await button.evaluate(node=>({fontSize:parseFloat(getComputedStyle(node).fontSize),fits:node.scrollWidth<=node.clientWidth&&node.scrollHeight<=node.clientHeight}))).toEqual({fontSize:12,fits:true});
+    }
+    const note=page.locator('#preview-note'),heading=await page.locator('.preview-pane .pane-heading').boundingBox();
+    if(await note.isVisible())expect((await note.boundingBox()).height).toBeLessThanOrEqual(heading.height);
+    expect(await page.locator('[data-cmd="popout-preview"]').evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
+    for (const label of ['書式','タブ','操作']) await page.getByRole('button',{name:`${label}を展開`}).click();
+  }
+});
+
 test('drawers follow visible rows when search or file type changes', async ({page}) => {
   await page.setViewportSize({width:900,height:800});
   await page.getByRole('button',{name:'書式を折りたたむ'}).click();

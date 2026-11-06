@@ -26,9 +26,9 @@ export function installToolbarFolding(root = document) {
   formatbar.id = 'foldable-format';
 
   const entries = [
-    {key:'actions', label:'操作', short:'操', target:actions, section:actions, container:topbar, after:topbar},
-    {key:'tabs', label:'タブ', short:'タ', target:tabbar, section:tabRow, container:tabRow, after:tabRow},
-    {key:'format', label:'書式', short:'書', target:formatbar, section:formatbar, container:formatbar, after:formatbar},
+    {key:'actions', label:'操作', target:actions, section:actions, container:topbar, after:topbar},
+    {key:'tabs', label:'タブ', target:tabbar, section:tabRow, container:tabRow, after:tabRow},
+    {key:'format', label:'書式', target:formatbar, section:formatbar, container:formatbar, after:formatbar},
   ];
   const anchors = [];
   let queued = false;
@@ -50,12 +50,13 @@ export function installToolbarFolding(root = document) {
       groups.get(y).push(anchor);
     }
     for (const group of groups.values()) {
-      group.forEach((anchor, index) => anchor.style.setProperty('--fold-offset', (index * 32) + 'px'));
+      const spacing = root.defaultView?.matchMedia('(max-width: 500px)').matches ? 32 : 62;
+      group.forEach((anchor, index) => anchor.style.setProperty('--fold-offset', (index * spacing) + 'px'));
       let next = group[group.length - 1].nextElementSibling;
       while (next && (next.classList.contains('fold-edge') || getComputedStyle(next).display === 'none')) next = next.nextElementSibling;
       if (next && !next.classList.contains('statusbar')) {
         next.setAttribute('data-fold-reserved', '');
-        next.style.setProperty('--fold-reserve', (group.length * 32) + 'px');
+        next.style.setProperty('--fold-reserve', (group.length * spacing) + 'px');
       }
     }
   }
@@ -63,7 +64,7 @@ export function installToolbarFolding(root = document) {
     if (!queued) { queued = true; requestAnimationFrame(layoutHandles); }
   }
 
-  for (const {key,label,short,target,section,container,after} of entries) {
+  for (const {key,label,target,section,container,after} of entries) {
     const anchor = root.createElement('div');
     anchor.className = 'fold-edge';
     anchor.dataset.foldAnchor = key;
@@ -84,15 +85,12 @@ export function installToolbarFolding(root = document) {
         button.textContent = `${label} ▴`;
         container.append(button);
       } else {
-        button.replaceChildren();
-        const symbol = root.createElement('span');
-        symbol.setAttribute('aria-hidden', 'true');
-        symbol.textContent = '☷›';
-        const caption = root.createElement('span');
-        caption.className = 'fold-edge-caption';
-        caption.setAttribute('aria-hidden', 'true');
-        caption.textContent = short;
-        button.append(symbol, caption);
+        button.textContent = label;
+        const indicator = root.createElement('span');
+        indicator.className = 'fold-indicator';
+        indicator.setAttribute('aria-hidden', 'true');
+        indicator.textContent = ' ▾';
+        button.append(indicator);
         anchor.append(button);
       }
       section.hidden = !expanded;
