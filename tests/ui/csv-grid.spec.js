@@ -153,7 +153,7 @@ test('cell, row and column alignment change display while viewport alignment fol
   await cell(page,1,0).click();await settings(page,{'csv-horizontal':'left','csv-vertical':'viewport'});
   const content=cell(page,1,0).locator('.csv-cell-content'),scroller=page.locator('#text-preview .text-preview-scroll');
   await scroller.evaluate(node=>{node.scrollTop=400;});
-  await expect.poll(async()=>{const a=await content.boundingBox(),b=await scroller.boundingBox();return a.y>=b.y&&a.y+a.height<=b.y+b.height;}).toBe(true);
+  await expect.poll(async()=>{const a=await content.boundingBox(),b=await scroller.boundingBox();return !!a&&!!b&&a.y>=b.y&&a.y+a.height<=b.y+b.height;}).toBe(true);
   expect(await rawText(page)).toBe(text);expect(await page.evaluate(()=>window.__mdSplit.model().dirty)).toBe(false);
 });
 
