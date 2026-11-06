@@ -34,7 +34,7 @@ payload_runtime=payload/'WebView2Runtime'
 # second 930 MB copy. Ordinary independent staging directories still copy it.
 if not (payload_runtime.exists() and os.path.samefile(runtime_dir,payload_runtime)):
     shutil.copytree(runtime_dir,payload_runtime,dirs_exist_ok=True)
-for filename in ['THIRD_PARTY_NOTICES.txt','README.md','SECURITY.md','VALIDATION.md','CHANGELOG.md']:
+for filename in ['LICENSE','THIRD_PARTY_NOTICES.txt','README.md','SECURITY.md','VALIDATION.md','CHANGELOG.md','CODE_SIGNING.md']:
     shutil.copy2(root/filename,payload/filename)
 shutil.copytree(root/'examples',payload/'Examples',dirs_exist_ok=True)
 shutil.copytree(root/'licenses',payload/'Licenses',dirs_exist_ok=True)

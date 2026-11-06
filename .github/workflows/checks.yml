@@ -1,6 +1,11 @@
 name: Build and check
 on:
   workflow_dispatch:
+    inputs:
+      startup_baseline_run:
+        description: 'Optional successful baseline Actions run ID for a web startup comparison'
+        required: false
+        type: string
   push:
   pull_request:
 
@@ -10,22 +15,23 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 jobs:
   checks:
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.x'
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - run: npm ci
@@ -45,7 +51,7 @@ jobs:
           & ./tests/installer/Run-DirectoryChecks.ps1 -MakeNsis $makeNsisPath
       # Cache only the original CAB, never extracted executables. The packaging
       # script validates the CAB size and SHA-256 against installer/runtime.json.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: release/runtime-cache/runtime.cab
           key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
@@ -66,6 +72,21 @@ jobs:
           $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
           if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
           & ./tests/installer/Run-SetupSmoke.ps1 -Setup $setups[0].FullName
+      # Optional comparison uses the same executable and profile with the
+      # baseline and candidate web bundles. It does not compare native changes.
+      - name: Compare Windows startup against baseline
+        if: github.event_name == 'workflow_dispatch' && inputs.startup_baseline_run != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_RUN_ID: ${{ inputs.startup_baseline_run }}
+        run: |
+          if ($env:BASELINE_RUN_ID -notmatch '^\d+$') { throw 'Expected a numeric baseline run ID.' }
+          gh run download $env:BASELINE_RUN_ID --repo '${{ github.repository }}' --name MD-Split-Windows-setup --dir baseline-startup
+          if ($LASTEXITCODE -ne 0) { throw 'Could not obtain baseline setup.' }
+          $baselines = @(Get-ChildItem -LiteralPath baseline-startup -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($baselines.Count -ne 1) { throw 'Expected exactly one baseline setup.' }
+          & ./tests/installer/Measure-Startup.ps1 -BaselineSetup $baselines[0].FullName -CandidateWeb 'dist'
       - name: Verify CSV clipboard in real WebView2
         shell: powershell
         run: |
@@ -82,6 +103,10 @@ jobs:
         shell: powershell
         run: |
           & ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify optional startup trace in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-StartupTraceWebView2.ps1 -Payload 'release/MD-Split'
       - run: npm run test:ui
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

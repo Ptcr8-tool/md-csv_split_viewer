@@ -1,6 +1,6 @@
 {
   "name": "md-split",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "Windows text editor with Markdown and CSV editing and previews",
@@ -32,7 +32,7 @@
     "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.1",
+    "@playwright/test": "^1.64.1",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
   },

@@ -11,7 +11,6 @@ import { DocumentModel, normalized, difference, rawToLf, lfToRaw, preferredEol, 
 import { RichRenderer, parseMarkdown } from './render.js';
 import {collectImageReferences} from './image-references.js';
 import {fileKind,isMarkdown,previewKind,filetypeLabel} from './file-types.js';
-import {TextPreview} from './text-preview.js';
 import {normalizeCsvView} from './csv-view.js';
 import {initialViewMode,isViewMode,presentationFor,presentationCapabilities,normalizeFileTypeSettings,updateFileTypeSettings} from './view-preference.js';
 import {APP_TITLE} from './brand.js';
@@ -19,23 +18,22 @@ import {applicationShell} from './app-shell.js';
 import {installToolbarFolding} from './toolbar-folding.js';
 import {encodingChoices,defaultBom,readBrowserFile,encodeBrowserText,MAX_BROWSER_FILE_BYTES} from './text-codecs.js';
 import './file-editor.css';
-import { splitDiscord } from './discord.js';
+import { DiscordSplitPanel } from './discord-split-panel.js';
+import { DiscordSplitPreview } from './discord-split-preview.js';
+import { DiscordSplitSource } from './discord-split-source.js';
 import { host, isDesktop, onHost } from './bridge.js';
 import {languages,codePresets,codeLanguage} from './code-languages.js';
 import {visibleWhitespace,applyWhitespaceStyles,refreshWhitespaceMarkers} from './whitespace.js';
 import {countLineEndings,replaceLineEndings} from './eol-tools.js';
 import {sourceWrapExtension,sourceWrapMode} from './source-wrap.js';
-import {showSettings} from './settings-panel.js';
 import {createPaneHub,paneSide,setupViewControls} from './panes.js';
 import './panes.css';
 import {lineAt,listLine,indentList,enterList,backspaceList,indentText,fenceInfo,patchCode,codeFence,toggleList,markdownLink} from './editing.js';
 import {WorkspaceFeatures} from './workspace-features.js';
 import {safeBrowserUrl} from './navigation.js';
-import {showHelp} from './help.js';
 import {UpdateController} from './updates.js';
 import {RecoveryWriter} from './recovery.js';
 import {installFileDropOverlay} from './file-drop-overlay.js';
-import {buildPrintContent,setPrintContent} from './print.js';
 import './style.css';
 import './themes.css';
 import './workspace-features.css';
@@ -45,7 +43,10 @@ $('#app').innerHTML=applicationShell();
 installToolbarFolding();
 
 let settings={openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:false,showFullWidthSpaces:false,showTabs:false,showSpaces:false};
-const textPreview=new TextPreview($('#text-preview'),{
+let textPreview={visible:false,editing:null,parsed:null,clear(){},finishEdit(){return true;},render(){return false;}};
+let textPreviewLoad=null;
+let pendingPreviewScroll=null;
+const textPreviewApi={
   dialogOpen(open){csvDialogOpen=!!open;if(paneSession)paneSession.setDialogOpen(open);else paneHub?.refresh();},
   viewChanged(id,view){const d=documents.find(d=>d.id===id);if(d){d.csvView=normalizeCsvView(view);publishPeers();}},
   saveView(id,view){return guard(()=>csvSidecar('save',id,view))();},
@@ -56,10 +57,18 @@ const textPreview=new TextPreview($('#text-preview'),{
   position(id,at){const d=documents.find(d=>d.id===id);if(d&&d===current()){const position=Math.min(d.raw.length,Math.max(0,at));d.selection=lastSelection={from:position,to:position};features.active(position);updateStatus();publishPosition(position);}},
   editing(id,active){const d=documents.find(d=>d.id===id);if(d){if(active){d.componentEditing=window;const at=textPreview.editing?.from;if(d===current()&&typeof at==='number'){features.active(at);publishPosition(at);}}else if(d.componentEditing===window)d.componentEditing=null;}},
   composing(id,active){const d=documents.find(d=>d.id===id);if(d){if(active){d.composing=true;d.compositionOwner=window;}else if(d.compositionOwner===window){d.composing=false;d.compositionOwner=null;}publishPeers();}}
-});
+};
+function ensureTextPreview(){
+  if(!textPreviewLoad)textPreviewLoad=import('./text-preview.js').then(({TextPreview})=>{
+    textPreview=new TextPreview($('#text-preview'),textPreviewApi);
+    if(current()&&previewKind(current()))scheduleRender();
+  }).catch(error=>{textPreviewLoad=null;notify('プレビューを読み込めませんでした: '+error.message,true);});
+  return textPreviewLoad;
+}
 const detachedSide=paneSide();let paneSession=null,paneHub=null,updateView=()=>{},csvDialogOpen=false;
 let documents=[],activeId=null,mode='normal',side='source',cm=null,refreshing=false,composing=false,compositionRange=null,sourceBusy=false,renderTimer=0,recoveryTimer=0,scrollLock=0,showChunks=false;
 let lastSelection={from:0,to:0},plainPasteNext=false,sourceCompositionDocument=null;const languageConfig=new Compartment();let sourceLanguageKey=null,languageEpoch=0;const wrapConfig=new Compartment(),sourceThemeConfig=new Compartment(),whitespaceConfig=new Compartment();
+let startupTraceEnabled=false,startupInputReported=false;
 const rich=new RichRenderer($('#preview'),{
   patch:(from,to,insert,options={})=>apply(from,to,insert,'command',options),
   refresh:()=>render(),copyText:text=>guard(()=>copyText(text))(),openLink:url=>guard(()=>openLink(url))(),
@@ -69,6 +78,7 @@ const rich=new RichRenderer($('#preview'),{
 const td=new TurndownService({headingStyle:'atx',codeBlockStyle:'fenced',bulletListMarker:'-'});td.use(turndownGfm);
 const current=()=>documents.find(d=>d.id===activeId);
 const md=()=>isMarkdown(current());
+const splitAvailable=()=>fileKind(current())==='text'||md()&&mode==='discord';
 const isHtml=()=>fileKind(current())==='html';
 function effectiveView(){if(detachedSide==='source')return 'source';if(detachedSide==='preview')return md()||previewKind(current())?'preview':'source';return md()||previewKind(current())?current()?.previewViewMode||initialViewMode(settings,fileKind(current())):'source';}
 // On a narrow window, start with the navigation tucked away without changing
@@ -81,7 +91,8 @@ async function toggleOutline(){const next=!viewSettings().outlineVisible;autoHid
 async function setViewSettings(change){if(isViewMode(change.viewMode)&&presentationCapabilities(fileKind(current())).view)current().previewViewMode=change.viewMode;await setPresentationSettings(change);}
 const listen=(selector,event,fn)=>$(selector).addEventListener(event,fn);
 $('[data-cmd="outline"]').id='outline-toggle';$('[data-cmd="sync"]').id='sync-toggle';
-const features=new WorkspaceFeatures({current,editor:()=>cm,settings:viewSettings,isMarkdown:md,isHtml,textPreview:()=>textPreview,rich,guard,notify,render,dialog,apply,openLink,onScrollAnchor(anchor){if(paneSession)paneSession.scroll(anchor);else paneHub?.scroll(activeId,anchor);},selectSource(s){if(!md()&&!isHtml()&&effectiveView()==='preview'){current().previewViewMode='split';updateDocumentLayout();updateView();cm?.requestMeasure();}lastSelection=current().selection=s;if(md()&&effectiveView()==='preview'){side='preview';rich.restoreSelection(s.from,s.to);return;}side='source';cm.dispatch({selection:EditorSelection.range(rawToLf(current().raw,s.from),rawToLf(current().raw,s.to)),effects:EditorView.scrollIntoView(rawToLf(current().raw,s.from),{y:'center'})});cm.focus();}});
+function rememberPendingPreviewScroll(anchor){if(current()&&['csv','tsv'].includes(previewKind(current()))&&!textPreview.visible)pendingPreviewScroll={id:current().id,anchor};}
+const features=new WorkspaceFeatures({current,editor:()=>cm,settings:viewSettings,isMarkdown:md,isHtml,textPreview:()=>textPreview,rich,guard,notify,render,dialog,apply,openLink,onPendingPreviewScroll:rememberPendingPreviewScroll,onScrollAnchor(anchor){rememberPendingPreviewScroll(anchor);if(paneSession)paneSession.scroll(anchor);else paneHub?.scroll(activeId,anchor);},selectSource(s){if(!md()&&!isHtml()&&effectiveView()==='preview'){current().previewViewMode='split';updateDocumentLayout();updateView();cm?.requestMeasure();}lastSelection=current().selection=s;if(md()&&effectiveView()==='preview'){side='preview';rich.restoreSelection(s.from,s.to);return;}side='source';cm.dispatch({selection:EditorSelection.range(rawToLf(current().raw,s.from),rawToLf(current().raw,s.to)),effects:EditorView.scrollIntoView(rawToLf(current().raw,s.from),{y:'center'})});cm.focus();}});
 async function toggleOutlineFromPane(focusTarget){if(sourceBusy||composing||current()?.composing){notify('入力の変換を確定してから操作してください。');return;}await toggleOutline();$(focusTarget).focus();}
 listen('#source-wrap-mode','change',guard(async event=>{const wrapMode=event.target.value;await setSettings({wrapMode,wrap:wrapMode!=='none'});}));
 listen('#outline-close','click',guard(()=>toggleOutlineFromPane('#outline-drawer')));
@@ -91,23 +102,23 @@ const recoveryWriter=new RecoveryWriter({host,documents:()=>documents,ensureRegi
 const updates=new UpdateController({settings:()=>settings,documents:()=>documents,notify,dialog,saveDocument,switchDocument,render,ensureRegistered,clearRecoveryTimer:()=>clearTimeout(recoveryTimer),writeRecovery:reason=>recoveryWriter.write(reason),mode:()=>mode,activeId:()=>activeId});
 function notify(text,error=false){const n=$('#toast');n.textContent=text;n.className=error?'visible error':'visible';clearTimeout(n._timer);n._timer=setTimeout(()=>n.className='',error?6500:2600);}
 function guard(fn){return (...args)=>{try{return Promise.resolve(fn(...args)).catch(e=>notify(e.message||String(e),true));}catch(e){notify(e.message||String(e),true);}};}
-function newDocument(data={}){const d=new DocumentModel(data);d.nativeRegistration=isDesktop?host('document.register',{id:d.id,name:d.name}).catch(error=>{d.registrationError=error;}):Promise.resolve();d.previewViewMode=initialViewMode(settings,fileKind(d));documents.push(d);switchDocument(d.id);if(d.encodingNotice)notify(d.encodingNotice);return d;}
+function newDocument(data={},options={}){const d=new DocumentModel(data);d.nativeRegistration=isDesktop?host('document.register',{id:d.id,name:d.name}).catch(error=>{d.registrationError=error;}):Promise.resolve();d.previewViewMode=initialViewMode(settings,fileKind(d));documents.push(d);if(options.activate!==false)switchDocument(d.id);if(d.encodingNotice)notify(d.encodingNotice);return d;}
 async function ensureRegistered(d){if(d.nativeRegistration)await d.nativeRegistration;if(d.registrationError)throw d.registrationError;}
 function switchDocument(id){activeId=id;lastSelection=current().selection;side=md()&&effectiveView()==='preview'?'preview':'source';render({resetSource:true});saveRecovery();}
 function selection(){const d=current();if(!d)return {from:0,to:0};if(md()&&side==='preview'){const s=rich.selection();if(s)lastSelection=s;}else if(cm){const s=cm.state.selection.main;lastSelection={from:lfToRaw(d.raw,s.from),to:lfToRaw(d.raw,s.to)};}return {...lastSelection};}
 const markdownCommands=new Set(['bold','italic','strike','underline','spoiler','inlinecode','bullet','number','check','quote','subtext','link','image','table','code','mermaid','details','rule','copy-rich']);
 function clearRichState(){rich.source='';rich.leaves=[];rich.formats=[];rich.images=[];rich.codeBlocks=[];rich.headings=[];if($('#preview').childNodes.length)$('#preview').replaceChildren();}
-function updateDocumentLayout(){const undoParent=md()?$('.formatbar'):$('#text-edit-actions');for(const command of ['undo','redo']){const b=$('[data-cmd="'+command+'"]');if(b.parentElement!==undoParent)undoParent.append(b);}$('#text-edit-actions').hidden=md();$('#source').setAttribute('aria-label',md()?'Markdown原文':filetypeLabel(current())+'原文');const kind=fileKind(current()),hasPreview=md()||!!previewKind(current());$('#app').dataset.documentKind=kind;$('.editor-panes').dataset.view=effectiveView();$('#outline-panel').hidden=!presentationCapabilities(kind).outline||!viewSettings().outlineVisible;$('#outline-drawer').hidden=!presentationCapabilities(kind).outline||viewSettings().outlineVisible||!!detachedSide;$('[data-cmd="outline"]').hidden=!presentationCapabilities(kind).outline;for(const cmd of ['mode-normal','mode-discord'])$('[data-cmd="'+cmd+'"]').hidden=!md();$('.render-toggle').hidden=!md();$('[data-cmd="sync"]').hidden=!presentationCapabilities(kind).sync;$('.view-controls').hidden=!hasPreview;$('[data-cmd="copy-rich"]').hidden=!md();$('[data-cmd="popout-preview"]').hidden=!hasPreview;if(!md()){$('.chunks-panel').hidden=true;showChunks=false;}}
-function configureSourceLanguage(){const d=current(),kind=fileKind(d),key=kind+':'+d.name;if(key===sourceLanguageKey)return;sourceLanguageKey=key;const editor=cm,epoch=++languageEpoch;const install=extension=>{if(editor!==cm||epoch!==languageEpoch)return;if(sourceBusy||composing){setTimeout(()=>install(extension),50);return;}editor.dispatch({effects:languageConfig.reconfigure(extension)});};if(kind==='markdown'){install(markdown({codeLanguages:languages}));return;}const language=LanguageDescription.matchFilename(languages,d.name)||codeLanguage(kind);if(!language){install([]);return;}if(language.support)install(language.support);else{install([]);language.load().then(install).catch(()=>{});}}
+function updateDocumentLayout(){const undoParent=md()?$('.formatbar'):$('#text-edit-actions');for(const command of ['undo','redo']){const b=$('[data-cmd="'+command+'"]');if(b.parentElement!==undoParent)undoParent.append(b);}$('#text-edit-actions').hidden=md();$('#source').setAttribute('aria-label',md()?'Markdown原文':filetypeLabel(current())+'原文');const kind=fileKind(current()),hasPreview=md()||!!previewKind(current());$('#app').dataset.documentKind=kind;$('.editor-panes').dataset.view=effectiveView();$('#outline-panel').hidden=!presentationCapabilities(kind).outline||!viewSettings().outlineVisible;$('#outline-drawer').hidden=!presentationCapabilities(kind).outline||viewSettings().outlineVisible||!!detachedSide;$('[data-cmd="outline"]').hidden=!presentationCapabilities(kind).outline;for(const cmd of ['mode-normal','mode-discord'])$('[data-cmd="'+cmd+'"]').hidden=!md();$('.render-toggle').hidden=!md();$('[data-cmd="sync"]').hidden=!presentationCapabilities(kind).sync;$('.view-controls').hidden=!hasPreview;$('[data-cmd="copy-rich"]').hidden=!md();$('[data-cmd="popout-preview"]').hidden=!hasPreview;if(!splitAvailable()){$('.chunks-panel').hidden=true;showChunks=false;splitPanel.reset();splitMarkers.clear();splitSourceMarkers.clear();}}
+function configureSourceLanguage(){const d=current(),kind=fileKind(d),key=kind+':'+d.name;if(key===sourceLanguageKey)return;sourceLanguageKey=key;const editor=cm,epoch=++languageEpoch;const install=extension=>{if(editor!==cm||epoch!==languageEpoch)return;if(sourceBusy||composing){setTimeout(()=>install(extension),50);return;}editor.dispatch({effects:languageConfig.reconfigure(extension)});};if(kind==='markdown'){install(markdown({codeLanguages:languages}));return;}if(/\.(?:txt|text|log)$/i.test(d.name)){install([]);return;}const language=LanguageDescription.matchFilename(languages,d.name)||(kind==='text'?null:codeLanguage(kind));if(!language){install([]);return;}if(language.support)install(language.support);else{install([]);language.load().then(install).catch(()=>{});}}
 function createEditor(text){
   const customKeys=[{key:'Mod-z',run:()=>{history(false);return true;}},{key:'Mod-y',run:()=>{history(true);return true;}},{key:'Mod-Shift-z',run:()=>{history(true);return true;}},{key:'Tab',run:()=>sourceKey('tab')},{key:'Shift-Tab',run:()=>sourceKey('outdent')},{key:'Backspace',run:()=>sourceKey('backspace')},{key:'Enter',run:()=>sourceKey('enter')}];
   sourceLanguageKey=null;
   cm=new EditorView({parent:$('#source'),state:EditorState.create({doc:normalized(text),extensions:[features.extensions(),lineNumbers(),highlightActiveLine(),drawSelection(),languageConfig.of(md()?markdown({codeLanguages:languages}):[]),syntaxHighlighting(sourceHighlightStyle),sourceThemeConfig.of(sourceEditorTheme(document.documentElement.dataset.theme==='dark')),whitespaceConfig.of(visibleWhitespace(settings,()=>current()?.raw??'')),Prec.highest(keymap.of(customKeys)),keymap.of(defaultKeymap),wrapConfig.of(sourceWrapExtension(settings)),EditorView.updateListener.of(u=>{
     if(refreshing||!current())return;
-    if(u.docChanged){const d=current();if(peerInputLocked()||u.startState.doc.toString()!==normalized(d.raw)){scheduleRender();notify('別の表示から更新されました。もう一度入力してください。');return;}side='source';const s=u.state.selection.main;d.editNormalized(normalized(d.raw),u.state.doc.toString(),{from:s.from,to:s.to});lastSelection=d.selection;saveRecovery();scheduleRender();}
+    if(u.docChanged){const d=current();if(peerInputLocked()||u.startState.doc.toString()!==normalized(d.raw)){scheduleRender();notify('別の表示から更新されました。もう一度入力してください。');return;}side='source';const s=u.state.selection.main;d.editNormalized(normalized(d.raw),u.state.doc.toString(),{from:s.from,to:s.to});lastSelection=d.selection;saveRecovery();scheduleRender();if(startupTraceEnabled&&!startupInputReported&&u.transactions.some(t=>t.isUserEvent('input'))){startupInputReported=true;requestAnimationFrame(()=>host('startup.firstInput').catch(()=>{}));}}
     if(u.selectionSet){const d=current(),s=u.state.selection.main;d.selection=lastSelection={from:lfToRaw(d.raw,s.from),to:lfToRaw(d.raw,s.to)};updateStatus();features.active(d.selection.from);publishPosition(d.selection.from);}
   }),EditorView.domEventHandlers({mousedown:(e,view)=>features.sourcePointer(e,view),dblclick:(e,view)=>features.sourcePointer(e,view),focus:()=>{side='source';updateToolbar();},compositionstart:()=>{if(peerInputLocked())return true;sourceBusy=true;sourceCompositionDocument=current();current().composing=true;current().compositionOwner=window;publishPeers();},compositionend:()=>{const d=sourceCompositionDocument;if(!d)return;setTimeout(()=>{if(sourceCompositionDocument!==d)return;sourceCompositionDocument=null;sourceBusy=false;if(d.compositionOwner===window){d.composing=false;d.compositionOwner=null;}publishPeers();scheduleRender();},0);}})]})});
-  cm.scrollDOM.addEventListener('scroll',()=>features.onScroll('source'));
+  cm.scrollDOM.addEventListener('scroll',()=>{features.onScroll('source');if(showChunks)splitSourceMarkers.schedule();});
 }
 function scheduleRender(){clearTimeout(renderTimer);renderTimer=setTimeout(()=>{if(!sourceBusy&&!composing)render();else scheduleRender();},35);}
 function render(options={}){
@@ -122,10 +133,12 @@ function render(options={}){
   if(settings.showLineBreaks)cm.dispatch({effects:refreshWhitespaceMarkers.of(null)});
   configureSourceLanguage();
   if(md()){textPreview.clear();$('#preview').hidden=false;rich.render(d.raw,mode,d.id,{...settings,selection:d.selection});}
-  else{side='source';$('#preview').hidden=true;clearRichState();textPreview.render(d.raw,previewKind(d),{docId:d.id,fontSize:settings.fontSize,csvView:d.csvView});}
+  else{side='source';$('#preview').hidden=true;clearRichState();const kind=previewKind(d);if(kind&&!textPreviewLoad)ensureTextPreview();textPreview.render(d.raw,kind,{docId:d.id,fontSize:settings.fontSize,csvView:d.csvView});}
   updateDocumentLayout();
   if(rightActive)rich.restoreSelection(lastSelection.from,lastSelection.to,true);
   features.render();updateView();refreshing=false;renderTabs();updateToolbar();updateStatus();updateTitle();
+  if(pendingPreviewScroll?.id===d.id&&!viewSettings().sync)pendingPreviewScroll=null;
+  if(pendingPreviewScroll?.id===d.id&&textPreview.visible&&viewSettings().sync){const pending=pendingPreviewScroll;requestAnimationFrame(()=>{if(pendingPreviewScroll!==pending||current()?.id!==pending.id||!viewSettings().sync)return;if(textPreview.scrollToPosition(pending.anchor.position,{bottom:pending.anchor.bottom}))pendingPreviewScroll=null;});}
   if(showChunks)renderChunks();
 }
 function apply(from,to,insert,kind='command',options={}){
@@ -153,7 +166,7 @@ function updateToolbar(){
   for(const c of ['underline','spoiler','subtext'])$(`[data-cmd="${c}"]`).hidden=mode!=='discord';
   for(const c of ['table','check','mermaid','details','rule'])$(`[data-cmd="${c}"]`).disabled=!markdownFile||mode==='discord';
   $('#heading').querySelectorAll('option').forEach(o=>o.disabled=mode==='discord'&&Number(o.value)>3);
-  $('#render-label').textContent=mode==='discord'?'DISCORD':'DOCUMENT';$('#preview-note').textContent=mode==='discord'?'Discord向けの表示':'そのまま編集できます';$('.discord-controls').hidden=!markdownFile||mode!=='discord';if(!markdownFile){$('#render-label').textContent=pk?'PREVIEW':'TEXT';$('#preview-note').textContent=pk==='html'?'読み取り専用プレビュー':pk?'セルをダブルクリックして編集':'';}
+  $('#render-label').textContent=mode==='discord'?'DISCORD':'DOCUMENT';$('#preview-note').textContent=mode==='discord'?'Discord向けの表示':'そのまま編集できます';$('.discord-controls').hidden=!splitAvailable();if(!markdownFile){$('#render-label').textContent=pk?'PREVIEW':'TEXT';$('#preview-note').textContent=pk==='html'?'読み取り専用プレビュー':pk?'セルをダブルクリックして編集':'';}
   $('[data-cmd="undo"]').disabled=!current()?.undoStack.length;$('[data-cmd="redo"]').disabled=!current()?.redoStack.length;
   const paper=settings.colorTheme?.startsWith('parchment');
   $('.brightness-controls').setAttribute('aria-disabled',String(!!paper));
@@ -302,6 +315,8 @@ async function printPane(target){
       await new Promise(resolve=>setTimeout(resolve,100));
     }
   }
+  const {buildPrintContent,setPrintContent}=await import('./print.js');
+  if(current()!==d||d.raw!==snapshot)throw new Error('文書が変更されたため、印刷を中止しました。');
   const content=buildPrintContent({side:target,raw:d.raw,kind,preview:$('#preview'),textPreview,fontSize:settings.fontSize,scope});
   setPrintContent(content);
   // The root remains mounted for the whole browser print preview lifecycle.
@@ -457,12 +472,24 @@ async function openBrowserFile(file,encoding){const data=await readBrowserFileWi
 listen('#file-input','change',guard(async e=>{try{for(const f of e.target.files)await openBrowserFile(f,e.target.dataset.encoding||undefined);}finally{e.target.value='';delete e.target.dataset.encoding;}}));
 listen('#image-input','change',guard(async e=>{await importImages(Array.from(e.target.files));e.target.value='';}));
 function searchDialog(){if(paneSession&&!md()&&detachedSide==='preview'){const selected=features.pendingSearchSelection||features.captureSearchSelection();features.pendingSearchSelection=null;return paneSession.search(true,{text:selected.text,richSelection:selected.richSelection});}features.openSearch(true);}
-function settingsDialog(){const documentAtOpen=current(),kindAtOpen=fileKind(documentAtOpen);return showSettings({settings:()=>settings,fileKind:()=>kindAtOpen,dialog,setSettings:async change=>{const before=presentationFor(settings,kindAtOpen),after=presentationFor({...settings,...change},kindAtOpen);if(isViewMode(after.defaultViewMode)&&after.defaultViewMode!==before.defaultViewMode)documentAtOpen.previewViewMode=after.defaultViewMode;await setSettings(change);saveRecovery();},previewSettings(change){settings={...settings,...change};applySettings();},updates,host,notify,guard});}
+async function settingsDialog(){const documentAtOpen=current(),kindAtOpen=fileKind(documentAtOpen);const {showSettings}=await import('./settings-panel.js');return showSettings({settings:()=>settings,fileKind:()=>kindAtOpen,dialog,setSettings:async change=>{const before=presentationFor(settings,kindAtOpen),after=presentationFor({...settings,...change},kindAtOpen);if(isViewMode(after.defaultViewMode)&&after.defaultViewMode!==before.defaultViewMode)documentAtOpen.previewViewMode=after.defaultViewMode;await setSettings(change);saveRecovery();},previewSettings(change){settings={...settings,...change};applySettings();},updates,host,notify,guard});}
 async function openWelcome(){const {welcomeDocument}=await import('./welcome.js');newDocument(welcomeDocument());}
+async function newDocumentWithOptions(){
+  const {chooseNewFile}=await import('./new-file-dialog.js');
+  const options=await chooseNewFile({dialog,isDesktop,defaultFormat:$('#new-format').value});
+  if(!options)return;
+  const name='無題.'+options.extension;
+  if(isDesktop)await host('file.new',{name,encoding:options.encoding});
+  else newDocument({name,encoding:options.encoding,hasBom:defaultBom(options.encoding)});
+}
 
-function help(){return showHelp(dialog,guard(()=>updates.check(true)),guard(openWelcome));}
-function renderChunks(){const list=$('#chunks');list.replaceChildren();try{const chunks=splitDiscord(current().raw,settings.limit);chunks.forEach((part,i)=>{const card=document.createElement('section');card.className='chunk';const head=document.createElement('div');head.className='chunk-head';const label=document.createElement('strong');label.textContent=`${i+1} / ${chunks.length}`;const count=document.createElement('small');count.textContent=part.count.toLocaleString()+'字';const b=document.createElement('button');b.textContent='コピー';b.className='secondary';b.onclick=guard(async()=>{await copyText(part.text);b.textContent='✓ コピー済み';card.classList.add('copied');});head.append(label,count,b);const pre=document.createElement('pre');pre.textContent=part.text;card.append(head,pre);list.append(card);});}catch(e){const p=document.createElement('p');p.className='error-text';p.textContent=e.message;list.append(p);}}
-listen('#show-chunks','click',()=>{showChunks=!showChunks;$('.chunks-panel').hidden=!showChunks;if(showChunks)renderChunks();});listen('#close-chunks','click',()=>{showChunks=false;$('.chunks-panel').hidden=true;});
+async function help(){const {showHelp}=await import('./help.js');return showHelp(dialog,guard(()=>updates.check(true)),guard(openWelcome));}
+const splitMarkers=new DiscordSplitPreview($('#preview'),rich,()=>({enabled:showChunks&&md()&&mode==='discord',doc:current(),limit:settings.limit,panel:splitPanel}));
+const splitSourceMarkers=new DiscordSplitSource($('#source'),()=>({enabled:showChunks&&fileKind(current())==='text',doc:current(),limit:settings.limit,panel:splitPanel,editor:cm}));
+const splitPanel=new DiscordSplitPanel($('#chunks'),{copy:copyText,notify,onRender:()=>{splitMarkers.render();splitSourceMarkers.schedule();}});
+function renderChunks(){if(current())splitPanel.render(current(),settings.limit);}
+listen('#show-chunks','click',()=>{showChunks=!showChunks;$('.chunks-panel').hidden=!showChunks;if(showChunks)renderChunks();else{splitPanel.reset();splitMarkers.clear();splitSourceMarkers.clear();}});
+listen('#close-chunks','click',()=>{showChunks=false;$('.chunks-panel').hidden=true;splitPanel.reset();splitMarkers.clear();splitSourceMarkers.clear();});
 listen('#limit','change',guard(async e=>{let limit=Number(e.target.value);if(e.target.value==='custom'){const r=await promptFields('文字数上限',[{id:'custom-limit',label:'上限（32〜100000文字）',value:String(settings.limit),type:'number'}]);if(!r)return;limit=Number(r['custom-limit']);}await setSettings({limit:Math.max(32,Math.min(100000,limit||2000))});updateStatus();if(showChunks)renderChunks();}));
 listen('#heading','change',e=>{if(e.target.value===''||!md())return;const n=Number(e.target.value);prefixLines(line=>(n?'#'.repeat(n)+' ':'')+line.replace(/^ {0,3}#{1,6}\s+/,''));e.target.value='';});
 listen('#preview','contextmenu',e=>{if(e.target.closest('[data-cell]')){e.preventDefault();guard(tableMenu)();}});
@@ -470,7 +497,7 @@ const commands={
   'view-split':()=>setViewSettings({viewMode:'split'}),'view-source':()=>setViewSettings({viewMode:'source'}),'view-preview':()=>setViewSettings({viewMode:'preview'}),
   'theme-light':()=>setSettings({theme:'light'}),'theme-dark':()=>setSettings({theme:'dark'}),'theme-system':()=>setSettings({theme:'system'}),'popout-source':()=>paneHub?.open('source'),'popout-preview':()=>paneHub?.open('preview'),'focus-owner':()=>paneSession?.focusOwner(),
   recent:()=>features.recent(),outline:toggleOutline,sync:()=>setPresentationSettings({sync:!viewSettings().sync}),replace:searchDialog,
-  new:async()=>{const name='無題.'+$('#new-format').value;if(isDesktop)await host('file.new',{name});else newDocument({name});},open:openFiles,save:()=>saveDocument(),saveas:()=>saveDocument(current(),true),closetab:()=>closeDocument(activeId),closeall:()=>closeAllDocuments(),closewindow:()=>closeWindow(),'exit-clear':()=>closeWindow('clear'),'exit-all':()=>closeWindow('all'),'exit-active':()=>closeWindow('active'),undo:()=>history(false),redo:()=>history(true),
+  new:async()=>{const name='無題.'+$('#new-format').value;if(isDesktop)await host('file.new',{name});else newDocument({name});},'new-options':newDocumentWithOptions,open:openFiles,save:()=>saveDocument(),saveas:()=>saveDocument(current(),true),closetab:()=>closeDocument(activeId),closeall:()=>closeAllDocuments(),closewindow:()=>closeWindow(),'exit-clear':()=>closeWindow('clear'),'exit-all':()=>closeWindow('all'),'exit-active':()=>closeWindow('active'),undo:()=>history(false),redo:()=>history(true),
   'layout-windows':()=>setSettings({openPolicy:'windows'}),'layout-tabs':()=>setSettings({openPolicy:'tabs'}),
   'mode-normal':()=>setMode('normal'),'mode-discord':()=>setMode('discord'),
   bold:()=>wrap('**'),italic:()=>wrap('*'),strike:()=>wrap('~~'),underline:()=>wrap('__'),spoiler:()=>wrap('||'),inlinecode:()=>wrap('`','`','コード'),
@@ -479,7 +506,7 @@ const commands={
   'print-source':()=>printPane('source'),'print-preview':()=>printPane('preview'),
   'copy-source':()=>copyText(current().raw),'copy-rich':async()=>{if(mode==='discord')return copyText(current().raw);const r=document.createRange();r.selectNodeContents($('#preview'));const data=clipboardContent(r);if(isDesktop)await host('clipboard.rich',data);else await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([data.html],{type:'text/html'}),'text/plain':new Blob([data.text],{type:'text/plain'})})]);notify('コピーしました');},search:searchDialog,settings:settingsDialog,help
 };
-function setMode(value){if(!md())return;if(paneSession){paneSession.setMode(value);return;}mode=value;showChunks=false;$('.chunks-panel').hidden=true;render();saveRecovery();}
+function setMode(value){if(!md())return;if(paneSession){paneSession.setMode(value);return;}mode=value;showChunks=false;$('.chunks-panel').hidden=true;splitPanel.reset();splitMarkers.clear();splitSourceMarkers.clear();render();saveRecovery();}
 document.addEventListener('mousedown',e=>{const command=e.target.closest('[data-cmd],[data-file-action]');if(command){if(['search','replace'].includes(command.dataset.cmd))features.rememberSearchSelection();if(!md())textPreview.finishEdit();selection();e.preventDefault();}});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-cmd],[data-file-action]'),cmd=b?.dataset.cmd||b?.dataset.fileAction;if(b&&!b.disabled&&commands[cmd]){if(sourceBusy||composing||current()?.composing){notify('入力の変換を確定してから操作してください。');return;}if(!md()&&markdownCommands.has(cmd))return;guard(commands[cmd])();}});
 document.addEventListener('keydown',e=>{if(e.isComposing||composing||current()?.composing)return;if(e.target.closest('dialog'))return;if(!(e.ctrlKey||e.metaKey))return;const key=e.key.toLowerCase();if(e.ctrlKey&&e.altKey&&!e.metaKey&&!e.shiftKey&&!e.getModifierState('AltGraph')){const wrapMode={x:'none',s:'column',w:'window'}[key];if(wrapMode){e.preventDefault();guard(async()=>{await setSettings({wrapMode,wrap:wrapMode!=='none'});notify({none:'原文を折り返さない',column:'原文を指定桁で折り返す',window:'原文を右端で折り返す'}[wrapMode]);})();}return;}if(e.altKey)return;if(detachedSide&&['n','o'].includes(key)){e.preventDefault();paneSession?.focusOwner();return;}let command={n:'new',o:'open',s:e.shiftKey?'saveas':'save',b:'bold',i:'italic',k:'link',f:'search',h:'replace',w:e.shiftKey?'closewindow':'closetab'}[key];if(command){e.preventDefault();if(!md()&&markdownCommands.has(command))return;guard(commands[command])();}else if(key==='z'&&side==='preview'){e.preventDefault();history(e.shiftKey);}else if(key==='y'&&side==='preview'){e.preventDefault();history(true);}else if(key==='tab'&&!detachedSide&&!e.defaultPrevented){e.preventDefault();const at=documents.findIndex(d=>d.id===activeId);switchDocument(documents[(at+(e.shiftKey?documents.length-1:1))%documents.length].id);}});
@@ -515,11 +542,10 @@ async function start(){
       window.addEventListener('pagehide',()=>{textPreview.finishEdit({force:true});if(current()?.componentEditing===window)current().componentEditing=null;if(current()?.compositionOwner===window){current().composing=false;current().compositionOwner=null;}paneSession?.detach();});
     }catch(e){$('#app').replaceChildren();const p=document.createElement('p');p.textContent=e.message;$('#app').append(p);return;}
   }else{
-    const initial=await host('bootstrap');settings={...settings,...initial.settings};settings.fileTypeSettings=normalizeFileTypeSettings(settings);mode=initial.mode||'normal';
-    if(initial.documents?.length)for(const d of initial.documents)newDocument(d);
+    const initial=await host('bootstrap');startupTraceEnabled=initial.startupTraceEnabled===true;settings={...settings,...initial.settings};settings.fileTypeSettings=normalizeFileTypeSettings(settings);mode=initial.mode||'normal';
+    if(initial.documents?.length){for(const d of initial.documents)newDocument(d,{activate:false});activeId=documents.some(d=>d.id===initial.activeId)?initial.activeId:documents.at(-1).id;lastSelection=current().selection;side=md()&&effectiveView()==='preview'?'preview':'source';}
     else if(initial.showWelcome||!isDesktop&&!settings.welcomeShown){await openWelcome();settings.welcomeShown=true;await host('settings.set',settings);}
-    else newDocument({name:'無題.'+(['md','csv','txt','html','json','tsv','xml'].includes(settings.startupFormat)?settings.startupFormat:'md')});
-    if(initial.activeId&&documents.some(d=>d.id===initial.activeId))switchDocument(initial.activeId);
+    else{const d=newDocument({name:'無題.'+(['md','csv','txt','html','json','tsv','xml'].includes(settings.startupFormat)?settings.startupFormat:'md')},{activate:false});activeId=d.id;lastSelection=d.selection;side=md()&&effectiveView()==='preview'?'preview':'source';}
     paneHub=createPaneHub({current,documents:()=>documents,settings:id=>({...settings,...presentationFor(settings,fileKind(documents.find(d=>d.id===id)||current()))}),mode:()=>mode,locked:()=>!!$('#app').inert||$('#modal').open||csvDialogOpen,notify,save:saveDocument,setSettings,setMode,csvSidecar,
       changed(id){if(id===activeId){lastSelection=current().selection;if(!sourceBusy&&!composing)render();else scheduleRender();}else renderTabs();saveRecovery();},
       position(id,at){if(id===activeId)features.active(at);},followScroll(id,anchor){if(id===activeId)features.followScroll(anchor);},
@@ -530,6 +556,8 @@ async function start(){
   }
   updateView=setupViewControls({settings:viewSettings,setSettings:guard(setViewSettings),isPopup:detachedSide});
   applySettings();
+  if(startupTraceEnabled)requestAnimationFrame(()=>requestAnimationFrame(()=>host('startup.ready').catch(()=>{})));
+  if(!detachedSide)saveRecovery();
   if(import.meta.env.DEV)window.__mdSplit={settings:()=>settings,openDocument(data){return newDocument(data).id;},setText(text){const d=current();d.raw=text;d.saved=text;d.selection={from:0,to:0};lastSelection=d.selection;render({resetSource:true});publishPeers();},getText:()=>current().raw,setMode,documents:()=>documents,renderer:rich,model:()=>current(),editor:()=>cm};
 }
 window.addEventListener('blur',()=>{if(!md())textPreview.finishEdit();});

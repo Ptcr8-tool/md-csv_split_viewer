@@ -79,6 +79,10 @@ try {
     Assert-File $html 'application UI'
     Assert-File $uninstaller 'uninstaller'
     Assert-File (Join-Path $installPath 'WebView2Runtime\msedgewebview2.exe') 'offline WebView runtime'
+    $readme = Join-Path $installPath 'README.md'
+    Assert-File $readme 'offline README'
+    Assert-File (Join-Path $installPath 'CODE_SIGNING.md') 'offline code signing policy'
+    if (-not [IO.File]::ReadAllText($readme).Contains('(CODE_SIGNING.md)')) { throw 'Offline README does not link to the bundled code signing policy.' }
     Assert-File (Join-Path $installPath 'install.ini') 'ownership marker'
     $location = (Get-ItemProperty -LiteralPath $uninstallKey -Name InstallLocation).InstallLocation
     if (-not [string]::Equals($location, $installPath, [StringComparison]::OrdinalIgnoreCase)) { throw 'The registered install location does not match the test directory.' }

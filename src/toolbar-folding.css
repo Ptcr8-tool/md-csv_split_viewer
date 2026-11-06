@@ -26,13 +26,12 @@
 .fold-edge { position:relative; height:0; flex:0 0 0; min-height:0; z-index:6; }
 .fold-edge .section-fold-toggle {
   position:absolute; right:var(--fold-offset, 0px); top:3px;
-  width:30px; height:27px; padding:0 1px; margin:0;
-  display:flex; align-items:center; justify-content:center; gap:1px;
-  border-right:0; border-radius:5px 0 0 5px;
+  width:60px; height:29px; padding:0 5px; margin:0;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:5px;
   background:var(--source); color:var(--text); box-shadow:-2px 2px 8px #0002;
-  font-size:12px; letter-spacing:-1px;
+  font-size:12px; line-height:1; letter-spacing:0;
 }
-.fold-edge-caption { font-size:9px; letter-spacing:0; }
 /* The following visible header makes room for drawers at its right edge. */
 .tabbar-row[data-fold-reserved] { padding-right:var(--fold-reserve); }
 .formatbar[data-fold-reserved] { padding-right:calc(20px + var(--fold-reserve)); }
@@ -41,10 +40,22 @@
 .workspace[data-fold-reserved] .editor-panes[data-view=source] > .source-pane > .pane-heading {
   padding-right:calc(20px + var(--fold-reserve));
 }
+.workspace[data-fold-reserved] .pane-heading .pane-note {
+  min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+}
+@media (max-width: 1100px) {
+  .workspace[data-fold-reserved] .pane-heading .pane-note { visibility:hidden; }
+}
 .workspace[data-fold-reserved] > .chunks-panel:not([hidden]) .chunks-heading {
   padding-right:calc(4px + var(--fold-reserve));
 }
 @media (max-width: 500px) {
+  .fold-edge .section-fold-toggle { width:30px; height:38px; padding:3px 0; writing-mode:vertical-rl; }
+  .fold-edge .fold-indicator { display:none; }
+  .workspace[data-fold-reserved] .editor-panes:not([data-view=source]) > .preview-pane > .pane-heading,
+  .workspace[data-fold-reserved] .editor-panes[data-view=source] > .source-pane > .pane-heading { padding-left:4px; gap:2px; }
+  .workspace[data-fold-reserved] .editor-panes:not([data-view=source]) > .preview-pane > .pane-heading > span,
+  .workspace[data-fold-reserved] .editor-panes[data-view=source] > .source-pane > .pane-heading > span { display:none; }
   #app:has(.fold-edge:not([hidden])) .statusbar { gap: 1px; padding-inline: 4px; }
   #app:has(.fold-edge:not([hidden])) .statusbar #count,
   #app:has(.fold-edge:not([hidden])) .statusbar #position,

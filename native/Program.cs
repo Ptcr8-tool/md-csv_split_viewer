@@ -9,7 +9,9 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        StartupTrace.EnableIfRequested(args);
         ApplicationConfiguration.Initialize(); Storage.Initialize();
+        StartupTrace.Mark(StartupStage.StorageReady);
         Application.ThreadException += (_, e) => { Storage.Log(e.Exception); MessageBox.Show("処理中にエラーが発生しました。\n" + e.Exception.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); };
         AppDomain.CurrentDomain.UnhandledException += (_, e) => { if(e.ExceptionObject is Exception ex) Storage.Log(ex); };
         try
@@ -23,8 +25,10 @@ internal static class Program
         using var mutex = new Mutex(true, "Local\\" + PipeName, out var first);
         if (!first)
         {
-            try { var message=PipeMessagePolicy.Encode(args.Select(a=>a.StartsWith("--")?a:Path.GetFullPath(a)).ToArray()); using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out); client.Connect(5000); using var writer = new StreamWriter(client); writer.WriteLine(message); }
-            catch (Exception ex) { MessageBox.Show("起動中のMD-CSV Split Editorへファイルを渡せませんでした。\n" + ex.Message, AppInfo.Title); }
+            StartupTrace.Mark(StartupStage.SecondaryInstance);
+            try { var message=PipeMessagePolicy.Encode(args.Select(a=>a.StartsWith("--")?a:Path.GetFullPath(a)).ToArray()); using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out); StartupTrace.Mark(StartupStage.PipeConnectStart); client.Connect(5000); StartupTrace.Mark(StartupStage.PipeConnectComplete); using var writer = new StreamWriter(client); writer.WriteLine(message); }
+            catch (Exception ex) { StartupTrace.Mark(StartupStage.PipeConnectFailed); MessageBox.Show("起動中のMD-CSV Split Editorへファイルを渡せませんでした。\n" + ex.Message, AppInfo.Title); }
+            if (args.Contains("--startup-trace", StringComparer.Ordinal)) _ = StartupTrace.FlushAsync().GetAwaiter().GetResult();
             return;
         }
         using var context = new EditorContext(args); Application.Run(context); context.Updates.Dispose(); mutex.ReleaseMutex();
@@ -47,8 +51,10 @@ internal sealed class EditorContext : ApplicationContext
     private readonly CancellationTokenSource cancellation = new();
     private Task? pipeTask;
     private bool contextDisposed;
+    private bool initializing = true;
     public EditorContext(string[] args)
     {
+        StartupTrace.Mark(StartupStage.ContextStart);
         updateWatchdog.Tick+=(_,_)=>{if(preparingUpdate)AbortUpdate("更新の準備が完了しなかったため中止しました。編集を続けられます。");};
         var restored = false;
         var sessionWarnings = new List<string>();
@@ -62,6 +68,7 @@ internal sealed class EditorContext : ApplicationContext
             }
             catch (Exception ex) { Storage.Log(ex); sessionWarnings.Add("保存されたタブの情報を読み取れませんでした。\n" + ex.Message); }
         }
+        StartupTrace.Mark(StartupStage.SessionsScanned);
         // Clean-close markers commit the user's discard decision before the
         // window goes away. Suppress any obsolete recovery even after a crash
         // between the marker commit and FormClosed cleanup.
@@ -78,6 +85,7 @@ internal sealed class EditorContext : ApplicationContext
             }
             catch (Exception ex) { Storage.Log(ex); }
         }
+        StartupTrace.Mark(StartupStage.RecoveriesScanned);
         // Successful clean-exit sessions are references to files, independent
         // of crash/update recovery. Consume them only after creating a window.
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -95,12 +103,16 @@ internal sealed class EditorContext : ApplicationContext
             }
             catch (Exception ex) { Storage.Log(ex); sessionWarnings.Add("保存されたタブの情報を読み取れませんでした。\n" + ex.Message); }
         }
+        StartupTrace.Mark(StartupStage.SessionsRestored);
         var files = args.Where(a => !a.StartsWith("--") && File.Exists(a)).ToArray();
+        if (restored) StartupTrace.Mark(StartupStage.RestoredWindowPresent);
+        StartupTrace.Mark(files.Length switch { 0 => StartupStage.NoCommandFile, 1 => StartupStage.SingleCommandFile, _ => StartupStage.MultipleCommandFiles });
         if (files.Length > 0) RouteFiles(files, lastActive);
         else if (!restored) AddWindow();
         if(Windows.Count==0)AddWindow();
         if (sessionWarnings.Count > 0) MessageBox.Show("前回のタブの一部を開けませんでした。\n\n" + string.Join("\n\n", sessionWarnings), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         pipeTask = ListenPipe();
+        initializing = false; StartupTrace.Mark(StartupStage.ContextReady);
     }
     protected override void Dispose(bool disposing)
     {
@@ -121,12 +133,15 @@ internal sealed class EditorContext : ApplicationContext
         var window = new EditorWindow(this, initial, recovered, recoveryFile, sessionFile); Windows.Add(window); lastActive = window;
         window.Activated += (_, _) => lastActive = window;
         window.FormClosed += (_, _) => { if(preparingUpdate)AbortUpdate(); Windows.Remove(window); if (lastActive == window) lastActive = Windows.LastOrDefault(); if (Windows.Count == 0) { cancellation.Cancel(); ExitThread(); } };
-        window.Show(); return window;
+        if (window.IsStartupTraceWindow) StartupTrace.Mark(StartupStage.WindowShowStart);
+        window.Show();
+        if (window.IsStartupTraceWindow) StartupTrace.Mark(StartupStage.WindowShowComplete);
+        return window;
     }
-    public void NewFile(EditorWindow origin, string? name = null)
+    public void NewFile(EditorWindow origin, string? name = null, string? encoding = null)
     {
-        var document = TextFileTypes.NewDocument(name);
-        if (Settings.OpenPolicy == "windows") AddWindow(new RecoveryData { Documents = [document], ActiveId = document.Id }); else origin.Emit(new { type = "new-document", document });
+        var document = TextFileTypes.NewDocument(name, encoding);
+        if (Settings.OpenPolicy == "windows") AddWindow(new RecoveryData { Documents = [document], ActiveId = document.Id }); else origin.AddNewDocument(document);
     }
     public void RouteFiles(IEnumerable<string> paths, EditorWindow? origin, string? forceEncoding = null)
     {
@@ -139,14 +154,20 @@ internal sealed class EditorContext : ApplicationContext
                 var existing = Windows.SelectMany(w => w.Documents.Values.Select(d => (Window: w, Doc: d))).FirstOrDefault(p => string.Equals(p.Doc.Path, path, StringComparison.OrdinalIgnoreCase));
                 if (existing.Doc is not null)
                 {
+                    if (initializing) StartupTrace.Mark(existing.Window.IsStartupTraceWindow ? StartupStage.CommandFileInTracedWindow : StartupStage.CommandFileInOtherWindow);
                     existing.Window.BringForward(); existing.Window.Emit(new { type = "activate-document", id = existing.Doc.Id });
                     if (forceEncoding is not null) existing.Window.Emit(new { type = "encoding-open-existing", id = existing.Doc.Id, name = existing.Doc.Name });
                     continue;
                 }
                 if (!ConfirmLargeFile(path, origin ?? lastActive)) continue;
-                var doc = Storage.ReadFile(path, forceEncoding: forceEncoding); Recent.Touch(path);
+                if (initializing) StartupTrace.Mark(StartupStage.FileReadStart);
+                var doc = Storage.ReadFile(path, forceEncoding: forceEncoding);
+                if (initializing) StartupTrace.Mark(StartupStage.FileReadComplete);
+                Recent.Touch(path);
+                if (initializing) StartupTrace.Mark(StartupStage.RecentUpdated);
                 var target = Settings.OpenPolicy == "windows" || (origin ?? lastActive) is null ? AddWindow(new RecoveryData { Documents = [doc] }) : origin ?? lastActive!;
                 if (!target.Documents.ContainsKey(doc.Id)) target.AddDocument(doc);
+                if (initializing) StartupTrace.Mark(target.IsStartupTraceWindow ? StartupStage.CommandFileInTracedWindow : StartupStage.CommandFileInOtherWindow);
                 target.BringForward();
             }
             catch (Exception ex) { Storage.Log(ex); MessageBox.Show("ファイルを開けませんでした。\n" + candidate + "\n\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
