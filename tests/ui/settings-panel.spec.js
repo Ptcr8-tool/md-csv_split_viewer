@@ -41,6 +41,32 @@ test('only settings content scrolls while apply and cancel remain visible',async
   await page.setViewportSize({width:900,height:560});await openSettingsModule(page);const button=page.getByRole('button',{name:'適用',exact:true}),before=await button.boundingBox();expect(before.y+before.height).toBeLessThan(560);await page.locator('#dialog-body').evaluate(body=>{body.scrollTop=body.scrollHeight;});expect(await page.locator('#dialog-body').evaluate(body=>body.scrollTop)).toBeGreaterThan(150);const after=await button.boundingBox();expect(after.y).toBe(before.y);await expect(button).toBeVisible();await expect(page.getByRole('button',{name:'キャンセル',exact:true})).toBeVisible();await page.getByRole('button',{name:'キャンセル',exact:true}).click();
 });
 
+test('category navigation stays on the left and keeps unsaved changes when navigating',async({page})=>{
+  await page.setViewportSize({width:1000,height:650});await openSettingsModule(page);
+  const nav=page.getByRole('navigation',{name:'設定のカテゴリ'});
+  const appearance=nav.getByRole('button',{name:'配色と文字',exact:true});
+  const whitespace=nav.getByRole('button',{name:'空白・改行の記号',exact:true});
+  await expect(nav).toBeVisible();
+  const navBefore=await nav.boundingBox(),content=await page.locator('.settings-content').boundingBox();
+  expect(navBefore.x+navBefore.width).toBeLessThan(content.x);
+  await appearance.click();await expect(page.getByRole('heading',{name:'配色と文字'})).toBeFocused();
+  await page.locator('#setting-size').fill('21');
+  await whitespace.click();await expect(page.getByRole('heading',{name:'空白・改行の記号（左右共通）'})).toBeFocused();
+  const navAfter=await nav.boundingBox();expect(Math.abs(navBefore.y-navAfter.y)).toBeLessThan(20);
+  await appearance.click();await expect(page.locator('#setting-size')).toHaveValue('21');
+  await page.getByRole('button',{name:'適用',exact:true}).click();await page.evaluate(()=>window._settingsJob);
+  expect(await page.evaluate(()=>window._settingsSaves[0].fontSize)).toBe(21);
+});
+
+test('narrow settings keeps category navigation and actions accessible',async({page})=>{
+  await page.setViewportSize({width:390,height:700});await openSettingsModule(page);
+  const nav=page.getByRole('navigation',{name:'設定のカテゴリ'});
+  await nav.getByRole('button',{name:'配色と文字',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'配色と文字'})).toBeFocused();
+  await expect(page.getByRole('button',{name:'適用',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'キャンセル',exact:true}).click();await page.evaluate(()=>window._settingsJob);
+});
+
 test('default view normally follows the last selection and brightness toggles are disabled on parchment',async({page})=>{
   await openSettingsModule(page);await expect(page.locator('#setting-view-mode')).toHaveValue('last');
   await page.getByRole('radio',{name:'明るさ：システムに合わせる',exact:true}).check();

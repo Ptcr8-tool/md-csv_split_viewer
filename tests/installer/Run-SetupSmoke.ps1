@@ -56,9 +56,19 @@ function BatchClassDefaultSnapshot {
     } finally { $key.Dispose() }
 }
 $initialBatchClassDefault = BatchClassDefaultSnapshot
+$globalVerbs = @(
+    'Software\Classes\*\shell\MD.Split.Open',
+    'Software\Classes\Directory\Background\shell\MD.Split.New',
+    'Software\Classes\Directory\shell\MD.Split.New'
+)
+foreach ($verb in $globalVerbs) {
+    $existing = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb)
+    if ($null -ne $existing) { $existing.Dispose(); throw 'Existing global context menu registration; refusing the isolated smoke test.' }
+}
 $initialUserChoices = @{}
 foreach ($extension in $extensions) {
     $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
+    if (Test-Path -LiteralPath "HKCU:\Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open") { throw 'An existing context-menu registration was found; refusing the smoke test.' }
     $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
     if ((Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or
         (Get-ItemProperty -LiteralPath $openWith -Name $newProgId -ErrorAction SilentlyContinue) -or
@@ -253,7 +263,7 @@ try {
         if (Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) { throw "Legacy Open With candidate remains for $extension." }
         $value = Get-ItemProperty -LiteralPath $associations -Name $extension -ErrorAction Stop
         if ($value.PSObject.Properties[$extension].Value -ne $newProgId) { throw "Default-app capability missing for $extension." }
-        $iconPath = Join-Path $installPath ('doc-icons\' + $extension.TrimStart('.').ToLowerInvariant() + '.ico')
+        $iconPath = Join-Path $installPath ('doc-icons-v2\' + $extension.TrimStart('.').ToLowerInvariant() + '.ico')
         Assert-File $iconPath "document icon for $extension"
         $iconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $newProgId + '\DefaultIcon')
         if ($null -eq $iconKey) { throw "DefaultIcon key is missing for $extension." }
@@ -261,7 +271,7 @@ try {
         if ($iconValue -ne ('"' + $iconPath + '",0')) { throw "Unexpected DefaultIcon for $extension." }
         if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "Installation unexpectedly changed the default app for $extension." }
     }
-    $legacyIconPath = Join-Path $installPath 'doc-icons\document.ico'
+    $legacyIconPath = Join-Path $installPath 'doc-icons-v2\document.ico'
     Assert-File $legacyIconPath 'legacy generic document icon'
     $legacyIconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.Markdown\DefaultIcon')
     if ($null -eq $legacyIconKey) { throw 'Legacy default-compatible document icon key is missing.' }
@@ -269,9 +279,45 @@ try {
     if ($legacyIcon -ne ('"' + $legacyIconPath + '",0')) { throw 'Legacy default-compatible document icon is incorrect.' }
     foreach ($probeExtension in @('.md','.txt','.csv')) {
         $different = if ($probeExtension -eq '.md') { 'txt' } else { 'md' }
-        Assert-ShellIcon $probeExtension (Join-Path $installPath ('doc-icons\' + $probeExtension.TrimStart('.') + '.ico')) (Join-Path $installPath ('doc-icons\' + $different + '.ico'))
+        Assert-ShellIcon $probeExtension (Join-Path $installPath ('doc-icons-v2\' + $probeExtension.TrimStart('.') + '.ico')) (Join-Path $installPath ('doc-icons-v2\' + $different + '.ico'))
     }
     Write-Output 'PASS: Windows Shell icon pixels match each expected document icon and differ from a negative control.'
+    # Seed an old supported-extension verb owned by this installation, to
+    # verify that enabling the global action migrates only our old entries.
+    $legacy = 'Software\Classes\SystemFileAssociations\.txt\shell\MD.Split.Open'
+    $legacyCommand = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($legacy + '\command')
+    try { $legacyCommand.SetValue('', '"' + $app + '" "%1"') } finally { $legacyCommand.Dispose() }
+    $legacyOther = 'Software\Classes\SystemFileAssociations\.csv\shell\MD.Split.Open'
+    $legacyOtherCommand = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($legacyOther + '\command')
+    try { $legacyOtherCommand.SetValue('', '"C:\other\editor.exe" "%1"') } finally { $legacyOtherCommand.Dispose() }
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    $expectedCommands = @(
+        ('"' + $app + '" "%1"'),
+        ('"' + $app + '" --new-in-directory "%V"'),
+        ('"' + $app + '" --new-in-directory "%1"')
+    )
+    for ($i=0; $i -lt $globalVerbs.Count; $i++) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($globalVerbs[$i] + '\command')
+        if ($null -eq $key) { throw 'Global file or folder verb is missing.' }
+        try { $actual = [string]$key.GetValue('') } finally { $key.Dispose() }
+        if ($actual -ne $expectedCommands[$i]) { throw 'Global context menu command is incorrect.' }
+    }
+    if ([Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($legacy)) { throw 'The owned legacy verb was not migrated.' }
+    $other = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($legacyOther + '\command')
+    if ($null -eq $other) { throw 'Migration removed another installation context menu.' }
+    try { if ($other.GetValue('') -ne '"C:\other\editor.exe" "%1"') { throw 'Migration changed another installation context menu.' } } finally { $other.Dispose() }
+    foreach ($extension in $extensions) {
+        if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "Context menu changed default app for $extension." }
+    }
+    Invoke-CheckedProcess $app @('--context-menu-disable')
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb)
+        if ($null -ne $key) { $key.Dispose(); throw 'Disabling left a global context menu.' }
+    }
+    # The unrelated fixture must be removed by the harness, not the app.
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($legacyOther, $false)
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    Write-Output 'PASS: global file and folder context menus migrate legacy owned entries and preserve other registrations and default choices.'
     $batchOpenWith = 'HKCU:\Software\Classes\.bat\OpenWithProgids'
     if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.File.bat' -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'HKCU:\Software\Classes\MD.Split.File.bat') -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw 'Fresh install unexpectedly registered .bat.' }
     if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name $otherProgId -ErrorAction SilentlyContinue)) { throw 'Fresh install removed another app candidate.' }
@@ -309,7 +355,12 @@ try {
     while ((Test-Path -LiteralPath $installPath) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 1 }
     if (Test-Path -LiteralPath $installPath) { throw 'Uninstall did not remove the installation directory.' }
     if ((Test-Path -LiteralPath $uninstallKey) -or (Test-Path -LiteralPath $progIdKey)) { throw 'Uninstall left product registration behind.' }
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb)
+        if ($null -ne $key) { $key.Dispose(); throw 'Uninstall left a global context menu.' }
+    }
     foreach ($extension in $extensions) {
+        if (Test-Path -LiteralPath "HKCU:\Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open") { throw "Uninstall left a context menu for $extension." }
         $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
         if (Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) { throw "Uninstall left an Open With candidate for $extension." }
         $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()

@@ -2,6 +2,14 @@
 #modal.settings-dialog>form{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:min(786px,calc(100dvh - 40px));min-height:0}
 #modal.settings-dialog .dialog-heading{margin:0;padding:20px 24px 16px;border-bottom:1px solid var(--line)}
 #modal.settings-dialog #dialog-body{overflow-y:auto;overscroll-behavior:contain;min-height:0;padding:0 24px 24px;scrollbar-gutter:stable}
+#modal.settings-dialog .settings-layout{display:grid;grid-template-columns:158px minmax(0,1fr);gap:24px;align-items:start}
+#modal.settings-dialog .settings-nav{position:sticky;top:0;display:flex;flex-direction:column;gap:3px;align-self:start;padding:16px 12px 16px 0;border-right:1px solid var(--line)}
+#modal.settings-dialog .settings-nav button{width:100%;min-height:34px;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:inherit;font-size:12px;line-height:1.4;text-align:left;cursor:pointer}
+#modal.settings-dialog .settings-nav button:hover{color:var(--text);background:var(--green-soft)}
+#modal.settings-dialog .settings-nav button[aria-current]{color:var(--green);background:var(--green-soft);font-weight:600}
+#modal.settings-dialog .settings-nav button:focus-visible{outline:2px solid var(--green);outline-offset:-2px}
+#modal.settings-dialog .settings-content{min-width:0;padding-bottom:8px}
+#modal.settings-dialog .settings-content h3:focus-visible{outline:2px solid var(--green);outline-offset:4px}
 #modal.settings-dialog .dialog-actions{margin:0;padding:15px 24px;border-top:1px solid var(--line);background:var(--paper)}
 #modal.settings-dialog .settings-first{border:0;padding-top:0;margin-top:10px}
 #modal.settings-dialog .settings-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
@@ -23,7 +31,7 @@
 :root .visible-whitespace.ws-wide-space::before{color:var(--ws-wide-space-color,#87909a);opacity:var(--ws-wide-space-opacity,.4)}
 :root .visible-whitespace.ws-tab::before{color:var(--ws-tab-color,#87909a);opacity:var(--ws-tab-opacity,.4)}
 :root .visible-whitespace.ws-space::before{color:var(--ws-space-color,#87909a);opacity:var(--ws-space-opacity,.3)}
-@media(max-width:620px){#modal.settings-dialog .dialog-heading{padding:16px}#modal.settings-dialog #dialog-body{padding:0 16px 18px}#modal.settings-dialog .dialog-actions{padding:12px 16px}.whitespace-style-row{grid-template-columns:minmax(140px,1fr) auto;gap:10px}.ws-opacity-control{grid-column:1/-1}.ws-opacity-control input{width:auto}.ws-opacity-control output{margin-left:auto}}
+@media(max-width:620px){#modal.settings-dialog .dialog-heading{padding:16px}#modal.settings-dialog #dialog-body{padding:0 16px 18px}#modal.settings-dialog .dialog-actions{padding:12px 16px}#modal.settings-dialog .settings-layout{display:block}#modal.settings-dialog .settings-nav{z-index:1;flex-direction:row;overflow-x:auto;gap:4px;padding:8px 0;border-right:0;border-bottom:1px solid var(--line);background:var(--paper)}#modal.settings-dialog .settings-nav button{width:auto;flex:none;white-space:nowrap}.whitespace-style-row{grid-template-columns:minmax(140px,1fr) auto;gap:10px}.ws-opacity-control{grid-column:1/-1}.ws-opacity-control input{width:auto}.ws-opacity-control output{margin-left:auto}}
 @media(max-width:420px){#modal.settings-dialog .settings-fields{grid-template-columns:1fr}.theme-grid{grid-template-columns:1fr 1fr}}
 
 .settings-brightness{border:0;margin:0 0 16px;padding:0;min-width:0}

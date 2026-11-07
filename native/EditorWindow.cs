@@ -26,6 +26,13 @@ internal sealed class EditorWindow : Form
     private readonly string cleanSessionFile = Path.Combine(Storage.SessionPath, Guid.NewGuid().ToString("N") + ".json");
     internal bool IsSessionClosing => allowClose || IsDisposed || Disposing;
     private readonly Queue<object> queued = new();
+    private readonly Dictionary<string, string> requestedDirectories = new(StringComparer.Ordinal);
+    public void RequestNewInDirectory(string directory)
+    {
+        var token = Guid.NewGuid().ToString("N");
+        requestedDirectories[token] = directory;
+        Emit(new { type = "new-in-directory", token });
+    }
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 1800 };
     private readonly Dictionary<string, DateTime> writeTimes = [];
     private readonly Dictionary<string, DateTime> pollRetryAfter = [];
@@ -48,7 +55,7 @@ internal sealed class EditorWindow : Form
         Controls.Add(web);
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowControlsAddComplete);
         Shown += async (_, _) => { if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowShown); await InitializeWeb(); };
-        FormClosing += (_, e) => { if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else ClosePaneWindows(); };
+        FormClosing += (_, e) => { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.CloseRequested); _ = Task.Run(StartupTrace.FlushAsync); } if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else ClosePaneWindows(); };
         FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); ClosePaneWindows(); web.Dispose(); if(!preserveRecovery) RecoveryStore.Delete(recoveryFile); if(startupTraceEnabled){StartupTrace.Mark(StartupStage.WindowClosed);_ = Task.Run(StartupTrace.FlushAsync);} };
         timer.Tick += async (_, _) => await PollFiles();
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowConstructorComplete);
@@ -310,7 +317,20 @@ internal sealed class EditorWindow : Form
                 if (!pendingExternal.TryGetValue(changedId!, out var pending) || pending.Changed.Fingerprint != changedFingerprint || currentDoc.Fingerprint != pending.PreviousFingerprint || !string.Equals(currentDoc.Path, pending.Changed.Path, StringComparison.OrdinalIgnoreCase))
                     throw new IOException("ファイルの変更状態が更新されました。開き直してください。");
                 Track(pending.Changed); pendingExternal.Remove(changedId!); return true;
-            case "file.new": context.NewFile(this, args.TryGetProperty("name", out var newName) ? newName.GetString() : null, args.TryGetProperty("encoding", out var newEncoding) ? newEncoding.GetString() : null); return true;
+            case "file.new":
+                var proposedName = args.TryGetProperty("name", out var newName) ? newName.GetString() : null;
+                var proposedEncoding = args.TryGetProperty("encoding", out var newEncoding) ? newEncoding.GetString() : null;
+                if (args.TryGetProperty("folderToken", out var folderTokenValue))
+                {
+                    var folderToken = folderTokenValue.GetString();
+                    if (folderToken is null || !requestedDirectories.Remove(folderToken, out var folder)) throw new IOException("作成先を確認できません。もう一度フォルダーから操作してください。");
+                    return CreateFileInDirectory(folder, proposedName, proposedEncoding);
+                }
+                context.NewFile(this, proposedName, proposedEncoding); return true;
+            case "file.cancel-directory":
+                var cancelledToken = args.GetProperty("folderToken").GetString();
+                if (cancelledToken is not null) requestedDirectories.Remove(cancelledToken);
+                return true;
             case "file.open":
                 var openEncoding = args.TryGetProperty("encoding", out var requestedEncoding) ? requestedEncoding.GetString() : null;
                 using (var dialog = new OpenFileDialog { Filter = TextFileTypes.OpenFilter, Multiselect = true, RestoreDirectory = true, Title = "テキスト・ソースファイルを開く" })
@@ -405,7 +425,10 @@ internal sealed class EditorWindow : Form
                 return false;
             case "shell.open": var url = args.GetProperty("url").GetString()!; if(!SafeLinks.IsBrowserUrl(url))throw new IOException("このリンクは開けません。"); Process.Start(new ProcessStartInfo(url){UseShellExecute=true}); return true;
             case "association.register": Storage.RegisterAssociation(); Process.Start(new ProcessStartInfo(Storage.CurrentDefaultAppsSettingsUri()){UseShellExecute=true}); return true;
+            case "context-menu.status": return ContextMenuRegistration.Status();
+            case "context-menu.set": return ContextMenuRegistration.Set(args.GetProperty("enabled").GetBoolean());
             case "window.close":
+                if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.CloseCommandReceived); _ = Task.Run(StartupTrace.FlushAsync); }
                 allowClose = true;
                 try
                 {
@@ -421,6 +444,23 @@ internal sealed class EditorWindow : Form
                 BeginInvoke(Close); return true;
             default: throw new IOException("この操作は利用できません。");
         }
+    }
+    private bool CreateFileInDirectory(string directory, string? name, string? encoding)
+    {
+        if (!Directory.Exists(directory)) throw new IOException("新規作成するフォルダーが見つかりません。");
+        var document = TextFileTypes.NewDocument(name, encoding);
+        var spec = TextFileTypes.SaveDialogFor(document.Name);
+        using var dialog = new SaveFileDialog { FileName = spec.FileName, InitialDirectory = directory, DefaultExt = spec.DefaultExtension, Filter = spec.Filter, FilterIndex = spec.FilterIndex, AddExtension = true, RestoreDirectory = true, Title = "新規ファイルを保存", OverwritePrompt = false };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return false;
+        var destination = Path.GetFullPath(TextFileTypes.ResolveSavePath(document.Name, dialog.FileName, dialog.FilterIndex));
+        // CreateNew never truncates an existing file, even if it appeared while the dialog was open.
+        using (var file = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+            var bytes = TextCodec.Encode("", document.Encoding, document.HasBom);
+            file.Write(bytes);
+        }
+        context.RouteFiles([destination], this, document.Encoding);
+        return true;
     }
     private async Task<object?> SaveDocument(JsonElement args)
     {
