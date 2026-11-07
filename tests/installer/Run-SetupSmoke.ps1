@@ -153,12 +153,13 @@ public static class MdSplitSmokeShellIcon {
             DeleteDC(dc);
         }
     }
-    private static bool SamePixels(byte[] first, byte[] second) {
-        if (first.Length != second.Length) return false;
+    private static long PixelDifference(byte[] first, byte[] second) {
+        if (first.Length != second.Length) throw new InvalidOperationException("Icon bitmap sizes differ.");
+        long sum=0;
         // Compare visible BGR values; alpha in a rendered GDI DIB may be undefined.
         for (int i=0; i<first.Length; i+=4)
-            if (first[i]!=second[i] || first[i+1]!=second[i+1] || first[i+2]!=second[i+2]) return false;
-        return true;
+            sum+=Math.Abs((int)first[i]-second[i])+Math.Abs((int)first[i+1]-second[i+1])+Math.Abs((int)first[i+2]-second[i+2]);
+        return sum;
     }
     public static void VerifyIcon(string extension, string expectedFile, string differentFile) {
         int hr = CoInitializeEx(IntPtr.Zero, 0);
@@ -180,8 +181,16 @@ public static class MdSplitSmokeShellIcon {
                 negative=LoadImage(IntPtr.Zero, differentFile, 1, width, height, 0x10);
                 if (expected == IntPtr.Zero || negative == IntPtr.Zero) throw new InvalidOperationException("Could not load the expected or negative-control icon.");
                 var observedPixels=Render(info.hIcon,width,height);
-                if (!SamePixels(observedPixels,Render(expected,width,height))) throw new InvalidOperationException("Shell icon did not match the expected icon pixels.");
-                if (SamePixels(observedPixels,Render(negative,width,height))) throw new InvalidOperationException("Shell icon also matched the different negative-control icon.");
+                long expectedDifference=PixelDifference(observedPixels,Render(expected,width,height));
+                long negativeDifference=PixelDifference(observedPixels,Render(negative,width,height));
+                long permittedDifference=(long)width*height*3;
+                // The Windows image list introduces minor per-channel rounding
+                // even for its own icons. Limit that error and require the
+                // shell result to be at least four times closer to the expected
+                // artwork than to a deliberately different negative control.
+                Console.WriteLine("SHELL_ICON_PIXELS size={0}x{1} expectedDiff={2} permitted={3} negativeDiff={4}",width,height,expectedDifference,permittedDifference,negativeDifference);
+                if (expectedDifference > permittedDifference) throw new InvalidOperationException("Shell icon differs too much from the expected artwork.");
+                if (negativeDifference <= expectedDifference * 4) throw new InvalidOperationException("Shell icon is not sufficiently distinct from the negative-control artwork.");
             } finally {
                 if (info.hIcon != IntPtr.Zero) DestroyIcon(info.hIcon);
                 if (expected != IntPtr.Zero) DestroyIcon(expected);
