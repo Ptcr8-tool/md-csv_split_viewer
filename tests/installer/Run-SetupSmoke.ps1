@@ -59,6 +59,7 @@ $initialBatchClassDefault = BatchClassDefaultSnapshot
 $initialUserChoices = @{}
 foreach ($extension in $extensions) {
     $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
+    if (Test-Path -LiteralPath "HKCU:\Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open") { throw 'An existing context-menu registration was found; refusing the smoke test.' }
     $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
     if ((Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or
         (Get-ItemProperty -LiteralPath $openWith -Name $newProgId -ErrorAction SilentlyContinue) -or
@@ -272,6 +273,23 @@ try {
         Assert-ShellIcon $probeExtension (Join-Path $installPath ('doc-icons\' + $probeExtension.TrimStart('.') + '.ico')) (Join-Path $installPath ('doc-icons\' + $different + '.ico'))
     }
     Write-Output 'PASS: Windows Shell icon pixels match each expected document icon and differ from a negative control.'
+    # Verify the opt-in Explorer action on real supported extensions, without
+    # altering the protected default selection for any extension.
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    foreach ($extension in $extensions) {
+        $verb = "HKCU:\Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open"
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open\command")
+        if ($null -eq $key) { throw "Context menu missing for $extension." }
+        try { $actual = [string]$key.GetValue('') } finally { $key.Dispose() }
+        if ($actual -ne ('"' + $app + '" "%1"')) { throw "Context menu command is incorrect for $extension." }
+        if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "Context menu changed default app for $extension." }
+    }
+    Invoke-CheckedProcess $app @('--context-menu-disable')
+    foreach ($extension in $extensions) {
+        if (Test-Path -LiteralPath "HKCU:\Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open") { throw "Disabling context menu left $extension." }
+    }
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    Write-Output 'PASS: context menu can be enabled and disabled without changing default choices.'
     $batchOpenWith = 'HKCU:\Software\Classes\.bat\OpenWithProgids'
     if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.File.bat' -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'HKCU:\Software\Classes\MD.Split.File.bat') -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw 'Fresh install unexpectedly registered .bat.' }
     if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name $otherProgId -ErrorAction SilentlyContinue)) { throw 'Fresh install removed another app candidate.' }
@@ -310,6 +328,7 @@ try {
     if (Test-Path -LiteralPath $installPath) { throw 'Uninstall did not remove the installation directory.' }
     if ((Test-Path -LiteralPath $uninstallKey) -or (Test-Path -LiteralPath $progIdKey)) { throw 'Uninstall left product registration behind.' }
     foreach ($extension in $extensions) {
+        if (Test-Path -LiteralPath "HKCU:\Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open") { throw "Uninstall left a context menu for $extension." }
         $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
         if (Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) { throw "Uninstall left an Open With candidate for $extension." }
         $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()

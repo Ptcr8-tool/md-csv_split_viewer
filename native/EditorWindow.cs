@@ -405,6 +405,8 @@ internal sealed class EditorWindow : Form
                 return false;
             case "shell.open": var url = args.GetProperty("url").GetString()!; if(!SafeLinks.IsBrowserUrl(url))throw new IOException("このリンクは開けません。"); Process.Start(new ProcessStartInfo(url){UseShellExecute=true}); return true;
             case "association.register": Storage.RegisterAssociation(); Process.Start(new ProcessStartInfo(Storage.CurrentDefaultAppsSettingsUri()){UseShellExecute=true}); return true;
+            case "context-menu.status": return ContextMenuRegistration.Status();
+            case "context-menu.set": return ContextMenuRegistration.Set(args.GetProperty("enabled").GetBoolean());
             case "window.close":
                 allowClose = true;
                 try

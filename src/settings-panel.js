@@ -3,6 +3,7 @@ import {sourceWrapMode,sourceWrapColumn} from './source-wrap.js';
 import './settings-panel.css';
 import {normalizeFileTypeSettings,presentationCapabilities,presentationTypes} from './view-preference.js';
 import {supportedTextExtensions} from './file-types.js';
+import {isDesktop} from './bridge.js';
 
 const palettes=[['black','黒（標準）'],['green','緑'],['red','赤'],['blue','青'],['parchment','羊皮紙'],['parchment-texture','羊皮紙＋質感']];
 const brightness=[
@@ -56,6 +57,11 @@ const formMarkup=`
   <button type="button" class="secondary" id="register-app">Windowsの既定アプリ設定を開く</button>
   <p class="muted">Windowsの画面に表示される一覧から、.md、.csv、.txt、.html など必要な種類を設定してください。このアプリの一覧が開かない場合は、MD-CSV Split Editor を検索して選んでください。</p>
   <details><summary>対応する拡張子を表示（${supportedTextExtensions.length}種類）</summary><p class="muted">${supportedTextExtensions.join('、')}</p></details>
+</section>
+<section class="settings-section" id="context-menu-settings" hidden><h3>エクスプローラー</h3>
+  <label class="checkbox"><input id="setting-context-menu" type="checkbox" disabled>対応ファイルの右クリックに「MD-CSV Split Editor で開く」を表示</label>
+  <p class="muted" id="context-menu-status">設定を確認しています。</p>
+  <p class="muted">変更はすぐに反映されます。Windows 11 では「その他のオプションを表示」の中に表示される場合があります。既定アプリは変更しません。</p>
 </section>`;
 
 export async function showSettings(api){
@@ -117,6 +123,21 @@ export async function showSettings(api){
         color.addEventListener('input',previewWhitespace);opacity.addEventListener('input',previewWhitespace);$('#'+mark.id).addEventListener('change',previewWhitespace);
       }
       $('#register-app').onclick=api.guard(async()=>{await api.host('association.register');api.notify('Windowsの画面でファイルの種類ごとに既定アプリを選んでください。');});
+      if(isDesktop){
+        $('#context-menu-settings').hidden=false;
+        const control=$('#setting-context-menu'),status=$('#context-menu-status');
+        const refresh=async()=>{
+          const state=await api.host('context-menu.status');
+          control.checked=state.enabled||state.partial;status.textContent=state.partial?'一部のファイル種類のみ登録されています。オフにすると本アプリの登録を解除します。':state.enabled?'右クリックメニューを表示しています。':'右クリックメニューは表示していません。';
+          control.disabled=false;
+        };
+        refresh().catch(()=>{status.textContent='右クリックメニューの設定を確認できませんでした。';});
+        control.addEventListener('change',async()=>{
+          control.disabled=true;
+          try{await api.host('context-menu.set',{enabled:control.checked});await refresh();}
+          catch(error){status.textContent=error.message||'右クリックメニューを変更できませんでした。';try{const state=await api.host('context-menu.status');control.checked=state.enabled||state.partial;}catch{}control.disabled=false;}
+        });
+      }
       readSettings=()=>{readType();return ({
         updateCheckDays:api.updates.readDays(),openPolicy:$('#setting-layout').value,sessionPolicy:$('#setting-session-policy').value,startupFormat:$('#setting-startup-format').value,fileTypeSettings:typeSettings,
         theme:readTheme(),colorTheme:readPalette(),fontSize:Math.round(Math.min(28,Math.max(11,Number($('#setting-size').value)||15))),wrapMode:$('#setting-wrap-mode').value,wrapColumn:sourceWrapColumn({wrapColumn:$('#setting-wrap-column').value}),wrap:$('#setting-wrap-mode').value!=='none',softBreaks:$('#setting-soft-breaks').checked,

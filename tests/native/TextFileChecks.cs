@@ -104,6 +104,7 @@ internal static class TextFileChecks
         assert(Storage.CanReloadUnchangedRecovery(new DocumentData { Encoding = "utf16le" }) && Storage.CanReloadUnchangedRecovery(new DocumentData { Encoding = "utf8", HasBom = false }), "old nullable encoding and BOM metadata remain backward compatible");
         assert(!Storage.CanReloadUnchangedRecovery(new DocumentData { Encoding = "unsupported" }), "unrecognized recovery encoding is retained rather than reloaded with a fallback");
         assert(EditorAccelerators.CommandFor(0x53, true, false, false) == "save" && EditorAccelerators.CommandFor(0x53, true, false, true) == "saveas" && EditorAccelerators.CommandFor(0x46, true, false, false) == "search" && EditorAccelerators.CommandFor(0x48, true, false, false) == "replace", "native editor shortcuts map save, Save As, search and replace");
+        assert(EditorAccelerators.CommandFor(0x4E, true, false, false) == "new" && EditorAccelerators.CommandFor(0x4E, true, false, true) == "new-options" && EditorAccelerators.CommandFor(0x4E, true, true, false) is null && EditorAccelerators.CommandFor(0x4E, false, false, false) is null, "native new-file shortcuts distinguish quick creation and format selection without intercepting AltGr or ordinary typing");
         assert(EditorAccelerators.CommandFor(0x53, true, true, false) is null && EditorAccelerators.CommandFor(0x53, false, false, false) is null && EditorAccelerators.CommandFor(0x52, true, false, false) is null, "native shortcut routing excludes AltGr, text typing and browser refresh");
     }
 }

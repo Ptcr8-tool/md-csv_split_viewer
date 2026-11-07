@@ -16,6 +16,8 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) => { if(e.ExceptionObject is Exception ex) Storage.Log(ex); };
         try
         {
+            if(args.Contains("--context-menu-enable")){ContextMenuRegistration.Set(true);return;}
+            if(args.Contains("--context-menu-disable")){ContextMenuRegistration.Set(false);return;}
             if (args.Contains("--register-only")||args.Contains("--register-quiet")) { Storage.RegisterAssociation(); if(!args.Contains("--register-quiet"))MessageBox.Show("対応ファイルの候補にMD-CSV Split Editorを登録しました。既定のアプリはWindowsの設定で拡張子ごとに選んでください。", AppInfo.Title); return; }
             if(args.Contains("--unregister-quiet")){Maintenance.Unregister();return;}
             if(args.Contains("--repair")){Maintenance.Repair();return;}

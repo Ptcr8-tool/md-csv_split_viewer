@@ -17,6 +17,48 @@ async function savedBytes(page,text){
   const file=await download;return {name:file.suggestedFilename(),bytes:[...await readFile(await file.path())]};
 }
 
+test('Ctrl+N creates immediately; Ctrl+Shift+N and right-click offer file type selection',async({page})=>{
+  await browserPage(page);
+  const before=await page.evaluate(()=>window.__mdSplit.documents().length);
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Control+n');
+  await expect.poll(()=>page.evaluate(()=>window.__mdSplit.documents().length)).toBe(before+1);
+  await page.keyboard.press('Control+Shift+n');
+  await expect(page.locator('#dialog-title')).toHaveText('新規ファイルを作成');
+  await page.getByRole('radio',{name:/テキスト/}).check();
+  await page.getByRole('button',{name:'作成',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__mdSplit.model().name)).toBe('無題.txt');
+  await page.locator('.file-actions [data-cmd="new"]').click({button:'right'});
+  await expect(page.locator('#dialog-title')).toHaveText('新規ファイルを作成');
+  await page.getByRole('radio',{name:/CSV/}).check();
+  await page.getByRole('button',{name:'作成',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__mdSplit.model().name)).toBe('無題.csv');
+});
+
+test('native shortcut messages create a quick file or open format selection',async({page})=>{
+  await page.addInitScript(()=>{
+    const listeners=[];window._shortcutCalls=[];window.chrome=window.chrome||{};
+    const emit=data=>listeners.forEach(fn=>fn({data}));
+    window._shortcutEmit=command=>emit({type:'editor-command',command});
+    window.chrome.webview={addEventListener(name,fn){if(name==='message')listeners.push(fn);},postMessage(message){
+      window._shortcutCalls.push(message);
+      if(message.method==='file.new')setTimeout(()=>emit({type:'new-document',document:{id:crypto.randomUUID(),name:message.args.name,encoding:message.args.encoding||'utf8',savedEncoding:message.args.encoding||'utf8',hasBom:false,savedHasBom:false}}),0);
+      const result=message.method==='bootstrap'?{settings:{welcomeShown:true,updateCheckDays:-1,openPolicy:'tabs'},documents:[{id:'11111111-1111-4111-8111-111111111111',name:'start.md',text:'',savedText:'',encoding:'utf8'}]}:true;
+      setTimeout(()=>emit({replyTo:message.id,result}),0);
+    }};
+  });
+  await page.goto('/');await page.waitForFunction(()=>window.__mdSplit?.editor());
+  await page.evaluate(()=>window._shortcutEmit('new'));
+  await expect.poll(()=>page.evaluate(()=>window._shortcutCalls.filter(call=>call.method==='file.new').length)).toBe(1);
+  await page.evaluate(()=>window._shortcutEmit('new-options'));
+  await expect(page.locator('#dialog-title')).toHaveText('新規ファイルを作成');
+  await page.getByRole('radio',{name:/CSV/}).check();
+  await page.locator('#new-file-encoding').selectOption('utf16le');
+  await page.getByRole('button',{name:'作成',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window._shortcutCalls.filter(call=>call.method==='file.new').length)).toBe(2);
+  expect(await page.evaluate(()=>window._shortcutCalls.filter(call=>call.method==='file.new')[1].args)).toEqual({name:'無題.csv',encoding:'utf16le'});
+});
+
 test('menu creates TXT with UTF-8 BOM and saves the selected bytes',async({page})=>{
   await browserPage(page);await openNew(page);
   await page.getByRole('radio',{name:/テキスト/}).check();
