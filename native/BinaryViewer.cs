@@ -72,7 +72,7 @@ internal sealed class BinaryViewer : Form
             status.Text = "バイト位置には 0 以上の整数、または 0x で始まる16進数を入力してください。";
             return;
         }
-        await LoadPageAsync(offset / BinaryPreview.PageBytes);
+        await LoadPageAsync(offset / BinaryPreview.PageBytes, offset);
     }
 
     private void SetNavigationEnabled(bool enabled)
@@ -87,7 +87,7 @@ internal sealed class BinaryViewer : Form
         goToOffset.Enabled = enabled;
     }
 
-    private async Task LoadPageAsync(long requestedPage)
+    private async Task LoadPageAsync(long requestedPage, long? requestedOffset = null)
     {
         if (loading || IsDisposed) return;
         loading = true;
@@ -107,7 +107,13 @@ internal sealed class BinaryViewer : Form
             pageNumber.Value = currentPage + 1;
             totalPages.Text = $"/ {pages:N0}";
             output.Text = text;
-            output.SelectionStart = 0;
+            // A byte-position jump scrolls to its line within the requested
+            // page; merely loading the containing page can leave it offscreen.
+            var targetLine = requestedOffset.HasValue && page.Bytes.Length > 0
+                ? (int)((Math.Clamp(requestedOffset.Value, page.Offset, page.Offset + page.Bytes.Length - 1) - page.Offset) / 16)
+                : 0;
+            var firstCharacter = output.GetFirstCharIndexFromLine(targetLine);
+            output.SelectionStart = Math.Max(0, firstCharacter);
             output.ScrollToCaret();
             var range = page.Bytes.Length == 0 ? "空のファイル" : $"表示位置 {page.Offset:N0}〜{page.Offset + page.Bytes.Length - 1:N0} バイト";
             status.Text = $"読み取り専用・全 {page.Length:N0} バイト　{range}　ページ移動でファイル全体を表示できます。";
