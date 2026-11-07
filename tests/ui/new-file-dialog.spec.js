@@ -59,6 +59,32 @@ test('native shortcut messages create a quick file or open format selection',asy
   expect(await page.evaluate(()=>window._shortcutCalls.filter(call=>call.method==='file.new')[1].args)).toEqual({name:'無題.csv',encoding:'utf16le'});
 });
 
+test('folder context request retains token through type selection and cancellation',async({page})=>{
+  await page.addInitScript(()=>{
+    const listeners=[];window._folderCalls=[];window.chrome=window.chrome||{};
+    const emit=data=>listeners.forEach(fn=>fn({data}));
+    window._folderRequest=token=>emit({type:'new-in-directory',token});
+    window.chrome.webview={addEventListener(name,fn){if(name==='message')listeners.push(fn);},postMessage(message){
+      window._folderCalls.push(message);
+      const result=message.method==='bootstrap'?{settings:{welcomeShown:true,updateCheckDays:-1,openPolicy:'tabs'},documents:[{id:'11111111-1111-4111-8111-111111111111',name:'start.md',text:'',savedText:'',encoding:'utf8'}]}:true;
+      setTimeout(()=>emit({replyTo:message.id,result}),0);
+    }};
+  });
+  await page.goto('/');await page.waitForFunction(()=>window.__mdSplit?.editor());
+  await page.evaluate(()=>window._folderRequest('folder-token-1'));
+  await expect(page.locator('#dialog-title')).toHaveText('新規ファイルを作成');
+  await page.getByRole('radio',{name:/CSV/}).check();
+  await page.locator('#new-file-encoding').selectOption('utf16le');
+  await page.getByRole('button',{name:'作成',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window._folderCalls.filter(call=>call.method==='file.new').length)).toBe(1);
+  expect(await page.evaluate(()=>window._folderCalls.find(call=>call.method==='file.new').args)).toEqual({name:'無題.csv',encoding:'utf16le',folderToken:'folder-token-1'});
+  await page.evaluate(()=>window._folderRequest('folder-token-2'));
+  await expect(page.locator('#dialog-title')).toHaveText('新規ファイルを作成');
+  await page.getByRole('button',{name:'キャンセル',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window._folderCalls.filter(call=>call.method==='file.cancel-directory').length)).toBe(1);
+  expect(await page.evaluate(()=>window._folderCalls.find(call=>call.method==='file.cancel-directory').args)).toEqual({folderToken:'folder-token-2'});
+});
+
 test('menu creates TXT with UTF-8 BOM and saves the selected bytes',async({page})=>{
   await browserPage(page);await openNew(page);
   await page.getByRole('radio',{name:/テキスト/}).check();

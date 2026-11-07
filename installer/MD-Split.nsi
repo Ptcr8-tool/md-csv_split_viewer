@@ -218,7 +218,7 @@ Section "アプリ本体・オフライン実行環境（必須）" SecCore
   ${EndIf}
 SectionEnd
 
-Section /o "対応ファイルの右クリックに「MD-CSV Split Editor で開く」を追加" SecContextMenu
+Section /o "すべてのファイルとフォルダーの右クリックに本アプリを追加" SecContextMenu
   ExecWait '"$INSTDIR\MD-Split.exe" --context-menu-enable' $0
   ${If} $0 != 0
     DetailPrint "右クリックメニューを登録できませんでした。アプリの設定から再試行できます。"

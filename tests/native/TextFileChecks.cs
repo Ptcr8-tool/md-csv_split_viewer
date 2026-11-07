@@ -6,6 +6,25 @@ internal static class TextFileChecks
 {
     public static async Task Run(string root, Action<bool, string> assert)
     {
+        var binaryFixture = Path.Combine(root, "example.mp4");
+        assert(BinaryPreview.IsKnownBinaryExtension(binaryFixture) && BinaryPreview.IsKnownBinaryExtension("VIDEO.MP4") && !BinaryPreview.IsKnownBinaryExtension("example.ics"), "known media extensions use bounded binary preview without probing the complete file");
+        var binaryHeader = new byte[] { 0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0, 1, 2, 3 };
+        await File.WriteAllBytesAsync(binaryFixture, binaryHeader);
+        assert(BinaryPreview.IsProbablyBinary(binaryFixture), "MP4-like bytes are detected for a read-only preview");
+        var binaryPrefix = BinaryPreview.ReadPrefix(binaryFixture);
+        assert(binaryPrefix.Length == binaryHeader.Length && binaryPrefix.Bytes.SequenceEqual(binaryHeader) && BinaryPreview.Format(binaryPrefix.Bytes).Contains("66 74 79 70"), "binary preview displays exact hex bytes");
+        assert((await File.ReadAllBytesAsync(binaryFixture)).SequenceEqual(binaryHeader), "binary preview never modifies the source");
+        var calendar = Path.Combine(root, "calendar.ics");
+        await File.WriteAllTextAsync(calendar, "BEGIN:VCALENDAR\r\nSUMMARY:日本語\r\nEND:VCALENDAR\r\n", new UTF8Encoding(false));
+        assert(!BinaryPreview.IsProbablyBinary(calendar), "ICS text remains editable");
+        var empty = Path.Combine(root, "empty.txt");
+        await File.WriteAllBytesAsync(empty, []);
+        assert(!BinaryPreview.IsProbablyBinary(empty) && BinaryPreview.ReadPrefix(empty).Bytes.Length == 0, "empty text remains editable");
+        var largeBinary = Path.Combine(root, "large-preview.mp4");
+        using (var stream = File.Create(largeBinary)) { stream.Write(binaryHeader); stream.SetLength(65L * 1024 * 1024); }
+        var largePrefix = BinaryPreview.ReadPrefix(largeBinary);
+        assert(largePrefix.Length == 65L * 1024 * 1024 && largePrefix.Bytes.Length == BinaryPreview.MaxBytes && largePrefix.Bytes.AsSpan(0, binaryHeader.Length).SequenceEqual(binaryHeader), "large binary preview reads at most the bounded prefix");
+        assert(BinaryPreview.IsNetworkPath(@"\\\\server\\share\\file") && BinaryPreview.IsNetworkPath("//server/share/file") && !BinaryPreview.IsNetworkPath("file.txt"), "network paths skip the synchronous preview probe");
         var imported = new DocumentData { Name = "opened.csv", Text = "a,b", SavedText = "a,b", NeedsInitialSave = false };
         var importedRecovery = JsonSerializer.Deserialize<DocumentData>(JsonSerializer.Serialize(imported, Storage.Json), Storage.Json)!;
         assert(importedRecovery.Path is null && importedRecovery.NeedsInitialSave == false, "browser imported files retain their known saved baseline through native recovery");

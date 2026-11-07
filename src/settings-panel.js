@@ -59,10 +59,44 @@ const formMarkup=`
   <details><summary>対応する拡張子を表示（${supportedTextExtensions.length}種類）</summary><p class="muted">${supportedTextExtensions.join('、')}</p></details>
 </section>
 <section class="settings-section" id="context-menu-settings" hidden><h3>エクスプローラー</h3>
-  <label class="checkbox"><input id="setting-context-menu" type="checkbox" disabled>対応ファイルの右クリックに「MD-CSV Split Editor で開く」を表示</label>
+  <label class="checkbox"><input id="setting-context-menu" type="checkbox" disabled>すべてのファイルとフォルダーの右クリックに本アプリを表示</label>
   <p class="muted" id="context-menu-status">設定を確認しています。</p>
-  <p class="muted">変更はすぐに反映されます。Windows 11 では「その他のオプションを表示」の中に表示される場合があります。既定アプリは変更しません。</p>
+  <p class="muted">変更はすぐに反映されます。Windows 11 では「その他のオプションを表示」の中に表示される場合があります。既定アプリは変更しません。動画などのバイナリファイルは通常のテキストとして開けない場合があります。</p>
 </section>`;
+
+// Keep the full settings form mounted: changing category must not discard edits
+// or interfere with live theme previews. Navigation scrolls within the dialog.
+function setupSettingsNavigation(body){
+  const sections=Array.from(body.querySelectorAll(':scope > section')).filter(section=>!section.hidden);
+  const layout=document.createElement('div');layout.className='settings-layout';
+  const nav=document.createElement('nav');nav.className='settings-nav';nav.setAttribute('aria-label','設定のカテゴリ');
+  const content=document.createElement('div');content.className='settings-content';
+  const entries=sections.map((section,index)=>{
+    content.append(section);
+    const heading=section.querySelector('h3');if(!heading)return null;
+    const button=document.createElement('button');button.type='button';
+    button.textContent=heading.textContent.replace('（左右共通）','');
+    section.id=section.id||'settings-category-'+index;
+    button.setAttribute('aria-controls',section.id);heading.tabIndex=-1;
+    nav.append(button);
+    return {section,heading,button};
+  }).filter(Boolean);
+  layout.append(nav,content);body.append(layout);
+  const setCurrent=active=>{for(const entry of entries){if(entry===active)entry.button.setAttribute('aria-current','location');else entry.button.removeAttribute('aria-current');}};
+  for(const entry of entries)entry.button.addEventListener('click',()=>{
+    const mobile=matchMedia('(max-width:620px)').matches;
+    const top=entry.section.getBoundingClientRect().top-body.getBoundingClientRect().top+body.scrollTop-(mobile?nav.offsetHeight:8);
+    body.scrollTo({top,behavior:'auto'});setCurrent(entry);entry.heading.focus({preventScroll:true});
+  });
+  body.onscroll=()=>{
+    if(!entries.length)return;
+    const boundary=body.getBoundingClientRect().top+(matchMedia('(max-width:620px)').matches?nav.offsetHeight:0)+24;
+    let active=entries[0];for(const entry of entries)if(entry.section.getBoundingClientRect().top<=boundary)active=entry;
+    if(body.scrollTop+body.clientHeight>=body.scrollHeight-2)active=entries.at(-1);
+    setCurrent(active);
+  };
+  if(entries.length)setCurrent(entries[0]);
+}
 
 export async function showSettings(api){
   const modal=document.querySelector('#modal');
@@ -128,7 +162,7 @@ export async function showSettings(api){
         const control=$('#setting-context-menu'),status=$('#context-menu-status');
         const refresh=async()=>{
           const state=await api.host('context-menu.status');
-          control.checked=state.enabled||state.partial;status.textContent=state.partial?'一部のファイル種類のみ登録されています。オフにすると本アプリの登録を解除します。':state.enabled?'右クリックメニューを表示しています。':'右クリックメニューは表示していません。';
+          control.checked=state.enabled||state.partial;status.textContent=state.partial?'一部のみ登録されています。オフにすると本アプリの登録を解除します。':state.enabled?'右クリックメニューを表示しています。':'右クリックメニューは表示していません。';
           control.disabled=false;
         };
         refresh().catch(()=>{status.textContent='右クリックメニューの設定を確認できませんでした。';});
@@ -138,6 +172,7 @@ export async function showSettings(api){
           catch(error){status.textContent=error.message||'右クリックメニューを変更できませんでした。';try{const state=await api.host('context-menu.status');control.checked=state.enabled||state.partial;}catch{}control.disabled=false;}
         });
       }
+      setupSettingsNavigation(body);
       readSettings=()=>{readType();return ({
         updateCheckDays:api.updates.readDays(),openPolicy:$('#setting-layout').value,sessionPolicy:$('#setting-session-policy').value,startupFormat:$('#setting-startup-format').value,fileTypeSettings:typeSettings,
         theme:readTheme(),colorTheme:readPalette(),fontSize:Math.round(Math.min(28,Math.max(11,Number($('#setting-size').value)||15))),wrapMode:$('#setting-wrap-mode').value,wrapColumn:sourceWrapColumn({wrapColumn:$('#setting-wrap-column').value}),wrap:$('#setting-wrap-mode').value!=='none',softBreaks:$('#setting-soft-breaks').checked,
@@ -147,6 +182,6 @@ export async function showSettings(api){
     if(ok){await api.setSettings(readSettings());applied=true;}
   }finally{
     try{if(!applied)await api.previewSettings(snapshot);}
-    finally{modal.classList.remove('settings-dialog');}
+    finally{modal.classList.remove('settings-dialog');document.querySelector('#dialog-body').onscroll=null;}
   }
 }

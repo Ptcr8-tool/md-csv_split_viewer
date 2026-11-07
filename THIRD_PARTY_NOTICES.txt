@@ -2,6 +2,9 @@ MD Split 0.3.0 - Third-party notices
 
 The following notices cover third-party dependencies. They do not grant a license to the original MD Split application code.
 
+The document icons are generated using a subset of DejaVu Sans Bold.
+Font copyright and license: Licenses/DejaVu-LICENSE.txt.
+
 
 ============================================================
 @antfu/install-pkg 2.1.0

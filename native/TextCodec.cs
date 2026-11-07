@@ -5,6 +5,12 @@ namespace MdSplit;
 
 internal sealed record DecodedText(string Text, string Encoding, bool HasBom, bool EncodingGuessed, string? EncodingNotice);
 
+// Distinguish a binary-looking file from access errors and explicit decoding errors.
+internal sealed class BinaryContentException : IOException
+{
+    public BinaryContentException() : base("バイナリ形式の可能性があるため、通常のテキストとして開けません。") { }
+}
+
 internal static class TextCodec
 {
     private const string GuessNotice = "文字コードを推定しました。表示が正しくない場合は、文字コードを指定して読み直してください。";
@@ -235,7 +241,7 @@ internal static class TextCodec
 
     private static void RejectBinary(string text)
     {
-        if (LooksBinary(text)) throw new IOException("バイナリ形式の可能性があるため、通常のテキストとして開けません。必要な場合は文字コードを指定して開いてください。");
+        if (LooksBinary(text)) throw new BinaryContentException();
     }
 
     private static bool HasJapaneseDesignation(byte[] bytes)
