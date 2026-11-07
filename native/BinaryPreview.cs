@@ -2,10 +2,11 @@ using System.Text;
 
 namespace MdSplit;
 
-// Read a bounded prefix only. This path never opens a file for writing.
+// Each read is bounded, but page indexes cover the entire 64-bit file length.
+// This path never opens a file for writing.
 internal static class BinaryPreview
 {
-    internal const int MaxBytes = 64 * 1024;
+    internal const int PageBytes = 64 * 1024;
     private const int ProbeBytes = 8 * 1024;
     private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -37,11 +38,34 @@ internal static class BinaryPreview
         catch (DecoderFallbackException) { return false; }
     }
 
-    internal static (byte[] Bytes, long Length) ReadPrefix(string path)
+    internal static long PageCount(long length)
+    {
+        if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
+        // Avoid length + PageBytes - 1, which overflows for a large file.
+        return Math.Max(1, length / PageBytes + (length % PageBytes == 0 ? 0 : 1));
+    }
+
+    internal static long PageForOffset(long offset, long length)
+    {
+        if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
+        var count = PageCount(length);
+        return Math.Min(offset / PageBytes, count - 1);
+    }
+
+    internal static (byte[] Bytes, long Length, long Page, long Offset, long Pages) ReadPage(string path, long requestedPage)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return ReadPage(stream, requestedPage);
+    }
+
+    internal static (byte[] Bytes, long Length, long Page, long Offset, long Pages) ReadPage(Stream stream, long requestedPage)
+    {
         var length = stream.Length;
-        var bytes = new byte[(int)Math.Min(length, MaxBytes)];
+        var pages = PageCount(length);
+        var page = Math.Clamp(requestedPage, 0, pages - 1);
+        var offset = page * (long)PageBytes;
+        stream.Seek(offset, SeekOrigin.Begin);
+        var bytes = new byte[(int)Math.Min(length - offset, PageBytes)];
         // A file can shrink concurrently. Display only bytes actually read.
         var count = 0;
         while (count < bytes.Length)
@@ -51,15 +75,16 @@ internal static class BinaryPreview
             count += n;
         }
         if (count != bytes.Length) Array.Resize(ref bytes, count);
-        return (bytes, length);
+        return (bytes, length, page, offset, pages);
     }
 
-    internal static string Format(byte[] bytes)
+    internal static string Format(byte[] bytes, long offset = 0)
     {
+        if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
         var result = new StringBuilder((bytes.Length / 16 + 1) * 78);
         for (var at = 0; at < bytes.Length; at += 16)
         {
-            result.Append(at.ToString("X8")).Append("  ");
+            result.Append((offset + at).ToString("X8")).Append("  ");
             var count = Math.Min(16, bytes.Length - at);
             for (var i = 0; i < 16; i++)
                 if (i < count) result.Append(bytes[at + i].ToString("X2")).Append(' ');
