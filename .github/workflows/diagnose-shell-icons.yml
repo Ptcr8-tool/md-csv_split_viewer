@@ -22,9 +22,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Probe in Windows PowerShell
+      - name: Compare Shell and direct icon pixels
         shell: powershell
         run: ./tests/installer/Diagnose-ShellIcons.ps1
-      - name: Probe in PowerShell 7
-        shell: pwsh
-        run: ./tests/installer/Diagnose-ShellIcons.ps1
+      - name: Save synthetic diagnostic images
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: shell-icon-diagnostics
+          path: shell-icon-diagnostics/*.png
+          if-no-files-found: warn
