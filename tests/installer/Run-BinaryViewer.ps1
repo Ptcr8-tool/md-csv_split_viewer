@@ -31,7 +31,7 @@ try {
         $stream.Position = 3 * 65536; $tail = [byte[]](0xDE,0xAD,0xBE,0xEF); $stream.Write($tail,0,$tail.Length)
     } finally { $stream.Dispose() }
     $before = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
-    $process = Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -ArgumentList @('"' + $fixture + '"') -PassThru
+    $process = Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -ArgumentList @('--startup-trace', ('"' + $fixture + '"')) -PassThru
     $processCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
     $windowCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
     $deadline = [DateTime]::UtcNow.AddSeconds(90)
@@ -99,16 +99,44 @@ try {
     $valuePattern.SetValue('0x10000')
     Click-Control 'BinaryGoOffset'
     Wait-Content '00010000  12 34 56 78'
+    Write-Output 'PASS: binary viewer displayed the first page, the page beyond 64 KiB, the end and the requested offset.'
+    # The owned viewer can appear before the editor's WebView has completed
+    # bootstrap. Wait for its trace before sending the normal close request.
+    $until = [DateTime]::UtcNow.AddSeconds(90)
+    $editorReady = $false
+    do {
+        foreach ($traceFile in @(Get-ChildItem -LiteralPath $data -Filter 'startup-trace-*.json' -File)) {
+            try {
+                $trace = [IO.File]::ReadAllText($traceFile.FullName) | ConvertFrom-Json
+                if ($null -ne $trace.elapsedFromMainMs.EditorRendered) { $editorReady = $true; break }
+            } catch [IO.IOException] { }
+        }
+        if (-not $editorReady) { Start-Sleep -Milliseconds 200 }
+    } while (-not $editorReady -and [DateTime]::UtcNow -lt $until)
+    if (-not $editorReady) { throw 'Owner editor did not finish starting.' }
     $closePattern = $viewer.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)
     $closePattern.Close()
     $until = [DateTime]::UtcNow.AddSeconds(15)
+    $ownerWindow = $null
     do {
         $process.Refresh()
         if ($process.HasExited) { throw 'Application exited after closing binary viewer.' }
-        if ($process.MainWindowHandle -ne [IntPtr]::Zero -and -not $process.MainWindowTitle.StartsWith('binary-fixture.mp4')) { break }
+        $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $processCondition)
+        foreach ($item in $windows) {
+            if ($item.Current.Name.EndsWith('MD-CSV Split Editor')) { $ownerWindow = $item; break }
+        }
+        if ($null -ne $ownerWindow) { break }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $until)
-    if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(45000) -or $process.ExitCode -ne 0) { throw 'Editor did not close normally.' }
+    if ($null -eq $ownerWindow) { throw 'Owner editor window was not found.' }
+    $ownerWindow.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    if (-not $process.WaitForExit(45000) -or $process.ExitCode -ne 0) {
+        $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $processCondition)
+        foreach ($item in $windows) { Write-Output ('Remaining application window: ' + $item.Current.Name) }
+        $errorLog = Join-Path $data 'errors.log'
+        if (Test-Path -LiteralPath $errorLog) { Write-Output ('Application errors: ' + ([IO.File]::ReadAllText($errorLog).Replace($root, '[fixture]'))) }
+        throw 'Editor did not close normally.'
+    }
     if ((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash -ne $before) { throw 'Read-only viewer modified the binary fixture.' }
     Write-Output 'PASS: native binary viewer reads beyond 64 KiB, reaches the end, navigates by offset, and leaves the file unchanged.'
     $verified = $true
