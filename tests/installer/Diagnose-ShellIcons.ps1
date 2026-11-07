@@ -8,7 +8,7 @@ $icon = Join-Path $root 'md.ico'
 Copy-Item -LiteralPath $source -Destination $icon
 $id = [Guid]::NewGuid().ToString('N')
 $progId = 'MdSplit.Probe.' + $id
-$extensions = @('.mz' + $id.Substring(0,6), '.mdsplitprobe' + $id)
+$extensions = @(('.mz' + $id.Substring(0,6)), ('.mdsplitprobe' + $id))
 $createdExtensions = [Collections.Generic.List[string]]::new()
 $createdProgId = $false
 
@@ -115,3 +115,4 @@ try {
     [MdSplitShellDiagnostics]::Refresh()
     if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Force -Recurse }
 }
+
