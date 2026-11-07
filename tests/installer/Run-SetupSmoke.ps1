@@ -102,13 +102,65 @@ public static class MdSplitSmokeShellIcon {
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)] public string szDisplayName;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst=80)] public string szTypeName;
     }
-    [DllImport("shell32.dll", EntryPoint="SHGetFileInfoW", CharSet=CharSet.Unicode)]
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFOHEADER {
+        public uint biSize; public int biWidth; public int biHeight; public ushort biPlanes; public ushort biBitCount;
+        public uint biCompression; public uint biSizeImage; public int biXPelsPerMeter; public int biYPelsPerMeter;
+        public uint biClrUsed; public uint biClrImportant;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFO { public BITMAPINFOHEADER bmiHeader; public uint bmiColors; }
+    [DllImport("shell32.dll", EntryPoint="SHGetFileInfoW", CharSet=CharSet.Unicode, SetLastError=true)]
     private static extern IntPtr SHGetFileInfo(string path, uint attributes, ref SHFILEINFO info, uint cb, uint flags);
     [DllImport("shell32.dll")] private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
     [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
+    [DllImport("user32.dll", EntryPoint="LoadImageW", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern IntPtr LoadImage(IntPtr instance, string name, uint type, int width, int height, uint flags);
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll", SetLastError=true)] private static extern bool DrawIconEx(IntPtr dc, int x, int y, IntPtr icon, int width, int height, uint step, IntPtr brush, uint flags);
+    [DllImport("gdi32.dll", SetLastError=true)] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll", SetLastError=true)] private static extern IntPtr CreateDIBSection(IntPtr dc, ref BITMAPINFO info, uint usage, out IntPtr bits, IntPtr section, uint offset);
+    [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
+    [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
+    [DllImport("gdi32.dll")] private static extern bool GdiFlush();
     [DllImport("ole32.dll")] private static extern int CoInitializeEx(IntPtr reserved, uint coInit);
     [DllImport("ole32.dll")] private static extern void CoUninitialize();
-    public static string ResolveIcon(string extension) {
+    private static byte[] Render(IntPtr icon, int width, int height) {
+        var dc = CreateCompatibleDC(IntPtr.Zero);
+        if (dc == IntPtr.Zero) throw new InvalidOperationException("Could not create icon test DC.");
+        IntPtr bitmap = IntPtr.Zero, previous = IntPtr.Zero;
+        try {
+            var info = new BITMAPINFO();
+            info.bmiHeader.biSize = (uint)Marshal.SizeOf(typeof(BITMAPINFOHEADER));
+            info.bmiHeader.biWidth = width; info.bmiHeader.biHeight = -height;
+            info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32;
+            IntPtr pixels;
+            bitmap = CreateDIBSection(dc, ref info, 0, out pixels, IntPtr.Zero, 0);
+            if (bitmap == IntPtr.Zero || pixels == IntPtr.Zero) throw new InvalidOperationException("Could not create icon test bitmap.");
+            previous = SelectObject(dc, bitmap);
+            if (previous == IntPtr.Zero || previous == new IntPtr(-1)) throw new InvalidOperationException("Could not select icon test bitmap.");
+            var bytes = new byte[width * height * 4];
+            for (int i=0; i<bytes.Length; i+=4) { bytes[i]=235; bytes[i+1]=235; bytes[i+2]=235; bytes[i+3]=255; }
+            Marshal.Copy(bytes, 0, pixels, bytes.Length);
+            if (!DrawIconEx(dc, 0, 0, icon, width, height, 0, IntPtr.Zero, 3)) throw new InvalidOperationException("Could not render icon.");
+            GdiFlush();
+            Marshal.Copy(pixels, bytes, 0, bytes.Length);
+            return bytes;
+        } finally {
+            if (previous != IntPtr.Zero && previous != new IntPtr(-1)) SelectObject(dc, previous);
+            if (bitmap != IntPtr.Zero) DeleteObject(bitmap);
+            DeleteDC(dc);
+        }
+    }
+    private static bool SamePixels(byte[] first, byte[] second) {
+        if (first.Length != second.Length) return false;
+        // Compare visible BGR values; alpha in a rendered GDI DIB may be undefined.
+        for (int i=0; i<first.Length; i+=4)
+            if (first[i]!=second[i] || first[i+1]!=second[i+1] || first[i+2]!=second[i+2]) return false;
+        return true;
+    }
+    public static void VerifyIcon(string extension, string expectedFile, string differentFile) {
         int hr = CoInitializeEx(IntPtr.Zero, 0);
         // RPC_E_CHANGED_MODE means this thread was already initialized using
         // the other apartment model; COM is still available on the thread.
@@ -116,29 +168,40 @@ public static class MdSplitSmokeShellIcon {
         try {
             SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
             var info = new SHFILEINFO();
-            // Ask the shell to resolve the registered handler's icon without
-            // opening a real user document: ICON | ICONLOCATION | USEFILEATTRIBUTES.
-            var result = SHGetFileInfo("synthetic" + extension, 0x80, ref info, (uint)Marshal.SizeOf(typeof(SHFILEINFO)), 0x1110);
+            // ICON | USEFILEATTRIBUTES yields the icon that Explorer would draw.
+            // ICONLOCATION can return an empty location despite a valid icon.
+            var result = SHGetFileInfo("synthetic" + extension, 0x80, ref info, (uint)Marshal.SizeOf(typeof(SHFILEINFO)), 0x110);
+            IntPtr expected = IntPtr.Zero, negative = IntPtr.Zero;
             try {
-                if (result == IntPtr.Zero || String.IsNullOrWhiteSpace(info.szDisplayName)) throw new InvalidOperationException("Shell did not resolve the icon.");
-                return info.szDisplayName;
-            } finally { if (info.hIcon != IntPtr.Zero) DestroyIcon(info.hIcon); }
+                if (result == IntPtr.Zero || info.hIcon == IntPtr.Zero) throw new InvalidOperationException("Shell did not provide a document icon handle.");
+                int width=GetSystemMetrics(11), height=GetSystemMetrics(12); // SM_CXICON / SM_CYICON
+                if (width <= 0 || height <= 0 || width > 512 || height > 512) throw new InvalidOperationException("Unexpected system icon size.");
+                expected=LoadImage(IntPtr.Zero, expectedFile, 1, width, height, 0x10); // IMAGE_ICON / LR_LOADFROMFILE
+                negative=LoadImage(IntPtr.Zero, differentFile, 1, width, height, 0x10);
+                if (expected == IntPtr.Zero || negative == IntPtr.Zero) throw new InvalidOperationException("Could not load the expected or negative-control icon.");
+                var observedPixels=Render(info.hIcon,width,height);
+                if (!SamePixels(observedPixels,Render(expected,width,height))) throw new InvalidOperationException("Shell icon did not match the expected icon pixels.");
+                if (SamePixels(observedPixels,Render(negative,width,height))) throw new InvalidOperationException("Shell icon also matched the different negative-control icon.");
+            } finally {
+                if (info.hIcon != IntPtr.Zero) DestroyIcon(info.hIcon);
+                if (expected != IntPtr.Zero) DestroyIcon(expected);
+                if (negative != IntPtr.Zero) DestroyIcon(negative);
+            }
         } finally { if (hr >= 0) CoUninitialize(); }
     }
 }
 '@
-function Assert-ShellIcon([string] $Extension, [string] $ExpectedIcon) {
+function Assert-ShellIcon([string] $Extension, [string] $ExpectedIcon, [string] $DifferentIcon) {
     # An isolated throwaway extension has no existing UserChoice and does not
     # affect the machine's actual .md/.txt/.csv defaults.
-    $probeExt = '.mdsplitprobe' + [Guid]::NewGuid().ToString('N')
+    $probeExt = '.mp' + [Guid]::NewGuid().ToString('N').Substring(0,8)
     $probePath = 'Software\Classes\' + $probeExt
     $existing = [Microsoft.Win32.Registry]::ClassesRoot.OpenSubKey($probeExt)
     if ($null -ne $existing) { $existing.Dispose(); throw 'Probe extension unexpectedly exists.' }
     $probeKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($probePath)
     try { $probeKey.SetValue('', ('MD.Split.File.' + $Extension.TrimStart('.').ToLowerInvariant())) } finally { $probeKey.Dispose() }
     try {
-        $resolved = [MdSplitSmokeShellIcon]::ResolveIcon($probeExt)
-        if (-not [string]::Equals($resolved.Trim('"'), $ExpectedIcon, [StringComparison]::OrdinalIgnoreCase)) { throw 'Shell resolved an unexpected document icon.' }
+        [MdSplitSmokeShellIcon]::VerifyIcon($probeExt, $ExpectedIcon, $DifferentIcon)
     } finally {
         [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($probePath, $false)
     }
@@ -196,9 +259,10 @@ try {
     try { $legacyIcon = [string]$legacyIconKey.GetValue('') } finally { $legacyIconKey.Dispose() }
     if ($legacyIcon -ne ('"' + $legacyIconPath + '",0')) { throw 'Legacy default-compatible document icon is incorrect.' }
     foreach ($probeExtension in @('.md','.txt','.csv')) {
-        Assert-ShellIcon $probeExtension (Join-Path $installPath ('doc-icons\' + $probeExtension.TrimStart('.') + '.ico'))
+        $different = if ($probeExtension -eq '.md') { 'txt' } else { 'md' }
+        Assert-ShellIcon $probeExtension (Join-Path $installPath ('doc-icons\' + $probeExtension.TrimStart('.') + '.ico')) (Join-Path $installPath ('doc-icons\' + $different + '.ico'))
     }
-    Write-Output 'PASS: Windows Shell resolves the registered document icons through isolated temporary extensions.'
+    Write-Output 'PASS: Windows Shell icon pixels match each expected document icon and differ from a negative control.'
     $batchOpenWith = 'HKCU:\Software\Classes\.bat\OpenWithProgids'
     if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.File.bat' -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'HKCU:\Software\Classes\MD.Split.File.bat') -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw 'Fresh install unexpectedly registered .bat.' }
     if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name $otherProgId -ErrorAction SilentlyContinue)) { throw 'Fresh install removed another app candidate.' }
