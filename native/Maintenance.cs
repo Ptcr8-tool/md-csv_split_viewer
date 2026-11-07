@@ -40,8 +40,27 @@ internal static class Maintenance
         var extensions = new HashSet<string>(TextFileTypes.SupportedExtensions, StringComparer.OrdinalIgnoreCase);
         using(var associations=Registry.CurrentUser.OpenSubKey(@"Software\MD Split\Capabilities\FileAssociations"))
             if(associations is not null)foreach(var ext in associations.GetValueNames())
-                if(ext.Length>1 && ext[0]=='.' && ext.Skip(1).All(char.IsAsciiLetterOrDigit) && string.Equals(associations.GetValue(ext) as string,Storage.AssociationProgId,StringComparison.OrdinalIgnoreCase))extensions.Add(ext);
-        foreach(var ext in extensions){using var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\"+ext+@"\OpenWithProgids",true);key?.DeleteValue(Storage.AssociationProgId,false);}
+            {
+                if(ext.Length<=1 || ext[0]!='.' || !ext.Skip(1).All(char.IsAsciiLetterOrDigit))continue;
+                var value=associations.GetValue(ext) as string;
+                if(string.Equals(value,Storage.AssociationProgId,StringComparison.OrdinalIgnoreCase) ||
+                   (!ext.Equals(".bat",StringComparison.OrdinalIgnoreCase) && string.Equals(value,Storage.AssociationProgIdForExtension(ext),StringComparison.OrdinalIgnoreCase)))extensions.Add(ext);
+            }
+        foreach(var ext in extensions)
+        {
+            // The generic candidate belongs to the owner already checked above.
+            using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\"+ext+@"\OpenWithProgids",true))key?.DeleteValue(Storage.AssociationProgId,false);
+            if(ext.Equals(".bat",StringComparison.OrdinalIgnoreCase))continue;
+            var typedProgId=Storage.AssociationProgIdForExtension(ext);
+            string? typedCommand;
+            using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\"+typedProgId+@"\shell\open\command"))typedCommand=key?.GetValue(null) as string;
+            // A different installation may now own this identifier. Never
+            // remove its ProgID or candidate while uninstalling this copy.
+            if(typedCommand is null||!typedCommand.StartsWith('"'+exe+'"',StringComparison.OrdinalIgnoreCase))continue;
+            using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\"+ext+@"\OpenWithProgids",true))key?.DeleteValue(typedProgId,false);
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\"+typedProgId,false);
+        }
         Registry.CurrentUser.DeleteSubKeyTree(@"Software\MD Split\Capabilities",false);using var registered=Registry.CurrentUser.OpenSubKey(@"Software\RegisteredApplications",true);registered?.DeleteValue(Storage.RegisteredApplicationName,false);Storage.NotifyAssociationsChanged();
     }
 }
+
