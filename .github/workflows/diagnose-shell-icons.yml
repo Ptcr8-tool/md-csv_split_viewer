@@ -1,0 +1,30 @@
+name: Diagnose Windows Shell icon resolution
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/diagnose-shell-icons.yml'
+      - 'tests/installer/Diagnose-ShellIcons.ps1'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-shell-icons.yml'
+      - 'tests/installer/Diagnose-ShellIcons.ps1'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Probe in Windows PowerShell
+        shell: powershell
+        run: ./tests/installer/Diagnose-ShellIcons.ps1
+      - name: Probe in PowerShell 7
+        shell: pwsh
+        run: ./tests/installer/Diagnose-ShellIcons.ps1
