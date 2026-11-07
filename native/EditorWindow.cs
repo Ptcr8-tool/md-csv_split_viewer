@@ -55,7 +55,7 @@ internal sealed class EditorWindow : Form
         Controls.Add(web);
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowControlsAddComplete);
         Shown += async (_, _) => { if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowShown); await InitializeWeb(); };
-        FormClosing += (_, e) => { if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else ClosePaneWindows(); };
+        FormClosing += (_, e) => { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.CloseRequested); _ = Task.Run(StartupTrace.FlushAsync); } if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else ClosePaneWindows(); };
         FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); ClosePaneWindows(); web.Dispose(); if(!preserveRecovery) RecoveryStore.Delete(recoveryFile); if(startupTraceEnabled){StartupTrace.Mark(StartupStage.WindowClosed);_ = Task.Run(StartupTrace.FlushAsync);} };
         timer.Tick += async (_, _) => await PollFiles();
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowConstructorComplete);
@@ -428,6 +428,7 @@ internal sealed class EditorWindow : Form
             case "context-menu.status": return ContextMenuRegistration.Status();
             case "context-menu.set": return ContextMenuRegistration.Set(args.GetProperty("enabled").GetBoolean());
             case "window.close":
+                if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.CloseCommandReceived); _ = Task.Run(StartupTrace.FlushAsync); }
                 allowClose = true;
                 try
                 {

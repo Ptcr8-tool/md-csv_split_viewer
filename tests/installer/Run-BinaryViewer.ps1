@@ -148,6 +148,12 @@ try {
         }
         $errorLog = Join-Path $data 'errors.log'
         if (Test-Path -LiteralPath $errorLog) { Write-Output ('Application errors: ' + ([IO.File]::ReadAllText($errorLog).Replace($root, '[fixture]'))) }
+        foreach ($traceFile in @(Get-ChildItem -LiteralPath $data -Filter 'startup-trace-*.json' -File)) {
+            try {
+                $trace = [IO.File]::ReadAllText($traceFile.FullName) | ConvertFrom-Json
+                Write-Output ('Close stages: ' + (($trace.elapsedFromMainMs.PSObject.Properties.Name | Where-Object { $_ -like 'Close*' -or $_ -eq 'WindowClosed' }) -join ','))
+            } catch [IO.IOException] { }
+        }
         throw 'Editor did not close normally.'
     }
     if ((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash -ne $before) { throw 'Read-only viewer modified the binary fixture.' }
