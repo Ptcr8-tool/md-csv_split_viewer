@@ -6,4 +6,5 @@
   <ItemGroup><Compile Include="../../native/RecoveryStore.cs" Link="RecoveryStore.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../../native/SessionStore.cs" Link="SessionStore.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../../native/PipeMessagePolicy.cs" Link="PipeMessagePolicy.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../../native/ContextMenuRegistration.cs" Link="ContextMenuRegistration.cs"/></ItemGroup>
 </Project>
