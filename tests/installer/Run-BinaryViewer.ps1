@@ -130,9 +130,22 @@ try {
     } while ([DateTime]::UtcNow -lt $until)
     if ($null -eq $ownerWindow) { throw 'Owner editor window was not found.' }
     $ownerWindow.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
-    if (-not $process.WaitForExit(45000) -or $process.ExitCode -ne 0) {
+    if (-not $process.WaitForExit(12000) -or $process.ExitCode -ne 0) {
         $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $processCondition)
-        foreach ($item in $windows) { Write-Output ('Remaining application window: ' + $item.Current.Name) }
+        foreach ($item in $windows) {
+            Write-Output ('Remaining application window: ' + $item.Current.Name)
+            $texts = $item.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+            $reported = 0
+            foreach ($child in $texts) {
+                if ($child.Current.Name -and -not $child.Current.IsOffscreen) {
+                    $label = [string]$child.Current.Name
+                    if ($label.Length -gt 150) { $label = $label.Substring(0, 150) }
+                    Write-Output ('Visible control: ' + $label)
+                    $reported++
+                    if ($reported -ge 80) { break }
+                }
+            }
+        }
         $errorLog = Join-Path $data 'errors.log'
         if (Test-Path -LiteralPath $errorLog) { Write-Output ('Application errors: ' + ([IO.File]::ReadAllText($errorLog).Replace($root, '[fixture]'))) }
         throw 'Editor did not close normally.'
