@@ -41,17 +41,30 @@ $typesSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\..\native\Tex
 $extensions = @([regex]::Matches($typesSource, 'new\("[^"\r\n]+",\s*\[([^\]]+)\]') | ForEach-Object {
     [regex]::Matches($_.Groups[1].Value, '"([a-z][a-z0-9]*)"') | ForEach-Object { '.' + $_.Groups[1].Value }
 } | Select-Object -Unique)
-if ($extensions.Count -lt 10 -or $extensions -notcontains '.md' -or $extensions -notcontains '.txt' -or $extensions -notcontains '.csv') { throw 'Could not derive the supported file extensions.' }
+if ($extensions.Count -lt 10 -or $extensions -notcontains '.md' -or $extensions -notcontains '.txt' -or $extensions -notcontains '.csv' -or $extensions -notcontains '.bat' -or $extensions -notcontains '.cmd') { throw 'Could not derive the supported file extensions.' }
 function UserChoiceSnapshot([string] $Extension) {
     $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$Extension\UserChoice"
     if (-not (Test-Path -LiteralPath $key)) { return '<absent>' }
     $value = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
     return ([string]$value.ProgId + "`n" + [string]$value.Hash)
 }
+function BatchClassDefaultSnapshot {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\.bat')
+    if ($null -eq $key) { return '<absent>' }
+    try {
+        $value = $key.GetValue('')
+        if ($null -eq $value) { return '<absent>' }
+        return [string]$value
+    } finally { $key.Dispose() }
+}
+$initialBatchClassDefault = BatchClassDefaultSnapshot
 $initialUserChoices = @{}
 foreach ($extension in $extensions) {
     $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
-    if (Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) { throw 'Existing file association found; refusing the test.' }
+    $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
+    if ((Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or
+        (Get-ItemProperty -LiteralPath $openWith -Name $newProgId -ErrorAction SilentlyContinue) -or
+        (Test-Path -LiteralPath ("HKCU:\Software\Classes\" + $newProgId))) { throw 'Existing file association found; refusing the test.' }
     $initialUserChoices[$extension] = UserChoiceSnapshot $extension
 }
 
@@ -64,6 +77,9 @@ $sessions = Join-Path $data 'Sessions'
 $settings = Join-Path $data 'settings.json'
 $process = $null
 $verified = $false
+$batchOpenWith = 'HKCU:\Software\Classes\.bat\OpenWithProgids'
+$batchOpenWithNative = 'Software\Classes\.bat\OpenWithProgids'
+$batchOtherProgId = 'MdSplit.Upgrade.Other.' + [Guid]::NewGuid().ToString('N')
 if (Test-Path -LiteralPath $root) { throw 'The isolated test directory already exists.' }
 [void][IO.Directory]::CreateDirectory($root)
 
@@ -156,13 +172,31 @@ function Assert-UserChoices {
     foreach ($extension in $extensions) {
         if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "The default app changed for $extension." }
     }
+    if ((BatchClassDefaultSnapshot) -ne $initialBatchClassDefault) { throw 'The per-user .bat class default changed.' }
+}
+function Assert-BatchExecution([string] $BatchPath, [string] $MarkerPath) {
+    if (Test-Path -LiteralPath $MarkerPath) { Remove-Item -LiteralPath $MarkerPath -Force }
+    # This controlled script is generated only within the disposable test root.
+    # ShellExecute exercises the actual .bat association, not an explicit cmd /c.
+    Start-Process -FilePath $BatchPath -WorkingDirectory $root | Out-Null
+    $deadline = [DateTime]::UtcNow.AddSeconds(20)
+    while (-not (Test-Path -LiteralPath $MarkerPath -PathType Leaf) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 200 }
+    if (-not (Test-Path -LiteralPath $MarkerPath -PathType Leaf) -or [IO.File]::ReadAllText($MarkerPath).Trim() -ne 'MD_SPLIT_UPGRADE_BATCH_FIXTURE') { throw 'The synthetic batch file did not execute through its Windows association.' }
 }
 
 try {
+    $batchFixture = Join-Path $root 'synthetic-upgrade.bat'
+    $batchMarker = Join-Path $root 'synthetic-upgrade-result.txt'
+    [IO.File]::WriteAllText($batchFixture, "@echo off`r`necho MD_SPLIT_UPGRADE_BATCH_FIXTURE>`"%~dp0synthetic-upgrade-result.txt`"`r`n", [Text.Encoding]::ASCII)
+    Assert-BatchExecution $batchFixture $batchMarker
     Invoke-Setup $old
     if ((InstalledVersion) -ne [version]'1.0.0') { throw 'The old setup did not install v1.0.0.' }
     if (-not [string]::Equals((Get-ItemProperty -LiteralPath $uninstallKey -Name InstallLocation).InstallLocation, $app, [StringComparison]::OrdinalIgnoreCase)) { throw 'Old setup registered an unexpected install directory.' }
     Assert-UserChoices
+    $associations = Join-Path $capabilities 'FileAssociations'
+    if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction Stop).PSObject.Properties['.bat'].Value -ne 'MD.Split.Markdown') { throw 'Old setup did not produce the bat registration fixture.' }
+    $otherKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($batchOpenWithNative)
+    try { $otherKey.SetValue($batchOtherProgId, '') } finally { $otherKey.Dispose() }
     [IO.File]::WriteAllText($settings, '{"welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"all","openPolicy":"tabs","theme":"dark","fontSize":17}', [Text.UTF8Encoding]::new($false))
     $first = Join-Path $root 'first.txt'; $second = Join-Path $root 'second.txt'
     [IO.File]::WriteAllText($first, 'UPGRADE_FIXTURE_ALPHA_73', [Text.UTF8Encoding]::new($false))
@@ -186,11 +220,18 @@ try {
     if ((InstalledVersion) -ne $expectedNewVersion) { throw 'The new setup did not install the expected newer version.' }
     $registeredVersion = (Get-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion).DisplayVersion
     if ([version]$registeredVersion -ne $expectedNewVersion) { throw 'The registered version did not update.' }
+    if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.File.bat' -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'HKCU:\Software\Classes\MD.Split.File.bat') -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw 'Upgrade retained or added a bat editor association.' }
+    if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name $batchOtherProgId -ErrorAction SilentlyContinue)) { throw 'Upgrade removed another bat app candidate.' }
+    if (-not (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.cmd\OpenWithProgids' -Name 'MD.Split.File.cmd' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name '.cmd' -ErrorAction Stop).PSObject.Properties['.cmd'].Value -ne 'MD.Split.File.cmd') { throw 'Upgrade lost cmd registration.' }
+    if (-not (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.cmd\OpenWithProgids' -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or -not (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.md\OpenWithProgids' -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue)) { throw 'Upgrade removed legacy candidates for other file types.' }
+    if (-not (Test-Path -LiteralPath 'HKCU:\Software\Classes\MD.Split.Markdown\shell\open\command')) { throw 'Upgrade removed the legacy ProgID needed by existing user defaults.' }
     foreach ($file in $preserve) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $hashes[$file]) { throw 'Upgrade changed or removed a settings, session or recovery fixture.' }
     }
     if ((Get-FileHash -LiteralPath $first -Algorithm SHA256).Hash -ne $firstHash -or (Get-FileHash -LiteralPath $second -Algorithm SHA256).Hash -ne $secondHash) { throw 'Upgrade changed a synthetic user document.' }
     Assert-UserChoices
+    Assert-BatchExecution $batchFixture $batchMarker
+    Write-Output 'PASS: upgrade removes the old bat editor candidate while preserving other apps, defaults, cmd and bat execution.'
     Write-Output 'PASS: v1.0.0 upgraded in place, preserving settings, session, recovery fixture, user documents and Windows default-app choices.'
 
     $process = Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -PassThru
@@ -213,6 +254,8 @@ try {
     $verified = $true
     Write-Output 'PASS: uninstall removed only the dedicated test installation and kept documents and default-app choices.'
 } finally {
+    $otherKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($batchOpenWithNative, $true)
+    if ($null -ne $otherKey) { try { $otherKey.DeleteValue($batchOtherProgId, $false) } finally { $otherKey.Dispose() } }
     if ($process -and -not $process.HasExited) {
         try { $null = $process.CloseMainWindow() } catch { }
         if (-not $process.WaitForExit(3000)) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue; $null = $process.WaitForExit(10000) }
@@ -221,3 +264,4 @@ try {
     # remove unrelated paths or attempt cleanup on a non-hosted machine.
     if ($verified -and (Test-Path -LiteralPath $root)) { Remove-Item -LiteralPath $root -Recurse -Force }
 }
+

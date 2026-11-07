@@ -43,10 +43,11 @@ internal static class TextFileTypes
         new("Vue", ["vue"], "vue"),
         new("Svelte", ["svelte"], "svelte")
     ];
-    // The file picker, Windows "Open with" candidates and Default Apps must
-    // agree on the explicitly supported extensions. The all-files picker can
-    // still open additional text files without claiming arbitrary extensions.
+    // Editing support and Windows association candidates are deliberately
+    // separate: batch files can be edited explicitly without suggesting this
+    // editor as a handler when a .bat file is intended to be executed.
     public static string[] SupportedExtensions => Kinds.SelectMany(k => k.Extensions).Select(e => "." + e).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    public static string[] AssociationExtensions => SupportedExtensions.Where(e => !string.Equals(e, ".bat", StringComparison.OrdinalIgnoreCase)).ToArray();
     public static string OpenFilter => "テキスト・ソースファイル|" + string.Join(";", Kinds.SelectMany(k => k.Extensions).Select(e => "*." + e)) + "|すべてのファイル (*.*)|*.*";
     public static string FormatFor(string? pathOrName)
     {
@@ -112,3 +113,4 @@ internal static class TextFileTypes
             string.Join("|", filters), extension.Length == 0 ? filters.Count : kindIndex + 1);
     }
 }
+

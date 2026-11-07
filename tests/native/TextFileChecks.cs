@@ -37,8 +37,13 @@ internal static class TextFileChecks
         assert(TextFileTypes.OpenFilter.Contains("*.txt") && TextFileTypes.OpenFilter.Contains("*.html") && TextFileTypes.OpenFilter.Contains("*.json") && TextFileTypes.OpenFilter.EndsWith("|*.*"), "Open dialog lists general text formats and all files");
         var extensions=TextFileTypes.SupportedExtensions;
         var filterExtensions=TextFileTypes.OpenFilter.Split('|')[1].Split(';').Select(p=>p[1..]).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        assert(extensions.Length>0 && extensions.Length==extensions.Distinct(StringComparer.OrdinalIgnoreCase).Count() && extensions.All(e=>e.Length>1&&e[0]=='.'&&e.Skip(1).All(char.IsAsciiLetterOrDigit)), "registered file extensions are unique and safe registry key names");
-        assert(filterExtensions.SetEquals(extensions) && new[]{".md",".markdown",".txt",".csv",".tsv",".html",".json",".xml",".py"}.All(e=>extensions.Contains(e, StringComparer.OrdinalIgnoreCase)), "Windows Open With registration covers every explicitly supported file picker extension");
+        assert(extensions.Length>0 && extensions.Length==extensions.Distinct(StringComparer.OrdinalIgnoreCase).Count() && extensions.All(e=>e.Length>1&&e[0]=='.'&&e.Skip(1).All(char.IsAsciiLetterOrDigit)), "supported file extensions are unique and safe registry key names");
+        assert(filterExtensions.SetEquals(extensions) && new[]{".md",".markdown",".txt",".csv",".tsv",".html",".json",".xml",".py",".bat",".cmd"}.All(e=>extensions.Contains(e, StringComparer.OrdinalIgnoreCase)), "Windows Open dialog preserves all supported editing formats including batch files");
+        var registered=TextFileTypes.AssociationExtensions.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var expectedRegistered=extensions.Where(e=>!e.Equals(".bat",StringComparison.OrdinalIgnoreCase)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        assert(registered.SetEquals(expectedRegistered) && !registered.Contains(".bat") && registered.Contains(".cmd"), "Windows associations exclude only bat while leaving cmd and other formats unchanged");
+        assert(TextFileTypes.FormatFor("run.BAT")=="batch" && TextFileTypes.SaveDialogFor("run.bat").DefaultExtension=="bat" && TextFileTypes.OpenFilter.Contains("*.bat"), "batch files remain editable and retain their extension in file dialogs");
+        assert(Storage.AssociationProgIdForExtension(".MD")=="MD.Split.File.md" && Storage.AssociationProgIdForExtension(".csv")=="MD.Split.File.csv" && Storage.AssociationProgIdForExtension(".cmd")=="MD.Split.File.cmd", "document association identifiers preserve distinct file types and normalize casing");
         assert(Storage.DefaultAppsSettingsUri(false)=="ms-settings:defaultapps" && Storage.DefaultAppsSettingsUri(true)=="ms-settings:defaultapps?registeredAppUser=MD%20Split", "Windows default-apps links use the matching per-user registration without setting a default");
         assert(!Storage.SupportsRegisteredAppUri(19045,5000) && !Storage.SupportsRegisteredAppUri(22000,1816) && Storage.SupportsRegisteredAppUri(22000,1817) && !Storage.SupportsRegisteredAppUri(22621,1554) && Storage.SupportsRegisteredAppUri(22621,1555) && Storage.SupportsRegisteredAppUri(22631,0), "the app-specific settings link is used only on Windows 11 builds that support it");
         foreach (var (ext, expected) in new[] { ("xhtml", "html"), ("json5", "json"), ("mts", "typescript"), ("scss", "scss"), ("less", "less"), ("py", "python"), ("vue", "vue"), ("svelte", "svelte"), ("swift", "swift"), ("kt", "kotlin"), ("lua", "lua"), ("pl", "perl"), ("log", "text") })
@@ -102,3 +107,4 @@ internal static class TextFileChecks
         assert(EditorAccelerators.CommandFor(0x53, true, true, false) is null && EditorAccelerators.CommandFor(0x53, false, false, false) is null && EditorAccelerators.CommandFor(0x52, true, false, false) is null, "native shortcut routing excludes AltGr, text typing and browser refresh");
     }
 }
+

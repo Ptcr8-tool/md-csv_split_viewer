@@ -234,6 +234,12 @@ internal static class Storage
     }
     private static bool IsNetworkPath(string path)=>path.StartsWith(@"\\")||path.StartsWith("//");
     internal const string AssociationProgId = "MD.Split.Markdown"; // Preserve existing .md choices across updates.
+    internal static string AssociationProgIdForExtension(string extension)
+    {
+        if (extension.Length < 2 || extension[0] != '.' || !extension.Skip(1).All(char.IsAsciiLetterOrDigit))
+            throw new ArgumentException("A file extension is required.", nameof(extension));
+        return "MD.Split.File." + extension[1..].ToLowerInvariant();
+    }
     internal const string RegisteredApplicationName = "MD Split";
     // The per-user app deep link is supported only on updated Windows 11;
     // older builds must use the general Default Apps page.
@@ -255,20 +261,43 @@ internal static class Storage
     {
         var exe = Environment.ProcessPath ?? throw new IOException("実行ファイルが見つかりません。");
         const string progId = AssociationProgId;
+        var iconDirectory = Path.Combine(AppContext.BaseDirectory, "doc-icons");
+        var commonIcon = Path.Combine(iconDirectory, "document.ico");
+        if (!File.Exists(commonIcon)) commonIcon = Path.Combine(AppContext.BaseDirectory, "app.ico");
+        static string IconValue(string path) => "\"" + path + "\",0";
+        // Preserve this legacy ProgID and command: existing UserChoice entries
+        // may refer to it, and must continue opening their files after upgrade.
         using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + progId))
         {
             key.SetValue("", "MD-CSV Split Editor Document");
-            using var icon = key.CreateSubKey("DefaultIcon"); icon.SetValue("", "\"" + exe + "\",0");
+            using var icon = key.CreateSubKey("DefaultIcon"); icon.SetValue("", IconValue(commonIcon));
             using var command = key.CreateSubKey(@"shell\open\command"); command.SetValue("", "\"" + exe + "\" \"%1\"");
         }
-        foreach (var ext in TextFileTypes.SupportedExtensions)
+        // Only .bat is withdrawn from the old generic candidates. Preserve
+        // legacy candidates for other extensions as well as the legacy ProgID
+        // itself, extension defaults and the protected UserChoice.
+        using (var obsolete = Registry.CurrentUser.OpenSubKey(@"Software\Classes\.bat\OpenWithProgids", writable: true))
+            obsolete?.DeleteValue(progId, throwOnMissingValue: false);
+        foreach (var ext in TextFileTypes.AssociationExtensions)
         {
-            using var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + ext + @"\OpenWithProgids"); key.SetValue(progId, "");
+            var typedProgId = AssociationProgIdForExtension(ext);
+            var typedIcon = Path.Combine(iconDirectory, ext[1..].ToLowerInvariant() + ".ico");
+            if (!File.Exists(typedIcon)) typedIcon = commonIcon;
+            using (var typed = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + typedProgId))
+            {
+                typed.SetValue("", "MD-CSV Split Editor " + ext.ToUpperInvariant() + " Document");
+                using var icon = typed.CreateSubKey("DefaultIcon"); icon.SetValue("", IconValue(typedIcon));
+                using var command = typed.CreateSubKey(@"shell\open\command"); command.SetValue("", "\"" + exe + "\" \"%1\"");
+            }
+            using var candidates = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + ext + @"\OpenWithProgids");
+            candidates.SetValue(typedProgId, "");
         }
         using (var cap = Registry.CurrentUser.CreateSubKey(@"Software\MD Split\Capabilities"))
         {
             cap.SetValue("ApplicationName", AppInfo.Title); cap.SetValue("ApplicationDescription", "Text, Markdown and CSV editor");
-            using var types = cap.CreateSubKey("FileAssociations"); foreach (var ext in TextFileTypes.SupportedExtensions) types.SetValue(ext, progId);
+            using var types = cap.CreateSubKey("FileAssociations");
+            if (string.Equals(types.GetValue(".bat") as string, progId, StringComparison.OrdinalIgnoreCase)) types.DeleteValue(".bat", throwOnMissingValue: false);
+            foreach (var ext in TextFileTypes.AssociationExtensions) types.SetValue(ext, AssociationProgIdForExtension(ext));
         }
         using (var registered = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications")) registered.SetValue(RegisteredApplicationName, @"Software\MD Split\Capabilities");
         NotifyAssociationsChanged();
@@ -387,3 +416,4 @@ internal sealed class ImageReference
     public int UrlFrom { get; set; }
     public int UrlTo { get; set; }
 }
+
