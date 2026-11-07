@@ -33,16 +33,28 @@ try {
     $before = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
     $process = Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -ArgumentList @('"' + $fixture + '"') -PassThru
     $processCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+    $windowCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
     $deadline = [DateTime]::UtcNow.AddSeconds(90)
     do {
         if ($process.HasExited) { throw 'Application exited before the binary viewer appeared.' }
         try {
             $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $processCondition)
-            foreach ($item in $windows) { if ($item.Current.Name.StartsWith('binary-fixture.mp4')) { $viewer = $item; break } }
+            foreach ($item in $windows) {
+                if ($item.Current.Name.StartsWith('binary-fixture.mp4')) { $viewer = $item; break }
+                # Owned forms can appear beneath their owner in the UIA tree.
+                $owned = $item.FindAll([System.Windows.Automation.TreeScope]::Descendants, $windowCondition)
+                foreach ($child in $owned) { if ($child.Current.ProcessId -eq $process.Id -and $child.Current.Name.StartsWith('binary-fixture.mp4')) { $viewer = $child; break } }
+                if ($null -ne $viewer) { break }
+            }
         } catch [System.Windows.Automation.ElementNotAvailableException] { }
         if ($null -eq $viewer) { Start-Sleep -Milliseconds 200 }
     } while ($null -eq $viewer -and [DateTime]::UtcNow -lt $deadline)
-    if ($null -eq $viewer) { throw 'Binary viewer was not shown.' }
+    if ($null -eq $viewer) {
+        foreach ($item in $windows) { Write-Output ('Application window: ' + $item.Current.Name) }
+        $errorLog = Join-Path $data 'errors.log'
+        if (Test-Path -LiteralPath $errorLog) { Write-Output ('Application errors: ' + ([IO.File]::ReadAllText($errorLog).Replace($root, '[fixture]'))) }
+        throw 'Binary viewer was not shown.'
+    }
     function Find-Control([string] $Id) {
         $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, $Id)
         return $viewer.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
