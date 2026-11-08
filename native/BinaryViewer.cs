@@ -251,7 +251,7 @@ internal sealed class BinaryViewer : Form
         searchCancel.Enabled = true;
         status.Text = "ファイル全体を検索しています…";
         var watch = Stopwatch.StartNew();
-        IProgress<(long Done, long Total)> progress = new Progress<(long, long)>(p =>
+        IProgress<(long Done, long Total)> progress = new Progress<(long Done, long Total)>(p =>
         {
             if (searchCancellation != cts || IsDisposed) return;
             var percent = p.Total == 0 ? 100 : Math.Min(100, (int)(100m * p.Done / p.Total));
