@@ -2,11 +2,12 @@ using System.Text;
 
 namespace MdSplit;
 
-// Each read is bounded, but page indexes cover the entire 64-bit file length.
-// This path never opens a file for writing.
+// Binary files are opened read-only. Views and searches use bounded buffers;
+// neither operation needs to load the entire file into memory.
 internal static class BinaryPreview
 {
-    internal const int PageBytes = 64 * 1024;
+    internal const int BytesPerLine = 16;
+    internal const int SearchBlockBytes = 128 * 1024;
     private const int ProbeBytes = 8 * 1024;
     private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -25,68 +26,123 @@ internal static class BinaryPreview
         if (IsNetworkPath(path)) return false;
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         var sample = new byte[(int)Math.Min(stream.Length, ProbeBytes)];
-        var count = 0;
-        while (count < sample.Length)
-        {
-            var n = stream.Read(sample, count, sample.Length - count);
-            if (n == 0) break;
-            count += n;
-        }
+        var count = ReadUpTo(stream, sample, sample.Length);
         if (count != sample.Length) Array.Resize(ref sample, count);
         try { TextCodec.Decode(sample); return false; }
         catch (BinaryContentException) { return true; }
         catch (DecoderFallbackException) { return false; }
     }
 
-    internal static long PageCount(long length)
+    internal static long LineCount(long length)
     {
         if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
-        // Avoid length + PageBytes - 1, which overflows for a large file.
-        return Math.Max(1, length / PageBytes + (length % PageBytes == 0 ? 0 : 1));
+        return length == 0 ? 1 : 1 + (length - 1) / BytesPerLine;
     }
 
-    internal static long PageForOffset(long offset, long length)
+    internal static long LastTopLine(long length, int visibleLines) =>
+        Math.Max(0, LineCount(length) - Math.Max(1, visibleLines));
+
+    // The scrollbar has a fixed number of positions; use decimal arithmetic so
+    // even the largest file offsets do not overflow while dragging its thumb.
+    internal static int ScrollValue(long line, long lastLine, int maximum)
     {
-        if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
-        var count = PageCount(length);
-        return Math.Min(offset / PageBytes, count - 1);
+        if (lastLine <= 0 || maximum <= 0) return 0;
+        return (int)decimal.Round((decimal)Math.Clamp(line, 0, lastLine) * maximum / lastLine);
     }
 
-    internal static (byte[] Bytes, long Length, long Page, long Offset, long Pages) ReadPage(string path, long requestedPage)
+    internal static long ScrollLine(int value, long lastLine, int maximum)
+    {
+        if (lastLine <= 0 || maximum <= 0) return 0;
+        return (long)decimal.Round((decimal)Math.Clamp(value, 0, maximum) * lastLine / maximum);
+    }
+
+    internal static (byte[] Bytes, long Length, long TopLine, long Offset, long TotalLines)
+        ReadWindow(string path, long requestedLine, int visibleLines)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        return ReadPage(stream, requestedPage);
+        return ReadWindow(stream, requestedLine, visibleLines);
     }
 
-    internal static (byte[] Bytes, long Length, long Page, long Offset, long Pages) ReadPage(Stream stream, long requestedPage)
+    internal static (byte[] Bytes, long Length, long TopLine, long Offset, long TotalLines)
+        ReadWindow(Stream stream, long requestedLine, int visibleLines)
     {
+        var rows = Math.Clamp(visibleLines, 1, 4096);
         var length = stream.Length;
-        var pages = PageCount(length);
-        var page = Math.Clamp(requestedPage, 0, pages - 1);
-        var offset = page * (long)PageBytes;
+        var totalLines = LineCount(length);
+        var topLine = Math.Clamp(requestedLine, 0, LastTopLine(length, rows));
+        var offset = topLine * BytesPerLine;
+        var bytes = new byte[(int)Math.Min(length - offset, (long)rows * BytesPerLine)];
         stream.Seek(offset, SeekOrigin.Begin);
-        var bytes = new byte[(int)Math.Min(length - offset, PageBytes)];
-        // A file can shrink concurrently. Display only bytes actually read.
+        var count = ReadUpTo(stream, bytes, bytes.Length);
+        // A file can shrink while open. Display only bytes actually read.
+        if (count != bytes.Length) Array.Resize(ref bytes, count);
+        return (bytes, length, topLine, offset, totalLines);
+    }
+
+    private static int ReadUpTo(Stream stream, byte[] bytes, int wanted)
+    {
         var count = 0;
-        while (count < bytes.Length)
+        while (count < wanted)
         {
-            var n = stream.Read(bytes, count, bytes.Length - count);
+            var n = stream.Read(bytes, count, wanted - count);
             if (n == 0) break;
             count += n;
         }
-        if (count != bytes.Length) Array.Resize(ref bytes, count);
-        return (bytes, length, page, offset, pages);
+        return count;
+    }
+
+    // "start" is a byte offset: inclusive for forward search, exclusive for
+    // backwards search. Overlap between blocks preserves matches that straddle
+    // a block boundary. Returns the absolute byte offset, or -1 if not found.
+    internal static long Find(string path, byte[] pattern, long start, bool backwards,
+        CancellationToken cancellation, Action<long, long>? progress = null)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete, SearchBlockBytes,
+            backwards ? FileOptions.RandomAccess : FileOptions.SequentialScan);
+        return Find(stream, pattern, start, backwards, cancellation, progress);
+    }
+
+    internal static long Find(Stream stream, byte[] pattern, long start, bool backwards,
+        CancellationToken cancellation, Action<long, long>? progress = null)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        if (pattern.Length == 0) throw new ArgumentException("検索文字を入力してください。", nameof(pattern));
+        if (pattern.Length > 1024 * 1024) throw new ArgumentException("検索文字が長すぎます。", nameof(pattern));
+        cancellation.ThrowIfCancellationRequested();
+        var length = stream.Length;
+        var candidates = length < pattern.Length ? 0 : length - pattern.Length + 1;
+        var cursor = Math.Clamp(start, 0, candidates);
+        var target = backwards ? cursor : candidates - cursor;
+        long scanned = 0;
+        var buffer = new byte[SearchBlockBytes + pattern.Length - 1];
+        while (backwards ? cursor > 0 : cursor < candidates)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            var block = (int)Math.Min(SearchBlockBytes, backwards ? cursor : candidates - cursor);
+            var blockStart = backwards ? cursor - block : cursor;
+            stream.Seek(blockStart, SeekOrigin.Begin);
+            var wanted = block + pattern.Length - 1;
+            var count = ReadUpTo(stream, buffer, wanted);
+            var span = buffer.AsSpan(0, count);
+            var index = backwards ? span.LastIndexOf(pattern) : span.IndexOf(pattern);
+            if (index >= 0 && index < block) return blockStart + index;
+            scanned += block;
+            progress?.Invoke(scanned, target);
+            cursor = backwards ? blockStart : cursor + block;
+        }
+        return -1;
     }
 
     internal static string Format(byte[] bytes, long offset = 0)
     {
         if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
-        var result = new StringBuilder((bytes.Length / 16 + 1) * 78);
-        for (var at = 0; at < bytes.Length; at += 16)
+        var result = new StringBuilder((bytes.Length / BytesPerLine + 1) * 78);
+        for (var at = 0; at < bytes.Length; at += BytesPerLine)
         {
             result.Append((offset + at).ToString("X8")).Append("  ");
-            var count = Math.Min(16, bytes.Length - at);
-            for (var i = 0; i < 16; i++)
+            var count = Math.Min(BytesPerLine, bytes.Length - at);
+            for (var i = 0; i < BytesPerLine; i++)
                 if (i < count) result.Append(bytes[at + i].ToString("X2")).Append(' ');
                 else result.Append("   ");
             result.Append(" |");

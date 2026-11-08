@@ -40,7 +40,7 @@ internal static class TextFileChecks
         var binaryHeader = new byte[] { 0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0, 1, 2, 3 };
         await File.WriteAllBytesAsync(binaryFixture, binaryHeader);
         assert(BinaryPreview.IsProbablyBinary(binaryFixture), "MP4-like bytes are detected for a read-only preview");
-        var binaryPrefix = BinaryPreview.ReadPage(binaryFixture, 0);
+        var binaryPrefix = BinaryPreview.ReadWindow(binaryFixture, 0, 10);
         assert(binaryPrefix.Length == binaryHeader.Length && binaryPrefix.Bytes.SequenceEqual(binaryHeader) && BinaryPreview.Format(binaryPrefix.Bytes, binaryPrefix.Offset).Contains("66 74 79 70"), "binary preview displays exact hex bytes");
         assert((await File.ReadAllBytesAsync(binaryFixture)).SequenceEqual(binaryHeader), "binary preview never modifies the source");
         var calendar = Path.Combine(root, "calendar.ics");
@@ -48,26 +48,47 @@ internal static class TextFileChecks
         assert(!BinaryPreview.IsProbablyBinary(calendar), "ICS text remains editable");
         var empty = Path.Combine(root, "empty.txt");
         await File.WriteAllBytesAsync(empty, []);
-        var emptyPage = BinaryPreview.ReadPage(empty, 99);
-        assert(!BinaryPreview.IsProbablyBinary(empty) && emptyPage.Bytes.Length == 0 && emptyPage.Page == 0 && emptyPage.Pages == 1, "empty text remains editable and preview has a valid empty page");
+        var emptyView = BinaryPreview.ReadWindow(empty, 99, 10);
+        assert(!BinaryPreview.IsProbablyBinary(empty) && emptyView.Bytes.Length == 0 && emptyView.TopLine == 0 && emptyView.TotalLines == 1, "empty text remains editable and the binary view handles empty files");
         var largeBinary = Path.Combine(root, "large-preview.mp4");
         var tailMarker = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
         using (var stream = File.Create(largeBinary)) { stream.Write(binaryHeader); stream.SetLength(65L * 1024 * 1024 + tailMarker.Length); stream.Seek(-tailMarker.Length, SeekOrigin.End); stream.Write(tailMarker); }
-        var firstPage = BinaryPreview.ReadPage(largeBinary, 0);
-        var beyondOldLimit = BinaryPreview.ReadPage(largeBinary, 1);
-        var endPage = BinaryPreview.ReadPage(largeBinary, long.MaxValue);
-        assert(firstPage.Length == 65L * 1024 * 1024 + tailMarker.Length && firstPage.Bytes.Length == BinaryPreview.PageBytes && firstPage.Bytes.AsSpan(0, binaryHeader.Length).SequenceEqual(binaryHeader), "binary view reads the first page without loading a large file into memory");
-        assert(beyondOldLimit.Offset == 65536 && beyondOldLimit.Bytes.Length == BinaryPreview.PageBytes && BinaryPreview.Format(beyondOldLimit.Bytes, beyondOldLimit.Offset).StartsWith("00010000"), "binary view reaches beyond the previous 64 KiB limit and displays absolute offsets");
-        assert(endPage.Page == endPage.Pages - 1 && endPage.Offset == 65L * 1024 * 1024 && endPage.Bytes.SequenceEqual(tailMarker), "binary view reaches the end of a large file and clamps an excessive page index");
-        assert(BinaryPreview.ReadPage(largeBinary, -1).Page == 0 && BinaryPreview.PageCount(BinaryPreview.PageBytes) == 1 && BinaryPreview.PageCount(BinaryPreview.PageBytes + 1) == 2, "negative pages, exact boundaries, and one-byte remainders are handled");
-        assert(BinaryPreview.PageCount(long.MaxValue) == long.MaxValue / BinaryPreview.PageBytes + 1 && BinaryPreview.PageForOffset(5L * 1024 * 1024 * 1024, 6L * 1024 * 1024 * 1024) * BinaryPreview.PageBytes == 5L * 1024 * 1024 * 1024 && BinaryPreview.Format([0xAB], 0x100000000).StartsWith("100000000"), "page and offset calculations support files beyond 4 GiB without overflow");
+        var firstView = BinaryPreview.ReadWindow(largeBinary, 0, 24);
+        var beyondOldLimit = BinaryPreview.ReadWindow(largeBinary, 65536 / BinaryPreview.BytesPerLine, 24);
+        var endView = BinaryPreview.ReadWindow(largeBinary, long.MaxValue, 1);
+        assert(firstView.Length == 65L * 1024 * 1024 + tailMarker.Length && firstView.Bytes.Length == 24 * BinaryPreview.BytesPerLine && firstView.Bytes.AsSpan(0, binaryHeader.Length).SequenceEqual(binaryHeader), "binary view reads only the visible part of a large file");
+        assert(beyondOldLimit.Offset == 65536 && beyondOldLimit.Bytes.Length == 24 * BinaryPreview.BytesPerLine && BinaryPreview.Format(beyondOldLimit.Bytes, beyondOldLimit.Offset).StartsWith("00010000"), "binary view reaches beyond 64 KiB and displays absolute offsets");
+        assert(endView.Offset == 65L * 1024 * 1024 && endView.Bytes.SequenceEqual(tailMarker), "binary view reaches the end of a large file and clamps an excessive position");
+        assert(BinaryPreview.ReadWindow(largeBinary, -1, 1).TopLine == 0 && BinaryPreview.LineCount(16) == 1 && BinaryPreview.LineCount(17) == 2, "negative positions, exact line boundaries and one-byte remainders are handled");
+        assert(BinaryPreview.LineCount(long.MaxValue) == 1 + (long.MaxValue - 1) / 16 && BinaryPreview.ScrollLine(1_000_000, BinaryPreview.LastTopLine(long.MaxValue, 24), 1_000_000) == BinaryPreview.LastTopLine(long.MaxValue, 24) && BinaryPreview.Format([0xAB], 0x100000000).StartsWith("100000000"), "scroll and offset calculations support very large files without overflow");
         using (var largeStream = new LargeBinaryStream(6L * 1024 * 1024 * 1024))
         {
             var offset = 5L * 1024 * 1024 * 1024;
-            var distant = BinaryPreview.ReadPage(largeStream, offset / BinaryPreview.PageBytes);
-            assert(largeStream.LastSeek == offset && distant.Offset == offset && distant.Bytes.Length == BinaryPreview.PageBytes && distant.Bytes[0] == 0xA5, "a read beyond 4 GiB seeks to the correct 64-bit file offset and reads only one page");
+            var distant = BinaryPreview.ReadWindow(largeStream, offset / BinaryPreview.BytesPerLine, 24);
+            assert(largeStream.LastSeek == offset && distant.Offset == offset && distant.Bytes.Length == 24 * BinaryPreview.BytesPerLine && distant.Bytes[0] == 0xA5, "a view beyond 4 GiB seeks correctly and reads only visible lines");
+            assert(BinaryPreview.Find(largeStream, [0xA5, 0xA5], offset, false, CancellationToken.None) == offset, "whole-file search accepts 64-bit offsets beyond 4 GiB");
         }
-        assert(BinaryPreview.ReadPage(largeBinary, 0).Bytes.AsSpan(0, binaryHeader.Length).SequenceEqual(binaryHeader) && BinaryPreview.ReadPage(largeBinary, long.MaxValue).Bytes.SequenceEqual(tailMarker), "viewing distant pages never modifies file contents");
+        assert(BinaryPreview.ReadWindow(largeBinary, 0, 1).Bytes.AsSpan(0, binaryHeader.Length).SequenceEqual(binaryHeader) && BinaryPreview.ReadWindow(largeBinary, long.MaxValue, 1).Bytes.SequenceEqual(tailMarker), "viewing distant positions never modifies file contents");
+        var searchBytes = new byte[2 * BinaryPreview.SearchBlockBytes + 50];
+        var marker = Encoding.UTF8.GetBytes("日本語-search");
+        var firstMatch = BinaryPreview.SearchBlockBytes - 2;
+        var secondMatch = searchBytes.Length - marker.Length;
+        marker.CopyTo(searchBytes, firstMatch);
+        marker.CopyTo(searchBytes, secondMatch);
+        using (var searchStream = new MemoryStream(searchBytes, writable: false))
+        {
+            assert(BinaryPreview.Find(searchStream, marker, 0, false, CancellationToken.None) == firstMatch, "forward search finds UTF-8 bytes crossing a read boundary");
+            assert(BinaryPreview.Find(searchStream, marker, firstMatch + 1, false, CancellationToken.None) == secondMatch, "forward search continues to a later match at the end of the file");
+            assert(BinaryPreview.Find(searchStream, marker, long.MaxValue, true, CancellationToken.None) == secondMatch, "backward search finds a match at the end");
+            assert(BinaryPreview.Find(searchStream, marker, secondMatch, true, CancellationToken.None) == firstMatch, "backward search excludes the current match and finds a boundary-spanning earlier match");
+            assert(BinaryPreview.Find(searchStream, marker, firstMatch, true, CancellationToken.None) == -1 && BinaryPreview.Find(searchStream, [0xFF, 0xFE], 0, false, CancellationToken.None) == -1, "whole-file search reports missing matches in both directions");
+            using var cancelled = new CancellationTokenSource();
+            cancelled.Cancel();
+            var wasCancelled = false;
+            try { BinaryPreview.Find(searchStream, marker, 0, false, cancelled.Token); }
+            catch (OperationCanceledException) { wasCancelled = true; }
+            assert(wasCancelled, "whole-file search can be cancelled");
+        }
         assert(BinaryPreview.IsNetworkPath(@"\\\\server\\share\\file") && BinaryPreview.IsNetworkPath("//server/share/file") && !BinaryPreview.IsNetworkPath("file.txt"), "network paths skip the synchronous preview probe");
         var imported = new DocumentData { Name = "opened.csv", Text = "a,b", SavedText = "a,b", NeedsInitialSave = false };
         var importedRecovery = JsonSerializer.Deserialize<DocumentData>(JsonSerializer.Serialize(imported, Storage.Json), Storage.Json)!;
@@ -171,4 +192,5 @@ internal static class TextFileChecks
         assert(EditorAccelerators.CommandFor(0x53, true, true, false) is null && EditorAccelerators.CommandFor(0x53, false, false, false) is null && EditorAccelerators.CommandFor(0x52, true, false, false) is null, "native shortcut routing excludes AltGr, text typing and browser refresh");
     }
 }
+
 

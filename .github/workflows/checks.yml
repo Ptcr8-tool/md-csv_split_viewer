@@ -1,51 +1,123 @@
-name: Binary viewer diagnostics
+name: Build and check
 on:
+  workflow_dispatch:
+    inputs:
+      startup_baseline_run:
+        description: 'Optional successful baseline Actions run ID for a web startup comparison'
+        required: false
+        type: string
   push:
-    branches: [work/windows-context-and-new]
   pull_request:
-    branches: [dev]
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+  actions: read
 jobs:
-  verify:
+  checks:
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
       - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run check:version
+      - run: npm test
+      - run: dotnet run --project tests/native/NativeChecks.csproj -c Release
+      - run: npx playwright install chromium
       - run: npm run publish:win
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      - name: Verify the production web bundle
+        run: node scripts/check-production.mjs
+      - run: choco install nsis --yes --no-progress
+      - name: Check installer directory validation on Windows
+        shell: pwsh
+        run: |
+          $makeNsisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          & ./tests/installer/Run-DirectoryChecks.ps1 -MakeNsis $makeNsisPath
+      # Cache only the original CAB, never extracted executables. The packaging
+      # script validates the CAB size and SHA-256 against installer/runtime.json.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: release/runtime-cache/runtime.cab
           key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
-      - name: Prepare fixed WebView runtime
+      - name: Package complete offline setup
         shell: pwsh
         run: |
-          $runtime = Get-Content installer/runtime.json -Raw | ConvertFrom-Json
-          if (-not $runtime.url.StartsWith('https://msedge.sf.dl.delivery.mp.microsoft.com/', [StringComparison]::Ordinal)) { throw 'Unexpected runtime host.' }
-          $cache = Join-Path $PWD 'release/runtime-cache'
-          New-Item -ItemType Directory -Force -Path $cache | Out-Null
-          $cab = Join-Path $cache 'runtime.cab'
-          if ((Test-Path -LiteralPath $cab) -and ((Get-Item -LiteralPath $cab).Length -ne $runtime.bytes -or (Get-FileHash -LiteralPath $cab -Algorithm SHA256).Hash -ne $runtime.sha256)) { Remove-Item -LiteralPath $cab -Force }
-          if (-not (Test-Path -LiteralPath $cab)) { Invoke-WebRequest -Uri $runtime.url -OutFile $cab }
-          if ((Get-Item -LiteralPath $cab).Length -ne $runtime.bytes -or (Get-FileHash -LiteralPath $cab -Algorithm SHA256).Hash -ne $runtime.sha256) { throw 'Runtime checksum mismatch.' }
-          $extracted = Join-Path $cache 'extracted'
-          New-Item -ItemType Directory -Force -Path $extracted | Out-Null
-          & "$env:SystemRoot/System32/expand.exe" '-F:*' $cab $extracted
-          if ($LASTEXITCODE -ne 0) { throw 'Runtime extraction failed.' }
-          $matches = @(Get-ChildItem -LiteralPath $extracted -Filter msedgewebview2.exe -Recurse -File)
-          if ($matches.Count -ne 1) { throw 'Unexpected fixed runtime layout.' }
-          Copy-Item -LiteralPath $matches[0].DirectoryName -Destination 'release/MD-Split/WebView2Runtime' -Recurse
-      - name: Verify binary viewer navigation
+          $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          python scripts/package-installer.py
+      - name: Verify Japanese setup text in the actual wizard
+        shell: powershell
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
+          & ./tests/installer/Check-SetupJapanese.ps1 -Setup $setups[0].FullName
+      - name: Smoke test install, repair and uninstall on Windows
+        shell: pwsh
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
+          & ./tests/installer/Run-SetupSmoke.ps1 -Setup $setups[0].FullName
+      # Optional comparison uses the same executable and profile with the
+      # baseline and candidate web bundles. It does not compare native changes.
+      - name: Compare Windows startup against baseline
+        if: github.event_name == 'workflow_dispatch' && inputs.startup_baseline_run != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASELINE_RUN_ID: ${{ inputs.startup_baseline_run }}
+        run: |
+          if ($env:BASELINE_RUN_ID -notmatch '^\d+$') { throw 'Expected a numeric baseline run ID.' }
+          gh run download $env:BASELINE_RUN_ID --repo '${{ github.repository }}' --name MD-Split-Windows-setup --dir baseline-startup
+          if ($LASTEXITCODE -ne 0) { throw 'Could not obtain baseline setup.' }
+          $baselines = @(Get-ChildItem -LiteralPath baseline-startup -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($baselines.Count -ne 1) { throw 'Expected exactly one baseline setup.' }
+          & ./tests/installer/Measure-Startup.ps1 -BaselineSetup $baselines[0].FullName -CandidateWeb 'dist'
+      - name: Verify CSV clipboard in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify both print dialogs in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-PrintWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify session restoration in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify mixed line endings in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify optional startup trace in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-StartupTraceWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify binary viewer navigation in Windows
         shell: powershell
         run: |
           & ./tests/installer/Run-BinaryViewer.ps1 -Payload 'release/MD-Split'
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MD-Split-Windows-setup
+          path: |
+            release/MD-Split-*-Setup.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+
+

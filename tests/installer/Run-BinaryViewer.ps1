@@ -28,6 +28,9 @@ try {
         $stream.SetLength(3 * 65536 + 4)
         $stream.Position = 0; $header = [byte[]](0,0,0,24,0x66,0x74,0x79,0x70); $stream.Write($header,0,$header.Length)
         $stream.Position = 65536; $middle = [byte[]](0x12,0x34,0x56,0x78); $stream.Write($middle,0,$middle.Length)
+        $marker = [Text.Encoding]::UTF8.GetBytes('SEARCH-MARK')
+        $stream.Position = 65536 + 32; $stream.Write($marker,0,$marker.Length)
+        $stream.Position = 2 * 65536 + 16; $stream.Write($marker,0,$marker.Length)
         $stream.Position = 3 * 65536; $tail = [byte[]](0xDE,0xAD,0xBE,0xEF); $stream.Write($tail,0,$tail.Length)
     } finally { $stream.Dispose() }
     $before = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash
@@ -62,7 +65,7 @@ try {
     function Wait-Content([string] $Expected) {
         $until = [DateTime]::UtcNow.AddSeconds(45)
         do {
-            if ($process.HasExited) { throw 'Application exited while navigating binary pages.' }
+            if ($process.HasExited) { throw 'Application exited while viewing the binary file.' }
             try {
                 $item = Find-Control 'BinaryContent'
                 if ($null -ne $item) {
@@ -75,7 +78,7 @@ try {
             } catch [System.Windows.Automation.ElementNotAvailableException] { }
             Start-Sleep -Milliseconds 200
         } while ([DateTime]::UtcNow -lt $until)
-        throw "Expected binary page did not appear: $Expected"
+        throw "Expected binary content did not appear: $Expected"
     }
     function Click-Control([string] $Id) {
         $until = [DateTime]::UtcNow.AddSeconds(15)
@@ -89,17 +92,23 @@ try {
         $pattern.Invoke()
     }
     Wait-Content '00000000  00 00 00 18 66 74 79 70'
-    Click-Control 'BinaryNext'
-    Wait-Content '00010000  12 34 56 78'
-    Click-Control 'BinaryLast'
-    Wait-Content '00030000  DE AD BE EF'
+    if ($null -ne (Find-Control 'BinaryPage')) { throw 'A paging control is still present.' }
+    $search = Find-Control 'BinarySearchText'
+    if ($null -eq $search) { throw 'Whole-file search input not found.' }
+    $search.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('SEARCH-MARK')
+    Click-Control 'BinarySearchNext'
+    Wait-Content '00010020  53 45 41 52 43 48 2D 4D 41 52 4B'
+    Click-Control 'BinarySearchNext'
+    Wait-Content '00020010  53 45 41 52 43 48 2D 4D 41 52 4B'
+    Click-Control 'BinarySearchPrevious'
+    Wait-Content '00010020  53 45 41 52 43 48 2D 4D 41 52 4B'
     $input = Find-Control 'BinaryOffset'
     if ($null -eq $input) { throw 'Offset input not found.' }
     $valuePattern = $input.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
     $valuePattern.SetValue('0x10000')
     Click-Control 'BinaryGoOffset'
     Wait-Content '00010000  12 34 56 78'
-    Write-Output 'PASS: binary viewer displayed the first page, the page beyond 64 KiB, the end and the requested offset.'
+    Write-Output 'PASS: whole-file search navigated matches beyond 64 KiB in both directions, and offset navigation remained available.'
     # The owned viewer can appear before the editor's WebView has completed
     # bootstrap. Wait for its trace before sending the normal close request.
     $until = [DateTime]::UtcNow.AddSeconds(90)
@@ -129,8 +138,12 @@ try {
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $until)
     if ($null -eq $ownerWindow) { throw 'Owner editor window was not found.' }
-    $ownerWindow.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
-    if (-not $process.WaitForExit(12000) -or $process.ExitCode -ne 0) {
+    # Use the same normal close method and timeout as the other WebView2 smoke
+    # tests. UI Automation WindowPattern.Close did not deliver a close request
+    # to the editor reliably on the hosted runner after closing its owned form.
+    $process.Refresh()
+    if (-not $process.CloseMainWindow()) { throw 'Could not request a normal editor close.' }
+    if (-not $process.WaitForExit(45000) -or $process.ExitCode -ne 0) {
         $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $processCondition)
         foreach ($item in $windows) {
             Write-Output ('Remaining application window: ' + $item.Current.Name)
@@ -157,7 +170,7 @@ try {
         throw 'Editor did not close normally.'
     }
     if ((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash -ne $before) { throw 'Read-only viewer modified the binary fixture.' }
-    Write-Output 'PASS: native binary viewer reads beyond 64 KiB, reaches the end, navigates by offset, and leaves the file unchanged.'
+    Write-Output 'PASS: whole-file search and offset navigation are read-only, and the editor closes normally.'
     $verified = $true
 } finally {
     if ($process -and -not $process.HasExited) {
@@ -171,3 +184,4 @@ try {
         }
     }
 }
+
