@@ -261,7 +261,9 @@ internal static class Storage
     {
         var exe = Environment.ProcessPath ?? throw new IOException("実行ファイルが見つかりません。");
         const string progId = AssociationProgId;
-        var iconDirectory = Path.Combine(AppContext.BaseDirectory, "doc-icons");
+        // A new path makes Explorer reload redesigned icons instead of reusing
+        // stale per-user cached images from earlier versions.
+        var iconDirectory = Path.Combine(AppContext.BaseDirectory, "doc-icons-v2");
         var commonIcon = Path.Combine(iconDirectory, "document.ico");
         if (!File.Exists(commonIcon)) commonIcon = Path.Combine(AppContext.BaseDirectory, "app.ico");
         static string IconValue(string path) => "\"" + path + "\",0";

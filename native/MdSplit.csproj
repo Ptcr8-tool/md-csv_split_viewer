@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>MD-Split</AssemblyName>
     <RootNamespace>MdSplit</RootNamespace>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Product>MD-CSV Split Editor</Product>
     <Description>Text, Markdown and CSV editor</Description>
     <ApplicationIcon>app.ico</ApplicationIcon>
@@ -24,7 +24,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <Content Include="..\dist\**\*" Exclude="..\dist\**\*.map" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="app.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="doc-icons\*.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="doc-icons\*.ico" TargetPath="doc-icons-v2\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="RemoveUnusedWpfAssembly" BeforeTargets="ResolveAssemblyReferences">
     <ItemGroup>

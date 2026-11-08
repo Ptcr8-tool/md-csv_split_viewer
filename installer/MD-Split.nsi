@@ -11,7 +11,7 @@
 ${StrStr}
 ${UnStrStr}
 !ifndef VERSION
-!define VERSION "1.0.1"
+!define VERSION "1.0.2"
 !endif
 !ifndef PAYLOAD
 !define PAYLOAD "..\release\MD-Split"
@@ -215,6 +215,13 @@ Section "アプリ本体・オフライン実行環境（必須）" SecCore
     DetailPrint "WebView2 Runtime access setup failed: $0"
     MessageBox MB_ICONEXCLAMATION "表示環境のアクセス権を設定できませんでした。書き込み可能な専用フォルダーで再試行してください。"
     Abort
+  ${EndIf}
+SectionEnd
+
+Section /o "すべてのファイルとフォルダーの右クリックに本アプリを追加" SecContextMenu
+  ExecWait '"$INSTDIR\MD-Split.exe" --context-menu-enable' $0
+  ${If} $0 != 0
+    DetailPrint "右クリックメニューを登録できませんでした。アプリの設定から再試行できます。"
   ${EndIf}
 SectionEnd
 
