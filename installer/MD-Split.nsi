@@ -11,7 +11,7 @@
 ${StrStr}
 ${UnStrStr}
 !ifndef VERSION
-!define VERSION "1.0.1"
+!define VERSION "1.0.2"
 !endif
 !ifndef PAYLOAD
 !define PAYLOAD "..\release\MD-Split"
