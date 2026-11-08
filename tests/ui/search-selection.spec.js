@@ -33,3 +33,20 @@ test('visible text selected inside a CSV cell is copied into search',async({page
   await page.evaluate(()=>window.__mdSplit.openDocument({name:'test.csv',text:'a,b\nfirst,second\n',savedText:'a,b\nfirst,second\n',encoding:'utf8',hasBom:false}));
   const cell=page.locator('#text-preview [data-cell-row="1"][data-cell-column="1"]');await cell.click();await cell.evaluate(n=>{const w=document.createTreeWalker(n,NodeFilter.SHOW_TEXT),node=w.nextNode(),r=document.createRange();r.setStart(node,0);r.setEnd(node,3);const s=getSelection();s.removeAllRanges();s.addRange(r);});await openSearch(page);await expect(page.locator('#find-text')).toHaveValue('sec');
 });
+test('search stays immediately after redo when switching file types',async({page})=>{
+  async function check(parent){
+    const search=page.getByRole('button',{name:'検索・置換 · Ctrl+F',exact:true});
+    await expect(search).toBeVisible();
+    await expect(search).toHaveCount(1);
+    expect(await search.evaluate(el=>({parent:el.parentElement.matches('.formatbar')?'formatbar':el.parentElement.id,previous:el.previousElementSibling?.dataset.cmd}))).toEqual({parent,previous:'redo'});
+    await search.click();await expect(page.locator('#search-panel')).toBeVisible();
+    await page.getByRole('button',{name:'検索を閉じる',exact:true}).click();
+  }
+  await check('formatbar');
+  await page.evaluate(()=>window.__mdSplit.openDocument({name:'sample.txt',text:'sample'}));
+  await check('text-edit-actions');
+  await page.evaluate(()=>window.__mdSplit.openDocument({name:'sample.csv',text:'a,b'}));
+  await check('text-edit-actions');
+  await page.locator('.tab-name').first().click();
+  await check('formatbar');
+});

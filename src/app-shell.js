@@ -13,7 +13,7 @@ const icons={
   image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 18 6-6 4 4 3-3 5 5"/>',table:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',code:'<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/>',copy:'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/>',print:'<path d="M6 9V3h12v6M6 18H3v-7h18v7h-3M6 14h12v7H6zM17 11h1"/>',undo:'<path d="m8 5-5 5 5 5M3 10h11c8 0 8 10 0 10"/>',redo:'<path d="m16 5 5 5-5 5m5-5H10c-8 0-8 10 0 10"/>',split:'<path d="M12 3v18M3 7h6M3 12h6M3 17h6M15 7h6M15 12h6M15 17h6"/>',help:'<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 2-3 4m0 3v1"/>'
 };
 const icon=name=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||''}</svg>`;
-const btn=(cmd,label,content,cls='')=>`<button type="button" class="tool ${cls}" data-cmd="${cmd}" title="${label}" aria-label="${label}">${icons[content]?icon(content):content}</button>`;
+const btn=(cmd,label,content,cls='',title=label)=>`<button type="button" class="tool ${cls}" data-cmd="${cmd}" title="${title}" aria-label="${label}">${icons[content]?icon(content):content}</button>`;
 
 export function applicationShell() {
   return `
@@ -23,7 +23,7 @@ export function applicationShell() {
 <div class="session-menu-list">
   <section class="session-menu-group" aria-labelledby="file-menu-open-heading">
     <p class="session-menu-group-title" id="file-menu-open-heading">新規・開く</p>
-    <button type="button" data-file-action="new-options"><span>新規作成…</span></button>
+    <button type="button" data-file-action="new-options"><span>新規作成…</span><kbd aria-hidden="true">Ctrl+Shift+N</kbd></button>
     <button type="button" data-file-action="open"><span>ファイルを開く</span><kbd aria-hidden="true">Ctrl+O</kbd></button>
     <button type="button" data-file-action="recent"><span>最近開いたファイル</span></button>
   </section>
@@ -48,18 +48,18 @@ export function applicationShell() {
   </details>
 </div>
 </details>
-<div class="file-actions">${btn('new','新規作成 · Ctrl+N','new')}<select id="new-format" aria-label="新規ファイルの種類" title="新規ファイルの種類"><option value="md">MD</option><option value="txt">TXT</option><option value="html">HTML</option><option value="json">JSON</option><option value="csv">CSV</option><option value="tsv">TSV</option><option value="xml">XML</option></select>${btn('open','ファイルを開く · Ctrl+O','open')}${btn('recent','最近開いたファイル','◷')}${btn('save','保存 · Ctrl+S','save','save-button')}${btn('saveas','名前を付けて保存 · Ctrl+Shift+S','saveas')}</div><div id="text-edit-actions" hidden></div>
+<div class="file-actions">${btn('new','新規作成 · Ctrl+N','new','','新規作成 · Ctrl+N（右クリック: 種類を選択）')}<select id="new-format" aria-label="新規ファイルの種類" title="新規ファイルの種類"><option value="md">MD</option><option value="txt">TXT</option><option value="html">HTML</option><option value="json">JSON</option><option value="csv">CSV</option><option value="tsv">TSV</option><option value="xml">XML</option></select>${btn('open','ファイルを開く · Ctrl+O','open')}${btn('recent','最近開いたファイル','◷')}${btn('save','保存 · Ctrl+S','save','save-button')}${btn('saveas','名前を付けて保存 · Ctrl+Shift+S','saveas')}</div><div id="text-edit-actions" hidden></div>
 <span class="header-spacer"></span>
 <div class="toggle-group" aria-label="次に開くファイルの開き方">${btn('layout-windows','次のファイルを別ウィンドウで開く','windows')}${btn('layout-tabs','次のファイルをタブで開く','tabs')}</div>
 <div class="toggle-group render-toggle" aria-label="表示モード">${btn('mode-normal','通常のMarkdown表示','book')}${btn('mode-discord','Discord表示','discord')}</div>
-<span class="top-divider"></span>${btn('outline','見出しナビゲーター','☷')}<div class="toggle-group view-controls" role="group" aria-label="編集画面の表示">${btn('view-split','左右分割','view')}${btn('view-source','原文のみ','sourceview')}${btn('view-preview','展開のみ','previewview')}</div><div class="toggle-group brightness-controls" role="group" aria-label="画面の明るさ">${btn('theme-light','ライト','sun')}${btn('theme-dark','ダーク','moon')}${btn('theme-system','システムに合わせる','system')}</div>${btn('focus-owner','元のウィンドウを表示','windows','pane-return')}${btn('sync','スクロール連動を切り替え','sync')}${btn('search','検索・置換 · Ctrl+F','search')}${btn('help','使い方とショートカット','help')}${btn('settings','設定','settings')}</header>
+<span class="top-divider"></span>${btn('outline','見出しナビゲーター','☷')}<div class="toggle-group view-controls" role="group" aria-label="編集画面の表示">${btn('view-split','左右分割','view')}${btn('view-source','原文のみ','sourceview')}${btn('view-preview','展開のみ','previewview')}</div><div class="toggle-group brightness-controls" role="group" aria-label="画面の明るさ">${btn('theme-light','ライト','sun')}${btn('theme-dark','ダーク','moon')}${btn('theme-system','システムに合わせる','system')}</div>${btn('focus-owner','元のウィンドウを表示','windows','pane-return')}${btn('sync','スクロール連動を切り替え','sync')}${btn('help','使い方とショートカット','help')}${btn('settings','設定','settings')}</header>
 <nav class="tabbar" aria-label="開いているファイル"></nav>
 <section class="formatbar" aria-label="文章の装飾"><span class="target-label">原文を編集中</span><span class="tool-separator"></span>
 <select id="heading" aria-label="見出し"><option value="">本文・見出し</option><option value="0">本文</option>${[1,2,3,4,5,6].map(n=>`<option value="${n}">見出し ${n}</option>`).join('')}</select>
 ${btn('bold','太字 · Ctrl+B','<b>B</b>')}${btn('italic','斜体 · Ctrl+I','<i>I</i>')}${btn('strike','打ち消し線','<s>S</s>')}${btn('underline','下線（Discord）','<u>U</u>')}${btn('spoiler','伏せ字（Discord）','▧')}
 <span class="tool-separator"></span>${btn('bullet','箇条書き','≡')}${btn('number','番号付きリスト','1.')}${btn('check','チェックリスト','☑')}${btn('quote','引用','❞')}${btn('subtext','小さな文字（Discord）','<small>−#</small>')}
 <span class="tool-separator"></span>${btn('link','リンク · Ctrl+K','link')}${btn('image','画像を挿入','image')}${btn('table','表を挿入','table')}${btn('inlinecode','インラインコード','<span class="mono">&lt;/&gt;</span>')}${btn('code','コードブロック','code')}${btn('mermaid','Mermaid図を挿入','◇')}${btn('details','折りたたみを挿入','▸')}${btn('rule','区切り線','―')}
-<span class="toolbar-spacer"></span>${btn('undo','元に戻す · Ctrl+Z','undo')}${btn('redo','やり直す · Ctrl+Y','redo')}
+<span class="toolbar-spacer"></span>${btn('undo','元に戻す · Ctrl+Z','undo')}${btn('redo','やり直す · Ctrl+Y','redo')}${btn('search','検索・置換 · Ctrl+F','search')}
 </section>
 <div class="notice" role="status" hidden></div>
 <div id="update-progress" class="update-progress" hidden><span id="update-status"></span><progress max="100" value="0"></progress><button type="button" id="update-cancel" class="secondary">中止</button></div>

@@ -16,7 +16,9 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) => { if(e.ExceptionObject is Exception ex) Storage.Log(ex); };
         try
         {
-            if (args.Contains("--register-only")||args.Contains("--register-quiet")) { Storage.RegisterAssociation(); if(!args.Contains("--register-quiet"))MessageBox.Show("対応ファイルの候補にMD-CSV Split Editorを登録しました。既定のアプリはWindowsの設定で拡張子ごとに選んでください。", AppInfo.Title); return; }
+            if(args.Contains("--context-menu-enable")){ContextMenuRegistration.Set(true);return;}
+            if(args.Contains("--context-menu-disable")){ContextMenuRegistration.Set(false);return;}
+            if (args.Contains("--register-only")||args.Contains("--register-quiet")) { Storage.RegisterAssociation(); try { ContextMenuRegistration.MigrateLegacy(); } catch (Exception ex) { Storage.Log(ex); } if(!args.Contains("--register-quiet"))MessageBox.Show("対応ファイルの候補にMD-CSV Split Editorを登録しました。既定のアプリはWindowsの設定で拡張子ごとに選んでください。", AppInfo.Title); return; }
             if(args.Contains("--unregister-quiet")){Maintenance.Unregister();return;}
             if(args.Contains("--repair")){Maintenance.Repair();return;}
             var record=Array.IndexOf(args,"--record-installer");if(record>=0){if(record+1>=args.Length)throw new IOException("修復用ファイルがありません。");Maintenance.RecordInstaller(args[record+1]);return;}
@@ -110,6 +112,7 @@ internal sealed class EditorContext : ApplicationContext
         if (files.Length > 0) RouteFiles(files, lastActive);
         else if (!restored) AddWindow();
         if(Windows.Count==0)AddWindow();
+        RouteNewDirectory(args, lastActive);
         if (sessionWarnings.Count > 0) MessageBox.Show("前回のタブの一部を開けませんでした。\n\n" + string.Join("\n\n", sessionWarnings), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         pipeTask = ListenPipe();
         initializing = false; StartupTrace.Mark(StartupStage.ContextReady);
@@ -143,6 +146,20 @@ internal sealed class EditorContext : ApplicationContext
         var document = TextFileTypes.NewDocument(name, encoding);
         if (Settings.OpenPolicy == "windows") AddWindow(new RecoveryData { Documents = [document], ActiveId = document.Id }); else origin.AddNewDocument(document);
     }
+    private void RouteNewDirectory(string[] args, EditorWindow? origin)
+    {
+        var index = Array.IndexOf(args, "--new-in-directory");
+        if (index < 0) return;
+        if (index + 1 >= args.Length || !Path.IsPathFullyQualified(args[index + 1]) || !Directory.Exists(args[index + 1]))
+        {
+            MessageBox.Show(origin, "新規作成するフォルダーが見つかりません。", AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var target = origin ?? lastActive ?? Windows.FirstOrDefault();
+        if (target is null) return;
+        target.RequestNewInDirectory(Path.GetFullPath(args[index + 1]));
+        target.BringForward();
+    }
     public void RouteFiles(IEnumerable<string> paths, EditorWindow? origin, string? forceEncoding = null)
     {
         if(preparingUpdate)AbortUpdate();
@@ -159,9 +176,27 @@ internal sealed class EditorContext : ApplicationContext
                     if (forceEncoding is not null) existing.Window.Emit(new { type = "encoding-open-existing", id = existing.Doc.Id, name = existing.Doc.Name });
                     continue;
                 }
+                // Probe only a bounded local prefix before potentially loading a
+                // large binary in full. Explicit encoding retains its old behavior.
+                // Normal supported text formats keep the existing single-read
+                // path so opening TXT/PY/LOG does not acquire an extra probe.
+                if (forceEncoding is null &&
+                    (BinaryPreview.IsKnownBinaryExtension(path) ||
+                    (!TextFileTypes.SupportedExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase) &&
+                    BinaryPreview.IsProbablyBinary(path))))
+                {
+                    ShowBinary(path, origin);
+                    continue;
+                }
                 if (!ConfirmLargeFile(path, origin ?? lastActive)) continue;
                 if (initializing) StartupTrace.Mark(StartupStage.FileReadStart);
-                var doc = Storage.ReadFile(path, forceEncoding: forceEncoding);
+                DocumentData doc;
+                try { doc = Storage.ReadFile(path, forceEncoding: forceEncoding); }
+                catch (Exception ex) when (forceEncoding is null && (ex is BinaryContentException || ex is System.Text.DecoderFallbackException))
+                {
+                    ShowBinary(path, origin);
+                    continue;
+                }
                 if (initializing) StartupTrace.Mark(StartupStage.FileReadComplete);
                 Recent.Touch(path);
                 if (initializing) StartupTrace.Mark(StartupStage.RecentUpdated);
@@ -172,6 +207,14 @@ internal sealed class EditorContext : ApplicationContext
             }
             catch (Exception ex) { Storage.Log(ex); MessageBox.Show("ファイルを開けませんでした。\n" + candidate + "\n\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         }
+    }
+    private void ShowBinary(string path, EditorWindow? origin)
+    {
+        // The normal editor remains the application owner. The binary form is
+        // read-only and does not register the source as an editable document.
+        var owner = origin ?? lastActive ?? AddWindow();
+        var viewer = new BinaryViewer(path);
+        viewer.Show(owner);
     }
     public async Task UpdateSettings(AppSettings settings)
     {
@@ -239,7 +282,7 @@ internal sealed class EditorContext : ApplicationContext
                 var line = await PipeMessagePolicy.ReadLine(reader, readTimeout.Token); if (line is null) continue;
                 var args = PipeMessagePolicy.Decode(line);
                 var target = lastActive ?? Windows.FirstOrDefault(); if (target is null || target.IsDisposed) continue;
-                target.BeginInvoke(() => { var files = args.Where(a => !a.StartsWith("--") && File.Exists(a)).ToArray(); if (files.Length > 0) RouteFiles(files, lastActive); else target.BringForward(); });
+                target.BeginInvoke(() => { if (args.Contains("--new-in-directory")) { RouteNewDirectory(args, target); return; } var files = args.Where(a => !a.StartsWith("--") && File.Exists(a)).ToArray(); if (files.Length > 0) RouteFiles(files, lastActive); else target.BringForward(); });
             }
             catch (OperationCanceledException) { if(cancellation.IsCancellationRequested) break; }
             catch (Exception ex) { Storage.Log(ex); await Task.Delay(250); }

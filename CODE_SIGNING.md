@@ -2,7 +2,7 @@
 
 ## Status
 
-The project plans to apply for code signing through [SignPath Foundation](https://signpath.org/). Approval and integration are pending. The v1.0.0 and v1.0.1 setup executables do not have an Authenticode code signature. This document does not claim that the project has been accepted or that any release is signed by SignPath.
+The project plans to apply for code signing through [SignPath Foundation](https://signpath.org/). Approval and integration are pending. The v1.0.0, v1.0.1 and v1.0.2 setup executables do not have an Authenticode code signature. This document does not claim that the project has been accepted or that any release is signed by SignPath.
 
 If accepted, the intended provider credit is: Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 

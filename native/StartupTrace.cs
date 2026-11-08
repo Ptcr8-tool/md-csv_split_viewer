@@ -17,7 +17,8 @@ internal enum StartupStage
     CommandFileInTracedWindow, CommandFileInOtherWindow,
     WebInitializationFailed, NavigationFailed, WindowClosed,
     WindowIconStart, WindowIconComplete, WindowControlsAddStart, WindowControlsAddComplete,
-    WindowConstructorComplete, WindowShowStart, WindowShowComplete
+    WindowConstructorComplete, WindowShowStart, WindowShowComplete,
+    CloseRequested, CloseCommandReceived
 }
 
 internal sealed class StartupTraceSession
