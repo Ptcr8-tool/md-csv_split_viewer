@@ -29,6 +29,7 @@ internal sealed class BinaryViewer : Form
     private long viewRequest;
     private bool viewLoading;
     private bool loaded;
+    private bool settingScroll;
     private CancellationTokenSource? searchCancellation;
     private string? lastSearchKey;
     private long lastMatch = -1;
@@ -93,6 +94,13 @@ internal sealed class BinaryViewer : Form
             RequestView(target);
             e.NewValue = BinaryPreview.ScrollValue(requestedLine, lastLine, ScrollScale);
         };
+        // Assistive technology can set a scrollbar's value directly without
+        // generating a Scroll event. Keep that navigation in sync as well.
+        scroll.ValueChanged += (_, _) =>
+        {
+            if (!loaded || settingScroll) return;
+            RequestView(BinaryPreview.ScrollLine(scroll.Value, BinaryPreview.LastTopLine(length, VisibleLines()), ScrollScale));
+        };
         searchNext.Click += async (_, _) => await SearchAsync(false);
         searchPrevious.Click += async (_, _) => await SearchAsync(true);
         searchCancel.Click += (_, _) => searchCancellation?.Cancel();
@@ -151,8 +159,15 @@ internal sealed class BinaryViewer : Form
         highlightLength = matchLength;
         viewRequest++;
         if (loaded)
-            scroll.Value = BinaryPreview.ScrollValue(requestedLine, BinaryPreview.LastTopLine(length, VisibleLines()), ScrollScale);
+            SetScrollValue(BinaryPreview.ScrollValue(requestedLine, BinaryPreview.LastTopLine(length, VisibleLines()), ScrollScale));
         if (!viewLoading) _ = RefreshViewAsync();
+    }
+
+    private void SetScrollValue(int value)
+    {
+        settingScroll = true;
+        try { scroll.Value = value; }
+        finally { settingScroll = false; }
     }
 
     private async Task RefreshViewAsync()
@@ -174,7 +189,7 @@ internal sealed class BinaryViewer : Form
                     requestedLine = result.TopLine;
                     output.Text = BinaryPreview.Format(result.Bytes, result.Offset);
                     var lastLine = BinaryPreview.LastTopLine(length, rows);
-                    scroll.Value = BinaryPreview.ScrollValue(requestedLine, lastLine, ScrollScale);
+                    SetScrollValue(BinaryPreview.ScrollValue(requestedLine, lastLine, ScrollScale));
                     scroll.Enabled = lastLine > 0;
                     loaded = true;
                     first.Enabled = last.Enabled = goToOffset.Enabled = true;

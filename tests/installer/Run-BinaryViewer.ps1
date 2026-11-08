@@ -93,6 +93,22 @@ try {
     }
     Wait-Content '00000000  00 00 00 18 66 74 79 70'
     if ($null -ne (Find-Control 'BinaryPage')) { throw 'A paging control is still present.' }
+    $scrollbar = Find-Control 'BinaryScroll'
+    if ($null -eq $scrollbar) { throw 'Whole-file scrollbar not found.' }
+    $range = $scrollbar.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
+    $range.SetValue([Math]::Round($range.Current.Maximum / 2))
+    $until = [DateTime]::UtcNow.AddSeconds(30)
+    $scrolled = $false
+    do {
+        $content = Find-Control 'BinaryContent'
+        $text = $content.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+        $match = [regex]::Match($text, '\A([0-9A-F]+)  ')
+        if ($match.Success -and [Convert]::ToInt64($match.Groups[1].Value, 16) -ge 65536) { $scrolled = $true; break }
+        Start-Sleep -Milliseconds 200
+    } while ([DateTime]::UtcNow -lt $until)
+    if (-not $scrolled) { throw 'The scrollbar did not navigate beyond 64 KiB.' }
+    Click-Control 'BinaryFirst'
+    Wait-Content '00000000  00 00 00 18 66 74 79 70'
     $search = Find-Control 'BinarySearchText'
     if ($null -eq $search) { throw 'Whole-file search input not found.' }
     $search.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('SEARCH-MARK')
@@ -108,7 +124,7 @@ try {
     $valuePattern.SetValue('0x10000')
     Click-Control 'BinaryGoOffset'
     Wait-Content '00010000  12 34 56 78'
-    Write-Output 'PASS: whole-file search navigated matches beyond 64 KiB in both directions, and offset navigation remained available.'
+    Write-Output 'PASS: the scrollbar, whole-file search in both directions, and offset navigation reached beyond 64 KiB.'
     # The owned viewer can appear before the editor's WebView has completed
     # bootstrap. Wait for its trace before sending the normal close request.
     $until = [DateTime]::UtcNow.AddSeconds(90)
