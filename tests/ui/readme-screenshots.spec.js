@@ -8,8 +8,11 @@ test.beforeEach(async({page})=>{
   await page.waitForFunction(()=>window.__mdSplit?.openDocument);
 });
 const open=async(page,name,text)=>{
-  await page.evaluate(({name,text})=>window.__mdSplit.openDocument({name,text,savedText:text,encoding:'utf8',hasBom:false}),{name,text});
+  await page.evaluate(({name,text})=>window.__mdSplit.openDocument({name,text,savedText:text,needsInitialSave:false,encoding:'utf8',hasBom:false}),{name,text});
   await expect.poll(()=>page.evaluate(()=>window.__mdSplit.model().name)).toBe(name);
+  await page.getByRole('button',{name:'無題.mdを閉じる',exact:true}).click();
+  await expect(page.locator('.tab')).toHaveCount(1);
+  await expect.poll(()=>page.evaluate(()=>window.__mdSplit.model().dirty)).toBe(false);
 };
 const save=async(page,name)=>{await page.mouse.move(1390,890);await page.screenshot({path:'docs/screenshots/'+name,animations:'disabled'});};
 
@@ -43,7 +46,7 @@ test('Markdown split view',async({page})=>{
 });
 
 test('CSV source and editable table',async({page})=>{
-  const csv='案件名,日程,担当,状況,メモ\n企画の確認,11/12,佐藤,完了,資料を共有\n写真の整理,11/14,鈴木,進行中,候補を選定\n文章の作成,11/18,高橋,これから,見出しを確認\n最終チェック,11/20,田中,これから,全体を見直す\n公開準備,11/22,佐藤,未着手,ファイルを確認\n';
+  const csv='案件名,日程,担当,状況\n企画の確認,11/12,佐藤,完了\n写真の整理,11/14,鈴木,進行中\n文章の作成,11/18,高橋,これから\n最終チェック,11/20,田中,これから\n公開準備,11/22,佐藤,未着手\n';
   await open(page,'作業一覧.csv',csv);
   await expect(page.locator('#text-preview [data-cell-row="1"][data-cell-column="0"]')).toContainText('企画の確認');
   await expect(page.locator('#text-preview')).toContainText('写真の整理');
@@ -51,13 +54,13 @@ test('CSV source and editable table',async({page})=>{
 });
 
 test('Discord mode and split panel',async({page})=>{
-  const text='# 今週のお知らせ\n\nこんにちは！今週の予定をお知らせします。\n\n## 準備すること\n\n- 参加予定を確認する\n- 必要な資料に目を通す\n- 質問があれば気軽に共有する\n\n当日は開始 10 分前を目安にお集まりください。\n\n## 次回の予定\n\n詳細が決まり次第、こちらでお知らせします。';
+  const text='# お知らせ\n\n次回の予定を共有します。\n\n## 準備すること\n\n- 参加予定を確認\n- 資料を確認\n\n当日はよろしくお願いします。';
   await open(page,'お知らせ.md',text);
   await page.getByRole('button',{name:'Discord表示',exact:true}).click();
   await page.locator('#show-chunks').click();
   await expect(page.locator('.chunk')).toHaveCount(1);
   const point=await page.locator('.chunk-body').first().evaluate(el=>{
-    const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let node;let left=55;
+    const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let node;let left=35;
     while((node=walker.nextNode())){if(left<=node.length){const range=document.createRange();range.setStart(node,left);range.setEnd(node,Math.min(node.length,left+1));const rect=range.getBoundingClientRect();return {x:rect.left+Math.min(rect.width/2,2),y:rect.top+rect.height/2};}left-=node.length;}
     throw new Error('Sample text position was not found');
   });
@@ -76,6 +79,7 @@ test('file type settings',async({page})=>{
   await page.locator('#setting-file-kind').selectOption('csv');
   await expect(page.locator('#setting-file-kind')).toHaveValue('csv');
   await expect(page.locator('#setting-outline')).toBeDisabled();
+  await page.getByRole('navigation',{name:'設定のカテゴリ'}).getByRole('button',{name:'ウィンドウと画面',exact:true}).click();
   await save(page,'04-file-type-settings.png');
 });
 
@@ -107,7 +111,7 @@ test('safe HTML preview',async({page})=>{
 });
 
 test('Mermaid diagram view',async({page})=>{
-  const text='# 作業の流れ\n\n以下の図は Mermaid のコードから表示しています。\n\n```mermaid\nflowchart LR\n  A[アイデア] --> B[準備]\n  B --> C[作成]\n  C --> D[確認]\n  D --> E[共有]\n```\n\nコードを編集すると、図も描き直せます。';
+  const text='# 作業の流れ\n\n以下の図は Mermaid のコードから表示しています。\n\n```mermaid\nflowchart LR\n  A[企画] --> B[作成]\n  B --> C[共有]\n```\n\nコードを編集すると、図も描き直せます。';
   await open(page,'作業フロー.md',text);
   await expect(page.locator('.mermaid-stage svg')).toHaveCount(1,{timeout:30000});
   await expect(page.locator('#preview')).toContainText('作業の流れ');
