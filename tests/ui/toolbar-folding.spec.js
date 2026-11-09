@@ -111,7 +111,17 @@ test('all sections can be folded at once and restored independently', async ({pa
 test('collapsed drawers stay at their original boundaries and do not block pane controls', async ({page}) => {
   await page.setViewportSize({width:1280,height:800});
   for (const label of ['タブ','書式','操作']) await page.getByRole('button',{name:`${label}を折りたたむ`}).click();
-  await page.waitForFunction(() => document.querySelector('.workspace').hasAttribute('data-fold-reserved'));
+  // A previous fold may already have reserved the workspace while the final
+  // click is still waiting for the next animation-frame layout. Wait for the
+  // actual non-overlapping result, not just that stale reservation attribute.
+  await page.waitForFunction(() => {
+    if (!document.querySelector('.workspace').hasAttribute('data-fold-reserved')) return false;
+    const buttons = [...document.querySelectorAll('.fold-edge:not([hidden]) > button')];
+    if (buttons.length !== 3) return false;
+    const rects = buttons.map(button => button.getBoundingClientRect());
+    return rects.every((a, i) => rects.slice(i + 1).every(b =>
+      !(a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)));
+  });
   const drawers=page.locator('.fold-edge:not([hidden])');
   await expect(drawers).toHaveCount(3);
   const geometry=await drawers.evaluateAll(nodes => nodes.map(node => {

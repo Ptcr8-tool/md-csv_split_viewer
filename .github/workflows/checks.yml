@@ -130,10 +130,12 @@ jobs:
         run: |
           & ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify optional startup trace in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-StartupTraceWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify binary viewer navigation in Windows
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-BinaryViewer.ps1 -Payload 'release/MD-Split'
