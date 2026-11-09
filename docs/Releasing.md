@@ -21,7 +21,7 @@ Keep the bundled Microsoft fixed-runtime license in sync with the official downl
 
 The installer build does not need a long-lived signing key. Local builds are not automatically trusted as updates; only the configured GitHub-hosted release workflow on the exact release tag can produce accepted provenance. If Authenticode is added later, it must be applied before computing checksums and attesting the setup.
 
-The `checks.yml` workflow validates source and creates a build artifact. It does not publish a release or receive signing keys. The earlier one-time v1.0.2 workflow remains historical and does not provide the new provenance bundle.
+The `checks.yml` workflow validates source and creates a build artifact. It does not publish a release or receive signing keys. The earlier one-time v1.0.2 workflow remains historical and does not provide the new provenance bundle. The bundled GitHub CLI license and its third-party license listing are included in `update-verifier`.
 
 ## Offline runtime pin
 

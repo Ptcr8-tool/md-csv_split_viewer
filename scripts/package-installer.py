@@ -33,7 +33,7 @@ verifier=payload/'update-verifier'
 pins=json.loads((root/'native/obj/update-verifier/pins.json').read_text(encoding='utf-8'))
 for filename,key in [('gh.exe','gh_sha256'),('trusted_root.jsonl','trusted_root_sha256')]:
     if not (verifier/filename).is_file() or sha(verifier/filename)!=pins[key]:raise SystemExit('Packaged update verifier is missing or changed')
-if not (verifier/'LICENSE.txt').is_file():raise SystemExit('GitHub CLI license is missing')
+if not (verifier/'LICENSE.txt').is_file() or not (verifier/'THIRD_PARTY_LICENSES.txt').is_file():raise SystemExit('GitHub CLI license information is missing')
 payload_runtime=payload/'WebView2Runtime'
 # An isolated staging directory can reference an existing runtime to avoid a
 # second 930 MB copy. Ordinary independent staging directories still copy it.

@@ -49,6 +49,10 @@ with tempfile.TemporaryDirectory(prefix='md-split-build-') as temp:
     version = subprocess.run([cli, '--version'], env=env, capture_output=True, text=True, check=True, timeout=30).stdout
     if not version.startswith('gh version ' + pin['version']):
         raise SystemExit('GitHub CLI version mismatch.')
+    notices = subprocess.run([cli, 'licenses'], env=env, capture_output=True, check=True, timeout=30).stdout
+    if not notices.strip() or len(notices) > 10_000_000:
+        raise SystemExit('Could not obtain GitHub CLI third-party license information.')
+    (target / 'THIRD_PARTY_LICENSES.txt').write_bytes(notices)
     roots = subprocess.run([cli, 'attestation', 'trusted-root'], env=env, capture_output=True, check=True, timeout=120).stdout
     if not roots.strip() or len(roots) > 2_000_000:
         raise SystemExit('Could not obtain Sigstore trust roots.')

@@ -219,6 +219,9 @@ try {
 
     Invoke-Setup $new
     if ((InstalledVersion) -ne $expectedNewVersion) { throw 'The new setup did not install the expected newer version.' }
+    foreach ($name in @('gh.exe','trusted_root.jsonl','LICENSE.txt','THIRD_PARTY_LICENSES.txt')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $app "update-verifier\$name") -PathType Leaf)) { throw "The update verifier file is missing after upgrade: $name" }
+    }
     $registeredVersion = (Get-ItemProperty -LiteralPath $uninstallKey -Name DisplayVersion).DisplayVersion
     if ([version]$registeredVersion -ne $expectedNewVersion) { throw 'The registered version did not update.' }
     if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.File.bat' -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'HKCU:\Software\Classes\MD.Split.File.bat') -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw 'Upgrade retained or added a bat editor association.' }
