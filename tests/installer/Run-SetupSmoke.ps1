@@ -75,6 +75,11 @@ if ($null -eq $existingForeignIcon) {
     try { $fixture.SetValue('', '%SystemRoot%\system32\shell32.dll,1') } finally { $fixture.Dispose() }
     $foreignIconFixture = $true
 } else { $existingForeignIcon.Dispose() }
+$initialExecutionClassIcons = @{}
+foreach ($class in @('batfile','cmdfile')) {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $class + '\DefaultIcon')
+    if ($null -eq $key) { $initialExecutionClassIcons[$class] = $null } else { try { $initialExecutionClassIcons[$class] = [string]$key.GetValue('') } finally { $key.Dispose() } }
+}
 $initialUserChoices = @{}
 $initialIconValues = @{}
 foreach ($extension in $extensions) {
@@ -303,8 +308,9 @@ try {
         $applicationTypes = 'HKCU:\Software\Classes\Applications\MD-Split.exe\SupportedTypes'
         if (Get-ItemProperty -LiteralPath $applicationTypes -Name $extension -ErrorAction SilentlyContinue) { throw "Executable script was added to SupportedTypes: $extension." }
     }
-    foreach ($probeExtension in @('.py','.cmd')) {
-        if ($null -eq $initialIconValues[$probeExtension]) {
+    foreach ($probeExtension in @('.py','.cmd','.bat')) {
+        $class = if ($probeExtension -eq '.cmd') { 'cmdfile' } elseif ($probeExtension -eq '.bat') { 'batfile' } else { $null }
+        if ($null -eq $initialIconValues[$probeExtension] -and ($null -eq $class -or $null -eq $initialExecutionClassIcons[$class]) -and $initialUserChoices[$probeExtension] -eq '<absent>') {
             [MdSplitSmokeShellIcon]::VerifyIcon($probeExtension, (Join-Path $installPath ('doc-icons-v2\' + $probeExtension.TrimStart('.') + '.ico')), (Join-Path $installPath 'doc-icons-v2\txt.ico'))
         }
     }
@@ -436,6 +442,15 @@ try {
         } else {
             if ($null -eq $afterIcon) { throw "Uninstall removed another app's icon for $extension." }
             try { if ([string]$afterIcon.GetValue('') -ne $initialIconValues[$extension]) { throw "Uninstall changed another app's icon for $extension." } } finally { $afterIcon.Dispose() }
+        }
+    }
+    foreach ($class in @('batfile','cmdfile')) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $class + '\DefaultIcon')
+        if ($null -eq $initialExecutionClassIcons[$class]) {
+            if ($null -ne $key) { try { if ($null -ne $key.GetValue('')) { throw "Uninstall left an icon override for $class." } } finally { $key.Dispose() } }
+        } else {
+            if ($null -eq $key) { throw "Uninstall removed another application's icon for $class." }
+            try { if ([string]$key.GetValue('') -ne $initialExecutionClassIcons[$class]) { throw "Uninstall changed another application's icon for $class." } } finally { $key.Dispose() }
         }
     }
     if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name $otherProgId -ErrorAction SilentlyContinue)) { throw 'Uninstall removed another app candidate for bat.' }

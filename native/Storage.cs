@@ -361,28 +361,48 @@ internal static class Storage
         {
             var path = Path.Combine(iconDirectory, ext[1..].ToLowerInvariant() + ".ico");
             if (!File.Exists(path)) continue;
-            var keyPath = @"Software\Classes\" + ext + @"\DefaultIcon";
-            // Respect an existing per-user override from another application.
-            using var existing = Registry.CurrentUser.OpenSubKey(keyPath);
-            if (existing is not null && (existing.ValueCount != 0 || existing.SubKeyCount != 0)) continue;
-            using var icon = Registry.CurrentUser.CreateSubKey(keyPath);
-            icon.SetValue("", "\"" + path + "\",0");
+            RegisterIcon(@"Software\Classes\" + ext + @"\DefaultIcon", path);
         }
+        // Explorer may prefer these built-in execution classes to the
+        // extension-level icon. Register only their icon, never their verbs.
+        RegisterIcon(@"Software\Classes\batfile\DefaultIcon", Path.Combine(iconDirectory, "bat.ico"));
+        RegisterIcon(@"Software\Classes\cmdfile\DefaultIcon", Path.Combine(iconDirectory, "cmd.ico"));
     }
     internal static void UnregisterExtensionIcons(string iconDirectory)
     {
         foreach (var ext in TextFileTypes.SupportedExtensions)
+            UnregisterIcon(@"Software\Classes\" + ext + @"\DefaultIcon", Path.Combine(iconDirectory, ext[1..].ToLowerInvariant() + ".ico"));
+        UnregisterIcon(@"Software\Classes\batfile\DefaultIcon", Path.Combine(iconDirectory, "bat.ico"));
+        UnregisterIcon(@"Software\Classes\cmdfile\DefaultIcon", Path.Combine(iconDirectory, "cmd.ico"));
+    }
+    private static void RegisterIcon(string keyPath, string iconPath)
+    {
+        if (!File.Exists(iconPath)) return;
+        // Respect an existing per-user override from another application.
+        using var existing = Registry.CurrentUser.OpenSubKey(keyPath);
+        if (existing is not null && (existing.ValueCount != 0 || existing.SubKeyCount != 0)) return;
+        using var icon = Registry.CurrentUser.CreateSubKey(keyPath);
+        icon.SetValue("", "\"" + iconPath + "\",0");
+    }
+    private static void UnregisterIcon(string keyPath, string iconPath)
+    {
+        var empty = false;
+        using (var icon = Registry.CurrentUser.OpenSubKey(keyPath, true))
         {
-            var keyPath = @"Software\Classes\" + ext + @"\DefaultIcon";
-            var empty = false;
-            using (var icon = Registry.CurrentUser.OpenSubKey(keyPath, true))
-            {
-                var expected = "\"" + Path.Combine(iconDirectory, ext[1..].ToLowerInvariant() + ".ico") + "\",0";
-                if (!string.Equals(icon?.GetValue(null) as string, expected, StringComparison.OrdinalIgnoreCase)) continue;
-                icon!.DeleteValue("", false);
-                empty = icon.ValueCount == 0 && icon.SubKeyCount == 0;
-            }
-            if (empty) Registry.CurrentUser.DeleteSubKey(keyPath, false);
+            if (!string.Equals(icon?.GetValue(null) as string, "\"" + iconPath + "\",0", StringComparison.OrdinalIgnoreCase)) return;
+            icon!.DeleteValue("", false);
+            empty = icon.ValueCount == 0 && icon.SubKeyCount == 0;
+        }
+        if (empty)
+        {
+            Registry.CurrentUser.DeleteSubKey(keyPath, false);
+            // Avoid leaving an empty per-user file class that could mask
+            // Windows' machine-level execution class after uninstall.
+            var parentPath = keyPath[..keyPath.LastIndexOf('\\')];
+            var parentEmpty = false;
+            using (var parent = Registry.CurrentUser.OpenSubKey(parentPath))
+                parentEmpty = parent is not null && parent.ValueCount == 0 && parent.SubKeyCount == 0;
+            if (parentEmpty) Registry.CurrentUser.DeleteSubKey(parentPath, false);
         }
     }
     internal static void NotifyAssociationsChanged() => SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
