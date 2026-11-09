@@ -30,8 +30,8 @@ if ((Get-Process -Name 'MD-Split' -ErrorAction SilentlyContinue) -or
     throw 'Existing MD Split data or registration was found; refusing the smoke test.'
 }
 # Derive the editable extension set from the native file-picker list. The
-# executable .bat extension remains editable but is not registered as a type
-# for which this editor should appear in the Windows Open With candidates.
+# executable scripts remain editable without advertising the editor as a
+# default handler for files that users may want to run.
 $typesSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\..\native\TextFileTypes.cs'))
 $extensions = @([regex]::Matches($typesSource, 'new\("[^"\r\n]+",\s*\[([^\]]+)\]') | ForEach-Object {
     [regex]::Matches($_.Groups[1].Value, '"([a-z][a-z0-9]*)"') | ForEach-Object { '.' + $_.Groups[1].Value }
@@ -39,7 +39,8 @@ $extensions = @([regex]::Matches($typesSource, 'new\("[^"\r\n]+",\s*\[([^\]]+)\]
 if ($extensions.Count -lt 10 -or -not ($extensions -contains '.md') -or -not ($extensions -contains '.csv') -or -not ($extensions -contains '.html') -or -not ($extensions -contains '.txt') -or -not ($extensions -contains '.bat') -or -not ($extensions -contains '.cmd')) {
     throw 'Could not derive the supported extension list from TextFileTypes.'
 }
-$associationExtensions = @($extensions | Where-Object { $_ -ine '.bat' })
+$executableExtensions = @('.bat','.cmd','.ps1','.psm1','.py','.pyw','.js','.mjs','.cjs','.sh','.bash','.zsh','.rb','.pl','.php','.lua','.r','.kts','.vbs','.vbe','.wsf','.wsh','.jse','.hta','.exe','.com')
+$associationExtensions = @($extensions | Where-Object { $executableExtensions -notcontains $_ })
 function UserChoiceSnapshot([string] $Extension) {
     $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$Extension\UserChoice"
     if (-not (Test-Path -LiteralPath $key)) { return '<absent>' }
@@ -65,8 +66,20 @@ foreach ($verb in $globalVerbs) {
     $existing = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb)
     if ($null -ne $existing) { $existing.Dispose(); throw 'Existing global context menu registration; refusing the isolated smoke test.' }
 }
+# Preserve a pre-existing per-user icon supplied by another application.
+$foreignIconFixturePath = 'Software\Classes\.csv\DefaultIcon'
+$foreignIconFixture = $false
+$existingForeignIcon = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($foreignIconFixturePath)
+if ($null -eq $existingForeignIcon) {
+    $fixture = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($foreignIconFixturePath)
+    try { $fixture.SetValue('', '%SystemRoot%\system32\shell32.dll,1') } finally { $fixture.Dispose() }
+    $foreignIconFixture = $true
+} else { $existingForeignIcon.Dispose() }
 $initialUserChoices = @{}
+$initialIconValues = @{}
 foreach ($extension in $extensions) {
+    $initialIconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\$extension\DefaultIcon")
+    if ($null -eq $initialIconKey) { $initialIconValues[$extension] = $null } else { try { $initialIconValues[$extension] = [string]$initialIconKey.GetValue('') } finally { $initialIconKey.Dispose() } }
     $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
     if (Test-Path -LiteralPath "HKCU:\Software\Classes\SystemFileAssociations\$extension\shell\MD.Split.Open") { throw 'An existing context-menu registration was found; refusing the smoke test.' }
     $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
@@ -271,6 +284,31 @@ try {
         if ($iconValue -ne ('"' + $iconPath + '",0')) { throw "Unexpected DefaultIcon for $extension." }
         if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "Installation unexpectedly changed the default app for $extension." }
     }
+    # Every supported file type has an extension icon, independently of the
+    # default program. Existing per-user icon overrides must be preserved.
+    foreach ($extension in $extensions) {
+        $iconPath = Join-Path $installPath ('doc-icons-v2\' + $extension.TrimStart('.').ToLowerInvariant() + '.ico')
+        Assert-File $iconPath "document icon for $extension"
+        $iconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $extension + '\DefaultIcon')
+        if ($null -eq $iconKey) { throw "Extension icon is missing for $extension." }
+        try { $actualIcon = [string]$iconKey.GetValue('') } finally { $iconKey.Dispose() }
+        $expectedIcon = if ($null -ne $initialIconValues[$extension]) { $initialIconValues[$extension] } else { '"' + $iconPath + '",0' }
+        if ($actualIcon -ne $expectedIcon) { throw "Extension icon was not registered or existing custom icon was changed for $extension." }
+        if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "Installation changed the default app for $extension." }
+    }
+    foreach ($extension in $executableExtensions) {
+        $openWith = 'HKCU:\Software\Classes\' + $extension + '\OpenWithProgids'
+        $typed = 'MD.Split.File.' + $extension.TrimStart('.')
+        if ((Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $openWith -Name $typed -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name $extension -ErrorAction SilentlyContinue)) { throw "Executable script was advertised as an app candidate: $extension." }
+        $applicationTypes = 'HKCU:\Software\Classes\Applications\MD-Split.exe\SupportedTypes'
+        if (Get-ItemProperty -LiteralPath $applicationTypes -Name $extension -ErrorAction SilentlyContinue) { throw "Executable script was added to SupportedTypes: $extension." }
+    }
+    foreach ($probeExtension in @('.py','.cmd')) {
+        if ($null -eq $initialIconValues[$probeExtension]) {
+            [MdSplitSmokeShellIcon]::VerifyIcon($probeExtension, (Join-Path $installPath ('doc-icons-v2\' + $probeExtension.TrimStart('.') + '.ico')), (Join-Path $installPath 'doc-icons-v2\txt.ico'))
+        }
+    }
+    Write-Output 'PASS: all supported extensions have individual icons and executable scripts are not app candidates.'
     $legacyIconPath = Join-Path $installPath 'doc-icons-v2\document.ico'
     Assert-File $legacyIconPath 'legacy generic document icon'
     $legacyIconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.Markdown\DefaultIcon')
@@ -324,7 +362,33 @@ try {
     if ((UserChoiceSnapshot '.bat') -ne $initialUserChoices['.bat']) { throw 'Installation changed the .bat default app choice.' }
     if ((BatchClassDefaultSnapshot) -ne $initialBatchClassDefault) { throw 'Installation changed the per-user .bat class default.' }
     Assert-BatchExecution $batchFixture $batchMarker
+    $cmdFixture = Join-Path $testRoot 'synthetic-run.cmd'
+    [IO.File]::WriteAllText($cmdFixture, "@echo off`r`necho MD_SPLIT_BATCH_FIXTURE>`"%~dp0synthetic-run-result.txt`"`r`n", [Text.Encoding]::ASCII)
+    Assert-BatchExecution $cmdFixture $batchMarker
     Write-Output 'PASS: fresh install leaves bat executable and excludes it from editor candidates while preserving the other types and defaults.'
+
+    # Earlier releases registered .cmd (and other scripts). Seed owned
+    # candidates and MRU history, then verify migration preserves foreign apps.
+    $cmdOpenWith = 'HKCU:\Software\Classes\.cmd\OpenWithProgids'
+    New-Item -Path $cmdOpenWith -Force | Out-Null
+    New-ItemProperty -LiteralPath $cmdOpenWith -Name 'MD.Split.File.cmd' -Value '' -PropertyType String -Force | Out-Null
+    New-ItemProperty -LiteralPath $cmdOpenWith -Name $otherProgId -Value '' -PropertyType String -Force | Out-Null
+    $ownedCmd = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Classes\MD.Split.File.cmd\shell\open\command')
+    try { $ownedCmd.SetValue('', '"' + $app + '" "%1"') } finally { $ownedCmd.Dispose() }
+    New-ItemProperty -LiteralPath $associations -Name '.cmd' -Value 'MD.Split.File.cmd' -PropertyType String -Force | Out-Null
+    $historyPath = 'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.cmd\OpenWithList'
+    $history = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($historyPath)
+    try { $history.SetValue('x', 'MD-Split.exe'); $history.SetValue('y', 'other-editor.exe'); $history.SetValue('MRUList', 'xy') } finally { $history.Dispose() }
+    Invoke-CheckedProcess $app @('--register-quiet')
+    if ((Get-ItemProperty -LiteralPath $cmdOpenWith -Name 'MD.Split.File.cmd' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name '.cmd' -ErrorAction SilentlyContinue)) { throw 'Stale cmd candidate was not removed.' }
+    if (-not (Get-ItemProperty -LiteralPath $cmdOpenWith -Name $otherProgId -ErrorAction SilentlyContinue)) { throw 'Migration removed a foreign cmd candidate.' }
+    $history = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($historyPath)
+    try { if ($history.GetValue('x') -or $history.GetValue('y') -ne 'other-editor.exe' -or $history.GetValue('MRUList') -ne 'y') { throw 'Migration did not preserve other Open With history.' } } finally { $history.Dispose() }
+    $history = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($historyPath, $true)
+    try { $history.DeleteValue('y', $false); $history.DeleteValue('MRUList', $false) } finally { $history.Dispose() }
+    Remove-ItemProperty -LiteralPath $cmdOpenWith -Name $otherProgId -Force
+    Assert-BatchExecution $cmdFixture $batchMarker
+    Write-Output 'PASS: stale cmd candidates are removed while other apps and execution are preserved.'
 
     # Simulate the two stale values made by v1.0.1, then exercise the same
     # registration entrypoint used by install, upgrade and settings.
@@ -366,14 +430,23 @@ try {
         $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
         if ((Get-ItemProperty -LiteralPath $openWith -Name $newProgId -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath ("HKCU:\Software\Classes\" + $newProgId))) { throw "Uninstall left a document icon candidate for $extension." }
         if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "Uninstall unexpectedly changed the default app for $extension." }
+        $afterIcon = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $extension + '\DefaultIcon')
+        if ($null -eq $initialIconValues[$extension]) {
+            if ($null -ne $afterIcon) { try { if ($null -ne $afterIcon.GetValue('')) { throw "Uninstall left an extension icon for $extension." } } finally { $afterIcon.Dispose() } }
+        } else {
+            if ($null -eq $afterIcon) { throw "Uninstall removed another app's icon for $extension." }
+            try { if ([string]$afterIcon.GetValue('') -ne $initialIconValues[$extension]) { throw "Uninstall changed another app's icon for $extension." } } finally { $afterIcon.Dispose() }
+        }
     }
     if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name $otherProgId -ErrorAction SilentlyContinue)) { throw 'Uninstall removed another app candidate for bat.' }
     if ((BatchClassDefaultSnapshot) -ne $initialBatchClassDefault) { throw 'Uninstall changed the per-user .bat class default.' }
     Assert-BatchExecution $batchFixture $batchMarker
+    Assert-BatchExecution $cmdFixture $batchMarker
     if (Test-Path -LiteralPath $startLink) { throw 'Uninstall left the start-menu shortcut behind.' }
     $cleaned = $true
     Write-Output 'PASS: silent uninstall removed the dedicated folder and product registration.'
 } finally {
+    if ($foreignIconFixture) { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($foreignIconFixturePath, $false) }
     $batchKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($batchOpenWithPath, $true)
     if ($null -ne $batchKey) { try { $batchKey.DeleteValue($otherProgId, $false) } finally { $batchKey.Dispose() } }
     # If a step fails, preserve the isolated directory for runner diagnostics;

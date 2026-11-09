@@ -33,6 +33,8 @@ internal static class Maintenance
         ContextMenuRegistration.Set(false);
         var exe=Path.Combine(AppContext.BaseDirectory,"MD-Split.exe");string? command;using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\MD.Split.Markdown\shell\open\command"))command=key?.GetValue(null) as string;
         if(command is null||!command.StartsWith('"'+exe+'"',StringComparison.OrdinalIgnoreCase))return;
+        Storage.UnregisterApplicationTypes(exe);
+        Storage.UnregisterExtensionIcons(Path.Combine(AppContext.BaseDirectory,"doc-icons-v2"));
         Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\MD.Split.Markdown",false);
         // Include previously registered types as well as today's supported set,
         // so a future release can remove an extension without leaving this app
@@ -45,13 +47,12 @@ internal static class Maintenance
                 if(ext.Length<=1 || ext[0]!='.' || !ext.Skip(1).All(char.IsAsciiLetterOrDigit))continue;
                 var value=associations.GetValue(ext) as string;
                 if(string.Equals(value,Storage.AssociationProgId,StringComparison.OrdinalIgnoreCase) ||
-                   (!ext.Equals(".bat",StringComparison.OrdinalIgnoreCase) && string.Equals(value,Storage.AssociationProgIdForExtension(ext),StringComparison.OrdinalIgnoreCase)))extensions.Add(ext);
+                   string.Equals(value,Storage.AssociationProgIdForExtension(ext),StringComparison.OrdinalIgnoreCase))extensions.Add(ext);
             }
         foreach(var ext in extensions)
         {
             // The generic candidate belongs to the owner already checked above.
             using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\"+ext+@"\OpenWithProgids",true))key?.DeleteValue(Storage.AssociationProgId,false);
-            if(ext.Equals(".bat",StringComparison.OrdinalIgnoreCase))continue;
             var typedProgId=Storage.AssociationProgIdForExtension(ext);
             string? typedCommand;
             using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\"+typedProgId+@"\shell\open\command"))typedCommand=key?.GetValue(null) as string;

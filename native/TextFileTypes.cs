@@ -43,11 +43,19 @@ internal static class TextFileTypes
         new("Vue", ["vue"], "vue"),
         new("Svelte", ["svelte"], "svelte")
     ];
-    // Editing support and Windows association candidates are deliberately
-    // separate: batch files can be edited explicitly without suggesting this
-    // editor as a handler when a .bat file is intended to be executed.
+    // Scripts can still be opened explicitly in the editor, but must not be
+    // advertised as default-app candidates: users may execute them instead.
+    // Include the common Windows script hosts and interpreter script types;
+    // declarations such as .pyi and configuration such as .psd1 remain text.
+    public static readonly string[] ExecutableExtensions =
+    [
+        ".bat", ".cmd", ".ps1", ".psm1", ".py", ".pyw",
+        ".js", ".mjs", ".cjs", ".sh", ".bash", ".zsh",
+        ".rb", ".pl", ".php", ".lua", ".r", ".kts",
+        ".vbs", ".vbe", ".wsf", ".wsh", ".jse", ".hta", ".exe", ".com"
+    ];
     public static string[] SupportedExtensions => Kinds.SelectMany(k => k.Extensions).Select(e => "." + e).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-    public static string[] AssociationExtensions => SupportedExtensions.Where(e => !string.Equals(e, ".bat", StringComparison.OrdinalIgnoreCase)).ToArray();
+    public static string[] AssociationExtensions => SupportedExtensions.Except(ExecutableExtensions, StringComparer.OrdinalIgnoreCase).ToArray();
     public static string OpenFilter => "テキスト・ソースファイル|" + string.Join(";", Kinds.SelectMany(k => k.Extensions).Select(e => "*." + e)) + "|すべてのファイル (*.*)|*.*";
     public static string FormatFor(string? pathOrName)
     {
