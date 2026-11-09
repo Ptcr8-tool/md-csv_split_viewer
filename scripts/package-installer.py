@@ -29,6 +29,11 @@ runtime_dir=Path(runtime_dir).resolve()
 if not (runtime_dir/'msedgewebview2.exe').is_file():raise SystemExit('Fixed runtime folder is required')
 payload=Path(os.environ.get('MDSPLIT_PAYLOAD',str(build/'MD-Split'))).resolve()
 if not (payload/'MD-Split.exe').exists():raise SystemExit('Run npm run publish:win before packaging')
+verifier=payload/'update-verifier'
+pins=json.loads((root/'native/obj/update-verifier/pins.json').read_text(encoding='utf-8'))
+for filename,key in [('gh.exe','gh_sha256'),('trusted_root.jsonl','trusted_root_sha256')]:
+    if not (verifier/filename).is_file() or sha(verifier/filename)!=pins[key]:raise SystemExit('Packaged update verifier is missing or changed')
+if not (verifier/'LICENSE.txt').is_file() or not (verifier/'THIRD_PARTY_LICENSES.txt').is_file():raise SystemExit('GitHub CLI license information is missing')
 payload_runtime=payload/'WebView2Runtime'
 # An isolated staging directory can reference an existing runtime to avoid a
 # second 930 MB copy. Ordinary independent staging directories still copy it.
@@ -55,6 +60,7 @@ if key:
     if b''.join(result.stdout.splitlines())!=b''.join((root/'native/update-public.pem').read_bytes().splitlines()):raise SystemExit('Signing key does not match the application public key')
     run(['openssl','dgst','-sha256','-sign',key,'-sigopt','rsa_padding_mode:pss','-sigopt','rsa_pss_saltlen:digest','-out',output_dir/'update-manifest.sig',manifest_file])
     run(['openssl','dgst','-sha256','-verify',root/'native/update-public.pem','-signature',output_dir/'update-manifest.sig','-sigopt','rsa_padding_mode:pss','-sigopt','rsa_pss_saltlen:digest',manifest_file])
-else:print('Setup built. A matching private key is required before publishing an automatic update.')
+else:print('Setup built. GitHub Actions must attest it before it can be used for an automatic update.')
 (output_dir/'SHA256SUMS.txt').write_text(manifest['sha256']+'  '+setup.name+'\n',encoding='utf-8')
 print(setup)
+

@@ -72,6 +72,18 @@ jobs:
           $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
           if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
           & ./tests/installer/Run-SetupSmoke.ps1 -Setup $setups[0].FullName
+      - name: Obtain verified v1.0.2 for upgrade test
+        shell: pwsh
+        run: |
+          $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.2-Setup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.2/MD-Split-1.0.2-Setup.exe' -OutFile $old
+          if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'd48c52d9292e479fca431674a68af1b9f80978694bc8b32ac8aaed19a2609a8d') { throw 'Published v1.0.2 setup hash mismatch.' }
+      - name: Verify upgrade from v1.0.2 and preservation of user data
+        shell: powershell
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
+          & ./tests/installer/Run-UpgradeV102Smoke.ps1 -OldSetup (Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.2-Setup.exe') -NewSetup $setups[0].FullName
       # Optional comparison uses the same executable and profile with the
       # baseline and candidate web bundles. It does not compare native changes.
       - name: Compare Windows startup against baseline
@@ -119,5 +131,6 @@ jobs:
             release/MD-Split-*-Setup.exe
             release/SHA256SUMS.txt
           if-no-files-found: error
+
 
 

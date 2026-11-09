@@ -4,6 +4,8 @@
 
 The project plans to apply for code signing through [SignPath Foundation](https://signpath.org/). Approval and integration are pending. The v1.0.0, v1.0.1 and v1.0.2 setup executables do not have an Authenticode code signature. This document does not claim that the project has been accepted or that any release is signed by SignPath.
 
+From v1.0.3, the in-app updater additionally verifies GitHub Actions provenance for supported releases. This protects the update path but is not an Authenticode signature and does not remove Windows SmartScreen warnings. SignPath approval remains separate.
+
 If accepted, the intended provider credit is: Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 
 ## Proposed roles and release process
@@ -19,3 +21,4 @@ If the project is accepted and signing is configured, the approver will manually
 The application supports configurable checks for new versions through public GitHub Releases. Updates selected by the user are downloaded from the release service. Displaying a remote image or opening an external link can also cause network access. Setup itself does not download the runtime. See [README: updates and uninstall](README.md#更新とアンインストール) for the current behavior.
 
 The installer includes Microsoft WebView2 Fixed Version Runtime; its own terms describe data collection and Microsoft services. See the [bundled WebView2 license](licenses/WebView2-Fixed-Runtime.txt) and [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement).
+
