@@ -94,7 +94,7 @@ jobs:
         shell: pwsh
         run: |
           $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.2-Setup.exe'
-          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.2/MD-Split-1.0.2-Setup.exe' -OutFile $old
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.2/MD-Split-1.0.2-Setup.exe' -OutFile $old -MaximumRetryCount 5 -RetryIntervalSec 10
           if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'd48c52d9292e479fca431674a68af1b9f80978694bc8b32ac8aaed19a2609a8d') { throw 'Published v1.0.2 setup hash mismatch.' }
       - name: Verify upgrade from v1.0.2 and preservation of user data
         shell: powershell
@@ -118,14 +118,17 @@ jobs:
           if ($baselines.Count -ne 1) { throw 'Expected exactly one baseline setup.' }
           & ./tests/installer/Measure-Startup.ps1 -BaselineSetup $baselines[0].FullName -CandidateWeb 'dist'
       - name: Verify CSV clipboard in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify both print dialogs in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-PrintWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify mixed line endings in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
