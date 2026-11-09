@@ -365,8 +365,8 @@ internal static class Storage
         }
         // Explorer may prefer these built-in execution classes to the
         // extension-level icon. Register only their icon, never their verbs.
-        RegisterIcon(@"Software\Classes\batfile\DefaultIcon", Path.Combine(iconDirectory, "bat.ico"));
-        RegisterIcon(@"Software\Classes\cmdfile\DefaultIcon", Path.Combine(iconDirectory, "cmd.ico"));
+        RegisterExecutionClassIcon(".bat", "batfile", Path.Combine(iconDirectory, "bat.ico"));
+        RegisterExecutionClassIcon(".cmd", "cmdfile", Path.Combine(iconDirectory, "cmd.ico"));
     }
     internal static void UnregisterExtensionIcons(string iconDirectory)
     {
@@ -383,6 +383,22 @@ internal static class Storage
         if (existing is not null && (existing.ValueCount != 0 || existing.SubKeyCount != 0)) return;
         using var icon = Registry.CurrentUser.CreateSubKey(keyPath);
         icon.SetValue("", "\"" + iconPath + "\",0");
+    }
+    private static void RegisterExecutionClassIcon(string ext, string className, string iconPath)
+    {
+        var classKey = @"Software\Classes\" + className + @"\DefaultIcon";
+        using var extensionIcon = Registry.CurrentUser.OpenSubKey(@"Software\Classes\" + ext + @"\DefaultIcon");
+        var ownValue = "\"" + iconPath + "\",0";
+        // A per-user extension icon belongs to the user or another app unless
+        // it is exactly the value installed by us. The execution class has a
+        // higher Shell priority, so don't mask that existing customization.
+        if (extensionIcon is not null && (extensionIcon.ValueCount != 0 || extensionIcon.SubKeyCount != 0) &&
+            !string.Equals(extensionIcon.GetValue(null) as string, ownValue, StringComparison.OrdinalIgnoreCase))
+        {
+            UnregisterIcon(classKey, iconPath);
+            return;
+        }
+        RegisterIcon(classKey, iconPath);
     }
     private static void UnregisterIcon(string keyPath, string iconPath)
     {
