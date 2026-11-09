@@ -64,16 +64,27 @@ try {
                 $tab = Element $window $name
                 if ($null -eq $tab) { $tab = Element $window (([string][char]0x25cf)+' '+$name) }
                 if ($null -ne $tab -and -not $tab.Current.IsOffscreen) { return $tab }
-                $button = Element $window $expand; $invoke = $null
-                if ($null -ne $button -and -not $button.Current.IsOffscreen -and $button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { $invoke.Invoke() }
+                $button = Element $window $expand
+                if ($null -ne $button) {
+                    # Use the actual screen control. WebView2's UIA Invoke can
+                    # return without expanding a button that moves to a new DOM
+                    # parent when clicked; a mouse click follows the user path.
+                    $rect = $button.Current.BoundingRectangle
+                    if (-not $rect.IsEmpty -and $rect.Width -gt 4 -and $rect.Height -gt 4) {
+                        [void][DragTestNative]::SetCursorPos([int]($rect.Left+$rect.Width/2),[int]($rect.Top+$rect.Height/2))
+                        [DragTestNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+                        [DragTestNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+                        Start-Sleep -Milliseconds 500
+                    }
+                }
             } catch [System.Windows.Automation.ElementNotAvailableException] { }
             Start-Sleep -Milliseconds 250
         } while ([DateTime]::UtcNow -lt $until)
         throw "Expected tab was not found: $name"
     }
-    function Foreground($window, [int] $x, [int] $y) {
+    function Foreground($window, [int] $x, [int] $y, [int] $height = 600) {
         $handle = [IntPtr]::new($window.Current.NativeWindowHandle)
-        if (-not [DragTestNative]::MoveWindow($handle,$x,$y,800,600,$true)) { throw 'Could not position test window.' }
+        if (-not [DragTestNative]::MoveWindow($handle,$x,$y,800,$height,$true)) { throw 'Could not position test window.' }
         [void][DragTestNative]::SetForegroundWindow($handle); Start-Sleep -Milliseconds 500
     }
     function Wait-Content($window, [string] $expected) {
@@ -161,8 +172,28 @@ try {
     $detached = $windowsAfterDetach[0]; $source = $windowsAfterDetach[1]
     Wait-Content $detached 'UNSAVED_MARKER'
     Write-Output 'PASS: dragging a tab outside creates a separate editor window.'
-    Foreground $source 10 20; $sourceTab = Wait-Tab $source 'second.md'; $destination = $sourceTab.Current.BoundingRectangle
-    Foreground $detached 190 30; $detachedTab = Wait-Tab $detached 'first.md'
+    # Keep the source's single-tab strip folded and drop on its compact handle,
+    # which is the target available to users by default. The source sits low
+    # enough that the foreground detached window does not cover that handle.
+    Foreground $source $screen.Left $screen.Top
+    $until = [DateTime]::UtcNow.AddSeconds(30); $sourceHandle = $null
+    do {
+        try { $sourceHandle = Element $source $expand } catch [System.Windows.Automation.ElementNotAvailableException] { }
+        if ($null -eq $sourceHandle) { Start-Sleep -Milliseconds 250 }
+    } while ($null -eq $sourceHandle -and [DateTime]::UtcNow -lt $until)
+    if ($null -eq $sourceHandle) { throw 'The folded source tab drop target was not visible.' }
+    $destination = $sourceHandle.Current.BoundingRectangle
+    $sourceRect = $source.Current.BoundingRectangle
+    $targetY = [int]($sourceRect.Top + ($screen.Bottom-25) - ($destination.Top+$destination.Height/2))
+    Foreground $source $screen.Left $targetY
+    $sourceHandle = Element $source $expand
+    if ($null -eq $sourceHandle) { throw 'The folded source tab drop target disappeared.' }
+    $destination = $sourceHandle.Current.BoundingRectangle
+    if ($destination.IsEmpty -or $destination.Top -lt $screen.Top -or $destination.Bottom -gt $screen.Bottom) { throw 'The folded source tab target is outside the working area.' }
+    Foreground $detached 190 $screen.Top 560
+    $detachedTab = Wait-Tab $detached 'first.md'
+    $detachedRect = $detached.Current.BoundingRectangle
+    if ($destination.Top -lt $detachedRect.Bottom -and $destination.Bottom -gt $detachedRect.Top -and $destination.Right -gt $detachedRect.Left -and $destination.Left -lt $detachedRect.Right) { throw 'The detached window covers the folded source drop target.' }
     Drag $detachedTab ([int]($destination.Left+$destination.Width/2)) ([int]($destination.Top+$destination.Height/2)) $false
     $until = [DateTime]::UtcNow.AddSeconds(90)
     do { $count=@(Windows).Count; if ($count -eq 1) { break }; Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt $until)

@@ -43,6 +43,11 @@ try {
                 $pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
                 $window = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $pc)
                 if ($null -ne $window) {
+                    # The active document is identified by the native window
+                    # title even when its single-tab strip is hidden by default.
+                    # Other documents must still be found as visible tabs below.
+                    $expectedTitlePrefix = $Name + ' ' + [char]0x2014 + ' '
+                    if ($window.Current.Name.StartsWith($expectedTitlePrefix, [StringComparison]::Ordinal)) { return }
                     $nc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $Name)
                     $matches = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $nc)
                     foreach ($item in $matches) { if (-not $item.Current.IsOffscreen) { return } }
