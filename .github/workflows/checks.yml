@@ -42,7 +42,21 @@ jobs:
       - run: dotnet run --project tests/native/NativeChecks.csproj -c Release
       - run: dotnet run --project tests/tab-transfers/TabTransferChecks.csproj -c Release
       - run: npx playwright install chromium
-      - run: npm run publish:win
+      - name: Publish Windows application
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $publishExitCode = 1
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            & npm run publish:win
+            $publishExitCode = $LASTEXITCODE
+            if ($publishExitCode -eq 0) { break }
+            if ($attempt -lt 4) {
+              Write-Warning "Windows publish failed (exit $publishExitCode); retrying in 10 seconds ($attempt/4)."
+              Start-Sleep -Seconds 10
+            }
+          }
+          if ($publishExitCode -ne 0) { exit $publishExitCode }
       - name: Verify the production web bundle
         run: node scripts/check-production.mjs
       - run: choco install nsis --yes --no-progress
