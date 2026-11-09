@@ -1,6 +1,6 @@
 {
   "name": "md-split",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "description": "Windows text editor with Markdown and CSV editing and previews",
@@ -40,3 +40,4 @@
     "node": ">=24"
   }
 }
+

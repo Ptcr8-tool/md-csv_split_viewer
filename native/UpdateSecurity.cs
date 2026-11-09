@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace MdSplit;
 internal static class BuildIdentity
 {
-    public const string Version="1.0.2";
+    public const string Version="1.0.3";
     public const string Repository="Ptcr8-tool/md-csv_split_viewer";
     public static string SetupName(string version)=>$"MD-Split-{version}-Setup.exe";
 }
@@ -41,3 +41,4 @@ internal static class UpdateSecurity
         await using var stream=File.OpenRead(path);var hash=Convert.ToHexString(await SHA256.HashDataAsync(stream,cancellationToken));if(!hash.Equals(manifest.Sha256,StringComparison.OrdinalIgnoreCase))throw new IOException("更新ファイルのハッシュが一致しません。実行せずに中止しました。");
     }
 }
+
