@@ -371,6 +371,25 @@ try {
     $cmdFixture = Join-Path $testRoot 'synthetic-run.cmd'
     [IO.File]::WriteAllText($cmdFixture, "@echo off`r`necho MD_SPLIT_BATCH_FIXTURE>`"%~dp0synthetic-run-result.txt`"`r`n", [Text.Encoding]::ASCII)
     Assert-BatchExecution $cmdFixture $batchMarker
+    if ($null -eq $initialIconValues['.cmd'] -and $null -eq $initialExecutionClassIcons['cmdfile']) {
+        # A later explicit user icon must not be hidden by our higher-priority
+        # cmdfile icon when registration is repeated.
+        $cmdExtIcon = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\.cmd\DefaultIcon', $true)
+        $customCmdIcon = '%SystemRoot%\system32\shell32.dll,1'
+        try { $cmdExtIcon.SetValue('', $customCmdIcon) } finally { $cmdExtIcon.Dispose() }
+        Invoke-CheckedProcess $app @('--register-quiet')
+        $cmdClass = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\cmdfile\DefaultIcon')
+        if ($null -ne $cmdClass) { try { if ($null -ne $cmdClass.GetValue('')) { throw 'A custom cmd icon was masked by the app execution-class icon.' } } finally { $cmdClass.Dispose() } }
+        $cmdExtIcon = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\.cmd\DefaultIcon', $true)
+        try {
+            if ([string]$cmdExtIcon.GetValue('') -ne $customCmdIcon) { throw 'A custom cmd extension icon was changed.' }
+            $cmdExtIcon.SetValue('', '"' + (Join-Path $installPath 'doc-icons-v2\cmd.ico') + '",0')
+        } finally { $cmdExtIcon.Dispose() }
+        Invoke-CheckedProcess $app @('--register-quiet')
+        [MdSplitSmokeShellIcon]::VerifyIcon('.cmd', (Join-Path $installPath 'doc-icons-v2\cmd.ico'), (Join-Path $installPath 'doc-icons-v2\txt.ico'))
+        Assert-BatchExecution $cmdFixture $batchMarker
+        Write-Output 'PASS: a custom cmd icon is preserved on re-registration and execution still works.'
+    }
     Write-Output 'PASS: fresh install leaves bat executable and excludes it from editor candidates while preserving the other types and defaults.'
 
     # Earlier releases registered .cmd (and other scripts). Seed owned
