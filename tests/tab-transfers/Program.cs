@@ -81,8 +81,9 @@ internal static class Program
         var rejected=false;try{action();}catch(IOException){rejected=true;}Assert(rejected,message);
     }
     private static string Token()=>Guid.NewGuid().ToString();
-    private static DocumentData Fixture()=>new(){Id=Guid.NewGuid().ToString(),Name="original.md",Path=@"C:\\safe\\original.md",
+    private static DocumentData Fixture(){var id=Guid.NewGuid().ToString();return new(){Id=id,Name="original.md",Path=@"C:\safe\"+id+".md",
         SavedText="saved original",Text="old text",Encoding="utf8",SavedEncoding="utf8",Fingerprint="trusted-fingerprint"};
+    }
     private static DocumentData Input(DocumentData doc)=>new(){Id=doc.Id,Name="forged.md",Path=@"C:\\unsafe\\forged.md",
         SavedText="forged saved baseline",Fingerprint="forged-fingerprint",Text="unsaved edits",Encoding="utf8",PreviewViewMode="preview"};
     private static bool HasEvent(EditorWindow w,string type)=>w.Events.Any(e=>e.GetProperty("type").GetString()==type);
