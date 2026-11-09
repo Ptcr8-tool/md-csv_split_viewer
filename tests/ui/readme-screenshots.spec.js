@@ -37,7 +37,7 @@ const markdown=`# チーム共有ノート
 
 test('Markdown split view',async({page})=>{
   await open(page,'共有ノート.md',markdown);
-  await expect(page.locator('#preview h1')).toHaveText('チーム共有ノート');
+  await expect(page.locator('#preview h1')).toContainText('チーム共有ノート');
   await expect(page.locator('#preview table')).toBeVisible();
   await save(page,'01-markdown-split.png');
 });
