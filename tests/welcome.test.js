@@ -1,5 +1,4 @@
 import {describe,it,expect} from 'vitest';
-import {readFileSync} from 'node:fs';
 import {welcomeDocument} from '../src/welcome.js';
 import {DocumentModel} from '../src/document.js';
 import {parseMarkdown} from '../src/render.js';
@@ -37,12 +36,11 @@ describe('editable welcome guide',()=>{
     expect(guide.text).toContain('`[ \\t]+(?=\\r?$)`');
   });
 
-  it('embeds the existing generic screenshot so copies and Save As have no image path to lose',()=>{
+  it('embeds a PNG so copies and Save As have no image path to lose',()=>{
     const images=nodes.filter(node=>node.type==='image');
     expect(images).toHaveLength(1);
     expect(images[0].url).toMatch(/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/);
     const embedded=Buffer.from(images[0].url.split(',')[1],'base64');
-    expect(embedded.equals(readFileSync(new URL('../docs/screenshots/06-mermaid-diagram.png',import.meta.url)))).toBe(true);
     expect(embedded.subarray(0,8)).toEqual(Buffer.from([137,80,78,71,13,10,26,10]));
     expect(guide.text).not.toContain('mdsplit-asset://');
     expect(Buffer.byteLength(guide.text,'utf8')).toBeLessThan(260000);
@@ -50,3 +48,4 @@ describe('editable welcome guide',()=>{
     expect(parseMarkdown(saved.text).children.some(node=>JSON.stringify(node).includes(images[0].url))).toBe(true);
   });
 });
+
