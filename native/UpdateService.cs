@@ -93,7 +93,13 @@ internal sealed class UpdateService:IDisposable
         await gate.WaitAsync();string? partial=null;try
         {
             downloaded=null;using var cancellation=new CancellationTokenSource(TimeSpan.FromMinutes(20));downloadCancellation=cancellation;var token=cancellation.Token;
-            var item=candidate??throw new IOException("先に更新を確認してください。");if(item.Manifest.Version!=expectedVersion)throw new IOException("更新の対象が変わりました。もう一度更新を確認してください。");if(File.Exists(item.Path)){try{await VerifyCandidate(item,item.Path,token);token.ThrowIfCancellationRequested();downloaded=item;progress(100);return;}catch(IOException){File.Delete(item.Path);}}
+            var item=candidate??throw new IOException("先に更新を確認してください。");if(item.Manifest.Version!=expectedVersion)throw new IOException("更新の対象が変わりました。もう一度更新を確認してください。");
+            if(File.Exists(item.Path))
+            {
+                var intact=true;try{await UpdateSecurity.VerifyFile(item.Path,item.Manifest,token);}catch(IOException){File.Delete(item.Path);intact=false;}
+                // A valid cached setup is not re-downloaded merely because its proof failed.
+                if(intact){await VerifyCandidate(item,item.Path,token);token.ThrowIfCancellationRequested();downloaded=item;progress(100);return;}
+            }
             using var response=await GetAsset(item.Url,token);
             if(response.Content.Headers.ContentLength is long length&&length!=item.Manifest.Size)throw new IOException("更新ファイルのサイズが一致しません。");
             partial=item.Path+"."+Guid.NewGuid().ToString("N")+".part";await using(var input=await response.Content.ReadAsStreamAsync(token))await using(var output=new FileStream(partial,FileMode.CreateNew,FileAccess.Write,FileShare.None,131072,true))

@@ -59,6 +59,13 @@ internal static class UpdateChecks
             assert(rejected&&!File.Exists(Path.Combine(root,"provenance-rejected",future,manifest.AssetName)),"failed provenance is never promoted to a runnable installer");
             rejected=false;try{await service.VerifiedInstaller();}catch(IOException){rejected=true;}assert(rejected,"failed provenance cannot be launched");
         }
+        var rejectCached=false;Task VerifyCached(string file,string proof,UpdateManifest metadata,CancellationToken token){if(rejectCached)throw new IOException("invalid attestation");return Task.CompletedTask;}
+        handler=new Handler(ProvenanceReply);using(var service=new UpdateService(handler,Path.Combine(root,"cached-provenance"),provenanceVerifier:VerifyCached))
+        {
+            await service.Check(7,true);await service.Download(future,_=>{});rejectCached=true;var rejected=false;try{await service.Download(future,_=>{});}catch(IOException){rejected=true;}
+            assert(rejected&&handler.Calls.Count(uri=>uri==prefix+manifest.AssetName)==1,"a cached setup is not re-downloaded when provenance verification fails");
+            rejected=false;try{await service.VerifiedInstaller();}catch(IOException){rejected=true;}assert(rejected,"a cached setup with a failed proof cannot be launched");
+        }
         handler=new Handler(uri=>uri.AbsolutePath.EndsWith(bundleName)?Bytes(Encoding.UTF8.GetBytes("corrupt")):ProvenanceReply(uri));using(var service=new UpdateService(handler,Path.Combine(root,"provenance-corrupt"),provenanceVerifier:Verify))
         {
             await service.Check(7,true);var rejected=false;try{await service.Download(future,_=>{});}catch(IOException){rejected=true;}assert(rejected&&verifiedCalls==1,"corrupt bundle is rejected before provenance verification");
@@ -98,20 +105,23 @@ internal static class UpdateChecks
         var verifier=Environment.GetEnvironmentVariable("MDSPLIT_TEST_VERIFIER_DIR")??throw new IOException("Missing test verifier");
         var version=Environment.GetEnvironmentVariable("MDSPLIT_TEST_VERSION")??throw new IOException("Missing test version");
         var pins=File.ReadAllText(Path.Combine(verifier,"pins.json"));string hash;using(var input=File.OpenRead(setup))hash=Convert.ToHexString(SHA256.HashData(input));
-        var appDll=Environment.GetEnvironmentVariable("MDSPLIT_TEST_APP_DLL")??throw new IOException("Missing packaged application DLL");
-        var assembly=System.Reflection.Assembly.LoadFile(Path.GetFullPath(appDll));using(var embedded=assembly.GetManifestResourceStream("MdSplit.UpdateVerifierPins.json")){assert(embedded is not null,"published application embeds its verifier pins");using var reader=new StreamReader(embedded!);assert(await reader.ReadToEndAsync()==pins,"published application pins the exact tested verifier and trust roots");}
+        var sourceRef=Environment.GetEnvironmentVariable("MDSPLIT_TEST_SOURCE_REF");
+        var appDll=Environment.GetEnvironmentVariable("MDSPLIT_TEST_APP_DLL");
+        if(sourceRef is null&&string.IsNullOrEmpty(appDll))throw new IOException("Missing packaged application DLL");
+        if(!string.IsNullOrEmpty(appDll)){var assembly=System.Reflection.Assembly.LoadFile(Path.GetFullPath(appDll));using var embedded=assembly.GetManifestResourceStream("MdSplit.UpdateVerifierPins.json");assert(embedded is not null,"published application embeds its verifier pins");using var reader=new StreamReader(embedded!);assert(await reader.ReadToEndAsync()==pins,"published application pins the exact tested verifier and trust roots");}
         var manifest=new UpdateManifest{Version=version,Sha256=hash};
-        await UpdateProvenance.VerifyWithPins(setup,bundle,manifest,verifier,pins,CancellationToken.None);assert(true,"real tagged GitHub Actions attestation verifies with bundled CLI and roots");
-        var rejected=false;try{manifest.Version="999.0.0";await UpdateProvenance.VerifyWithPins(setup,bundle,manifest,verifier,pins,CancellationToken.None);}catch(IOException){rejected=true;}assert(rejected,"real attestation rejects a different release tag");
+        Task VerifyReal(string file,string evidence,UpdateManifest info,CancellationToken token,bool wrongRef=false)=>sourceRef is null?UpdateProvenance.VerifyWithPins(file,evidence,info,verifier,pins,token):UpdateProvenance.VerifyWithTestRef(file,evidence,info,verifier,pins,sourceRef+(wrongRef?"-wrong":""),token);
+        await VerifyReal(setup,bundle,manifest,CancellationToken.None);assert(true,"real GitHub Actions attestation verifies with bundled CLI and roots");
+        var rejected=false;try{manifest.Version="999.0.0";await VerifyReal(setup,bundle,manifest,CancellationToken.None,true);}catch(IOException){rejected=true;}assert(rejected,"real attestation rejects a different source ref");
         manifest.Version=version;var changed=Path.Combine(root,"tampered-setup.exe");await File.WriteAllTextAsync(changed,"tampered setup");
-        rejected=false;try{await UpdateProvenance.VerifyWithPins(changed,bundle,manifest,verifier,pins,CancellationToken.None);}catch(IOException){rejected=true;}assert(rejected,"real attestation rejects a changed installer");
+        rejected=false;try{await VerifyReal(changed,bundle,manifest,CancellationToken.None);}catch(IOException){rejected=true;}assert(rejected,"real attestation rejects a changed installer");
         var invalid=Path.Combine(root,"tampered-bundle.json");await File.WriteAllTextAsync(invalid,"{}");
-        rejected=false;try{await UpdateProvenance.VerifyWithPins(setup,invalid,manifest,verifier,pins,CancellationToken.None);}catch(IOException){rejected=true;}assert(rejected,"real verifier rejects a changed attestation bundle");
+        rejected=false;try{await VerifyReal(setup,invalid,manifest,CancellationToken.None);}catch(IOException){rejected=true;}assert(rejected,"real verifier rejects a changed attestation bundle");
         var setupName=BuildIdentity.SetupName(version);var bundleName=setupName+".sigstore.json";var prefix="https://github.com/"+BuildIdentity.Repository+"/releases/download/v"+version+"/";
         var proof=File.ReadAllBytes(bundle);var proofHash=Convert.ToHexString(SHA256.HashData(proof));
         var release=JsonSerializer.Serialize(new{tag_name="v"+version,draft=false,prerelease=false,body="",assets=new[]{new{name=setupName,size=new FileInfo(setup).Length,browser_download_url=prefix+setupName,digest="sha256:"+hash},new{name=bundleName,size=(long)proof.Length,browser_download_url=prefix+bundleName,digest="sha256:"+proofHash}}});
         var handler=new Handler(uri=>uri.Host=="api.github.com"?new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(release)}:uri.AbsolutePath.EndsWith(bundleName)?new HttpResponseMessage(HttpStatusCode.OK){Content=new ByteArrayContent(proof)}:new HttpResponseMessage(HttpStatusCode.OK){Content=new StreamContent(File.OpenRead(setup))});
-        Task VerifyDownloaded(string file,string evidence,UpdateManifest info,CancellationToken token)=>UpdateProvenance.VerifyWithPins(file,evidence,info,verifier,pins,token);
+        Task VerifyDownloaded(string file,string evidence,UpdateManifest info,CancellationToken token)=>VerifyReal(file,evidence,info,token);
         using var service=new UpdateService(handler,Path.Combine(root,"real-signed-update"),provenanceVerifier:VerifyDownloaded,installedVersionForTest:"0.0.0");
         var check=JsonSerializer.SerializeToElement(await service.Check(0,true),Storage.Json);assert(check.GetProperty("available").GetBoolean(),"real tagged release is offered to an older installed version");
         await service.Download(version,_=>{});assert(File.Exists(await service.VerifiedInstaller()),"complete updater downloads and verifies the real attested setup");

@@ -27,16 +27,18 @@ jobs:
           set -euo pipefail
           test "$(node -p "require('./package.json').version")" = '1.0.3'
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == "v1.0.3") | .id')
+          test -z "$existing"
           response=$(mktemp)
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.0.3" >"$response" 2>&1; then
-            echo 'Tag already exists; refusing to overwrite.' >&2
-            exit 1
+            # A failed dispatch can be retried without moving the tag.
+            test "$(jq -r '.object.type' "$response")" = 'commit'
+            test "$(jq -r '.object.sha' "$response")" = "$GITHUB_SHA"
           elif ! grep -q 'HTTP 404' "$response"; then
             echo 'Could not confirm tag absence.' >&2
             exit 1
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/v1.0.3 -f "sha=$GITHUB_SHA" --silent
           fi
-          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == "v1.0.3") | .id')
-          test -z "$existing"
-          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/v1.0.3 -f "sha=$GITHUB_SHA" --silent
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.0.3" --jq '.object.sha')" = "$GITHUB_SHA"
           gh workflow run windows-release.yml --repo "$GITHUB_REPOSITORY" --ref v1.0.3

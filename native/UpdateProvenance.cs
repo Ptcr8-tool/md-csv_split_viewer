@@ -22,7 +22,14 @@ internal static class UpdateProvenance
     }
 
     // Also called by the release test with the actual attested setup.
-    internal static async Task VerifyWithPins(string installer,string bundle,UpdateManifest manifest,string verifierDirectory,string pinsJson,CancellationToken token)
+    internal static Task VerifyWithPins(string installer,string bundle,UpdateManifest manifest,string verifierDirectory,string pinsJson,CancellationToken token)=>
+        VerifyCore(installer,bundle,manifest,verifierDirectory,pinsJson,"refs/tags/v"+manifest.Version,token);
+#if MDSPLIT_TESTS
+    // Pull-request tests use their own ref; this method is not compiled into the application.
+    internal static Task VerifyWithTestRef(string installer,string bundle,UpdateManifest manifest,string verifierDirectory,string pinsJson,string sourceRef,CancellationToken token)=>
+        VerifyCore(installer,bundle,manifest,verifierDirectory,pinsJson,sourceRef,token);
+#endif
+    private static async Task VerifyCore(string installer,string bundle,UpdateManifest manifest,string verifierDirectory,string pinsJson,string sourceRef,CancellationToken token)
     {
         try
         {
@@ -36,7 +43,7 @@ internal static class UpdateProvenance
             try
             {
                 var start=new ProcessStartInfo(gh){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=privateConfig.FullName};
-                foreach(var argument in new[]{"attestation","verify",Path.GetFullPath(installer),"--bundle",Path.GetFullPath(bundle),"--custom-trusted-root",trust,"--repo",BuildIdentity.Repository,"--signer-workflow",Workflow,"--source-ref","refs/tags/v"+manifest.Version,"--deny-self-hosted-runners","--cert-oidc-issuer","https://token.actions.githubusercontent.com","--format","json"})start.ArgumentList.Add(argument);
+                foreach(var argument in new[]{"attestation","verify",Path.GetFullPath(installer),"--bundle",Path.GetFullPath(bundle),"--custom-trusted-root",trust,"--repo",BuildIdentity.Repository,"--signer-workflow",Workflow,"--source-ref",sourceRef,"--deny-self-hosted-runners","--cert-oidc-issuer","https://token.actions.githubusercontent.com","--format","json"})start.ArgumentList.Add(argument);
                 var environment=new Dictionary<string,string>();foreach(var key in new[]{"SYSTEMROOT","WINDIR","TEMP","TMP","LOCALAPPDATA"})if(Environment.GetEnvironmentVariable(key) is string value)environment[key]=value;
                 start.Environment.Clear();foreach(var pair in environment)start.Environment[pair.Key]=pair.Value;
                 start.Environment["GH_CONFIG_DIR"]=privateConfig.FullName;start.Environment["GH_NO_UPDATE_NOTIFIER"]="1";start.Environment["GH_NO_EXTENSION_UPDATE_NOTIFIER"]="1";start.Environment["GH_PROMPT_DISABLED"]="1";start.Environment["GH_HOST"]="github.com";

@@ -1,6 +1,8 @@
 name: Windows release with provenance
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main, dev]
   push:
     tags: ['v*']
 
@@ -10,6 +12,65 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  provenance-test:
+    # Never grant write permissions to untrusted fork pull requests.
+    if: github.event_name == 'pull_request' && github.repository == 'Ptcr8-tool/md-csv_split_viewer' && github.repository_id == '1440570920' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Prepare pinned verifier and test subject
+        id: fixture
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid test version.' }
+          python scripts/prepare-update-verifier.py
+          if ($LASTEXITCODE -ne 0) { throw 'Verifier preparation failed.' }
+          New-Item -ItemType Directory -Path fixture -Force | Out-Null
+          $file = "fixture/MD-Split-$version-Setup.exe"
+          [IO.File]::WriteAllText((Join-Path $pwd $file), 'Synthetic attestation fixture, never executed.')
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "file=$file" >> $env:GITHUB_OUTPUT
+      - name: Compile application with embedded verifier pins
+        shell: pwsh
+        run: |
+          dotnet publish native/MdSplit.csproj -c Release -r win-x64 --self-contained true -o fixture-app
+          if ($LASTEXITCODE -ne 0) { throw 'Application build failed.' }
+      - name: Attest synthetic test subject
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.fixture.outputs.file }}
+      - name: Verify actual proof and reject tampering
+        shell: pwsh
+        env:
+          FIXTURE: ${{ steps.fixture.outputs.file }}
+          VERSION: ${{ steps.fixture.outputs.version }}
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+          TEST_SOURCE_REF: ${{ github.ref }}
+        run: |
+          $env:MDSPLIT_TEST_SIGNED_INSTALLER = (Resolve-Path $env:FIXTURE).Path
+          $env:MDSPLIT_TEST_SIGSTORE_BUNDLE = (Resolve-Path $env:BUNDLE_PATH).Path
+          $env:MDSPLIT_TEST_VERIFIER_DIR = (Resolve-Path 'native/obj/update-verifier').Path
+          $env:MDSPLIT_TEST_APP_DLL = (Resolve-Path 'fixture-app/MD-Split.dll').Path
+          $env:MDSPLIT_TEST_VERSION = $env:VERSION
+          $env:MDSPLIT_TEST_SOURCE_REF = $env:TEST_SOURCE_REF
+          dotnet run --project tests/native/NativeChecks.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Actual attestation verification failed.' }
+
   build:
     if: github.repository == 'Ptcr8-tool/md-csv_split_viewer' && github.repository_id == '1440570920' && github.ref_type == 'tag'
     runs-on: windows-2025
@@ -264,8 +325,13 @@ jobs:
           Check-Assets $draft
           $ref = & gh api "repos/$repo/git/ref/tags/$tag" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $ref.object.sha -cne $env:GITHUB_SHA) { throw 'Tag changed before publication.' }
+          $draft = & gh api "repos/$repo/releases/$($ids[0])" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $draft.draft -or $draft.prerelease -or $draft.tag_name -cne $tag) { throw 'Draft changed before publication.' }
+          Check-Assets $draft
           & gh release edit $tag --repo $repo --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish the verified draft.' }
           $published = & gh api "repos/$repo/releases/tags/$tag" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $published.draft -or $published.prerelease -or $published.tag_name -cne $tag) { throw 'Could not verify the published release.' }
           Check-Assets $published
+          $latest = & gh api "repos/$repo/releases/latest" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $latest.tag_name -cne $tag) { throw 'Release was published but could not be verified as latest.' }
