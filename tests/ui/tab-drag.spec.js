@@ -54,3 +54,22 @@ test('native file opens wait until a tab drag is cancelled, then replay in order
   await expect.poll(()=>page.evaluate(()=>window.__mdSplit.model().name)).toBe('後から.md');
   expect(await page.evaluate(()=>window.__mdSplit.documents()[0].raw)).toBe('元の内容');
 });
+
+test('a busy destination rejects the incoming tab transfer immediately',async({page})=>{
+  await page.addInitScript(()=>{
+    const listeners=[];window._transferRequests=[];
+    window.chrome=window.chrome||{};window.chrome.webview={addEventListener(name,fn){if(name==='message')listeners.push(fn);},postMessage(message){
+      if(message.method.startsWith('tab.'))window._transferRequests.push({method:message.method,args:message.args});
+      const result=message.method==='bootstrap'?{settings:{welcomeShown:true,updateCheckDays:-1},documents:[{id:'11111111-1111-4111-8111-111111111111',name:'移動先.md',text:'維持',needsInitialSave:false}]}:true;
+      setTimeout(()=>listeners.forEach(fn=>fn({data:{replyTo:message.id,result}})),0);
+    }};
+  });
+  await page.reload();await page.waitForFunction(()=>window.__mdSplit?.model()?.name==='移動先.md');
+  await page.evaluate(()=>{
+    document.querySelector('#app').inert=true;
+    const transfer=new DataTransfer();transfer.setData('application/x-md-split-tab',JSON.stringify({token:'22222222-2222-4222-8222-222222222222',instance:'another-window',id:'33333333-3333-4333-8333-333333333333'}));
+    document.querySelector('.tabbar').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+  });
+  await expect.poll(()=>page.evaluate(()=>window._transferRequests)).toEqual([{method:'tab.reject',args:{token:'22222222-2222-4222-8222-222222222222'}}]);
+  expect(await page.evaluate(()=>window.__mdSplit.documents().map(d=>d.name))).toEqual(['移動先.md']);
+});

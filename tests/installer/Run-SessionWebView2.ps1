@@ -44,18 +44,16 @@ try {
                 $window = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $pc)
                 if ($null -ne $window) {
                     $nc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $Name)
-                    $item = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nc)
-                    if ($null -ne $item -and -not $item.Current.IsOffscreen) { return }
-                    # One-tab windows hide the tab strip by default. Wait for
-                    # the requested document title, then reveal its tab using
-                    # the same accessible control available to the user.
-                    if ($window.Current.Name.Contains($Name)) {
-                        $label = -join @([char]0x30bf,[char]0x30d6,[char]0x3092,[char]0x5c55,[char]0x958b)
-                        $expandCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $label)
-                        $expand = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $expandCond)
-                        $invoke = $null
-                        if ($null -ne $expand -and -not $expand.Current.IsOffscreen -and $expand.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { $invoke.Invoke() }
-                    }
+                    $matches = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $nc)
+                    foreach ($item in $matches) { if (-not $item.Current.IsOffscreen) { return } }
+                    # A requested tab need not be active and therefore need not
+                    # appear in the native title. Reveal the strip whenever it
+                    # is folded, including during asynchronous session restore.
+                    $label = -join @([char]0x30bf,[char]0x30d6,[char]0x3092,[char]0x5c55,[char]0x958b)
+                    $expandCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $label)
+                    $expand = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $expandCond)
+                    $invoke = $null
+                    if ($null -ne $expand -and -not $expand.Current.IsOffscreen -and $expand.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { $invoke.Invoke() }
                 }
             } catch [System.Windows.Automation.ElementNotAvailableException] { }
             Start-Sleep -Milliseconds 250

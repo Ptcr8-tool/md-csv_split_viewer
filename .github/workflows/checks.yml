@@ -62,6 +62,18 @@ jobs:
         run: |
           $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           python scripts/package-installer.py
+      - name: Verify window placement across restarts in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-WindowPlacementWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify tab transfers in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-TabDragWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify session restoration in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify Japanese setup text in the actual wizard
         shell: powershell
         run: |
@@ -109,18 +121,6 @@ jobs:
         shell: powershell
         run: |
           & ./tests/installer/Run-PrintWebView2.ps1 -Payload 'release/MD-Split'
-      - name: Verify session restoration in real WebView2
-        shell: powershell
-        run: |
-          & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
-      - name: Verify window placement across restarts in real WebView2
-        shell: powershell
-        run: |
-          & ./tests/installer/Run-WindowPlacementWebView2.ps1 -Payload 'release/MD-Split'
-      - name: Verify tab transfers in real WebView2
-        shell: powershell
-        run: |
-          & ./tests/installer/Run-TabDragWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify mixed line endings in real WebView2
         shell: powershell
         run: |

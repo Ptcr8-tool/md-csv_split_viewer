@@ -327,6 +327,7 @@ internal sealed class EditorWindow : Form
             case "tab.detach": return context.Transfers.Detach(this,args.GetProperty("token").GetString());
             case "tab.accepted": return context.Transfers.Complete(this,args.GetProperty("token").GetString());
             case "tab.cancel": return context.Transfers.Cancel(this,args.GetProperty("token").GetString());
+            case "tab.reject": return context.Transfers.Reject(this,args.GetProperty("token").GetString());
             case "tab.can-detach": return (GetAsyncKeyState(0x01)&0x8000)==0 && (GetAsyncKeyState(0x1B)&0x8000)==0 && !context.Windows.Any(w=>!w.IsDisposed&&w.Visible&&w.Bounds.Contains(Cursor.Position));
             case "document.register":
                 DocumentAuthority.RegisterUnsaved(Documents, args.GetProperty("id").GetString(), args.TryGetProperty("name", out var documentName) ? documentName.GetString() : null);

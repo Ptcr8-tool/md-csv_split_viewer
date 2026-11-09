@@ -145,6 +145,30 @@ internal static class Program
         transfers.Complete(newWindow,detach);
         Assert(transfers.PendingForTarget(newWindow) is null,"bootstrap reports no pending transfer after commit");
         Assert(!source.Documents.ContainsKey(original.Id)&&newWindow.Documents.ContainsKey(original.Id),"new-window acknowledgement commits detachment");
+
+        var rejectContext=new EditorContext();using var rejections=new TabTransfers(rejectContext);
+        var sender=new EditorWindow();var receiver=new EditorWindow();var stranger=new EditorWindow();
+        rejectContext.Windows.Add(sender);rejectContext.Windows.Add(receiver);rejectContext.Windows.Add(stranger);
+        var doc=Fixture();sender.Documents.Add(doc.Id,doc);
+        Assert(!rejections.Reject(new EditorWindow(),Token()),"an unregistered window cannot reject a token");
+        Assert(!rejections.Reject(receiver,"not-a-token"),"invalid rejection tokens are refused");
+        var early=Token();
+        Assert(rejections.Reject(receiver,early),"target can reject before prepare arrives");
+        Reject(()=>rejections.Prepare(sender,early,Input(doc),null),"early rejection prevents a delayed prepare");
+        Assert(sender.Documents.ContainsKey(doc.Id),"early rejection preserves the original document");
+        var ready=Token();rejections.Prepare(sender,ready,Input(doc),null);
+        Assert(!rejections.Reject(sender,ready),"source cannot use target rejection");
+        Assert(rejections.Reject(receiver,ready)&&HasEvent(sender,"tab-transfer-aborted"),"target rejection immediately unlocks source");
+        Reject(()=>rejections.Prepare(sender,ready,Input(doc),null),"a rejected token cannot be reused");
+        var staged=Token();rejections.Prepare(sender,staged,Input(doc),null);rejections.Accept(receiver,staged);
+        Assert(!rejections.Reject(stranger,staged)&&receiver.Documents.ContainsKey(doc.Id)&&sender.Documents.ContainsKey(doc.Id),"another window cannot reject an already-staged transfer");
+        Assert(rejections.Reject(receiver,staged)&&!receiver.Documents.ContainsKey(doc.Id)&&sender.Documents.ContainsKey(doc.Id),"actual target can reject a staged transfer and roll it back");
+        var completed=Token();rejections.Prepare(sender,completed,Input(doc),null);rejections.Accept(receiver,completed);rejections.Complete(receiver,completed);
+        Assert(!rejections.Reject(stranger,completed)&&receiver.Documents.ContainsKey(doc.Id),"retired capability cannot affect a completed transfer");
+        var capacityContext=new EditorContext();using var capacity=new TabTransfers(capacityContext);var requester=new EditorWindow();capacityContext.Windows.Add(requester);
+        var filled=true;for(var i=0;i<256;i++)filled &= capacity.Reject(requester,Token());
+        Assert(filled,"bounded early rejection accepts up to its token limit");
+        Assert(!capacity.Reject(requester,Token()),"early rejection storage is bounded");
         Console.WriteLine(checks+" tab transfer checks passed.");
     }
 }
