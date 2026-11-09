@@ -230,4 +230,3 @@ v1.0.2以前からv1.0.3への移行は、[リリースページ](https://github
 [Code signing policy](CODE_SIGNING.md)（署名方針・申請準備中）
 
 
-
