@@ -58,19 +58,23 @@ jobs:
           path: release/runtime-cache/runtime.cab
           key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
       - name: Package complete offline setup
+        id: package
         shell: pwsh
         run: |
           $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           python scripts/package-installer.py
       - name: Verify window placement across restarts in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-WindowPlacementWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify tab transfers in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-TabDragWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify session restoration in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'

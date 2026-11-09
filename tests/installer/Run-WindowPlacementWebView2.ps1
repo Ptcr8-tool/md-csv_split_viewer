@@ -16,8 +16,6 @@ public static class PlacementTestWin32 {
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int command);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
-    [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
 }
 '@
 $payloadPath = (Resolve-Path -LiteralPath $Payload).Path
@@ -69,6 +67,53 @@ try {
         if (-not [PlacementTestWin32]::GetWindowRect($process.MainWindowHandle, [ref]$rect)) { throw 'Could not read the window rectangle.' }
         return $rect
     }
+    function Wait-Content([string] $Expected) {
+        $until = [DateTime]::UtcNow.AddSeconds(20)
+        do {
+            $process.Refresh()
+            if ($process.HasExited) { throw 'Application exited before the edit was confirmed.' }
+            try {
+                $pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+                $window = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $pc)
+                if ($null -ne $window) {
+                    $items = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+                    foreach ($item in $items) {
+                        if ($item.Current.IsOffscreen) { continue }
+                        if ($item.Current.Name -and $item.Current.Name.Contains($Expected)) { return }
+                        $pattern = $null
+                        if ($item.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)) {
+                            $value = $pattern.DocumentRange.GetText(-1)
+                            if ($value -and $value.Contains($Expected)) { return }
+                        }
+                        $pattern = $null
+                        if ($item.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) {
+                            $value = $pattern.Current.Value
+                            if ($value -and $value.Contains($Expected)) { return }
+                        }
+                    }
+                }
+            } catch [System.Windows.Automation.ElementNotAvailableException] { }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $until)
+        throw "The edit was not observed in the editor: $Expected"
+    }
+    function Focus-Editor {
+        $pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+        $window = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $pc)
+        if ($null -eq $window) { throw 'Editor window is unavailable.' }
+        $edit = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
+        $candidates = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $edit)
+        foreach ($candidate in $candidates) {
+            if ($candidate.Current.IsOffscreen -or -not $candidate.Current.IsKeyboardFocusable) { continue }
+            $content = $candidate.Current.Name
+            $pattern = $null
+            if ($candidate.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)) { $content += $pattern.DocumentRange.GetText(-1) }
+            $pattern = $null
+            if ($candidate.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { $content += $pattern.Current.Value }
+            if ($content -match 'First|Second') { $candidate.SetFocus(); return }
+        }
+        throw 'Could not locate the editable Markdown source in the UI Automation tree.'
+    }
     function Close-Editor {
         if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(45000) -or $process.ExitCode -ne 0) { throw 'Application did not close normally.' }
     }
@@ -90,13 +135,13 @@ try {
     # Modify an open document, cancel the close and ensure the last saved placement remains intact.
     $before = (Get-FileHash -LiteralPath $stateFile -Algorithm SHA256).Hash
     [void][PlacementTestWin32]::MoveWindow($process.MainWindowHandle, $area.Left, $area.Top, [Math]::Max(800,$width-80), [Math]::Max(560,$height-60), $true)
-    $rect = Get-Bounds
     [void][PlacementTestWin32]::SetForegroundWindow($process.MainWindowHandle)
-    [void][PlacementTestWin32]::SetCursorPos($rect.Left+280, $rect.Top+250)
-    [PlacementTestWin32]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
-    [PlacementTestWin32]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
-    [Windows.Forms.SendKeys]::SendWait('x')
-    Start-Sleep -Milliseconds 500
+    Focus-Editor
+    [Windows.Forms.SendKeys]::SendWait('^{END}')
+    [Windows.Forms.SendKeys]::SendWait(' PLACEMENTMARKER')
+    Wait-Content 'PLACEMENTMARKER'
+    $unsaved = -join @([char]0x672a,[char]0x4fdd,[char]0x5b58,[char]0x306e,[char]0x5909,[char]0x66f4)
+    Wait-Name $unsaved 20 | Out-Null
     if (-not $process.CloseMainWindow()) { throw 'Could not request a close.' }
     $cancelName = -join @([char]0x30ad,[char]0x30e3,[char]0x30f3,[char]0x30bb,[char]0x30eb)
     $cancel = Wait-Name $cancelName 20
