@@ -275,11 +275,30 @@ internal static class Storage
             using var icon = key.CreateSubKey("DefaultIcon"); icon.SetValue("", IconValue(commonIcon));
             using var command = key.CreateSubKey(@"shell\open\command"); command.SetValue("", "\"" + exe + "\" \"%1\"");
         }
-        // Only .bat is withdrawn from the old generic candidates. Preserve
-        // legacy candidates for other extensions as well as the legacy ProgID
-        // itself, extension defaults and the protected UserChoice.
-        using (var obsolete = Registry.CurrentUser.OpenSubKey(@"Software\Classes\.bat\OpenWithProgids", writable: true))
-            obsolete?.DeleteValue(progId, throwOnMissingValue: false);
+        // Withdraw old candidates for executable scripts without changing
+        // UserChoice, the extension's default class, or another app's entry.
+        foreach (var ext in TextFileTypes.ExecutableExtensions)
+        {
+            var typedId = AssociationProgIdForExtension(ext);
+            string? typedCommand;
+            using (var command = Registry.CurrentUser.OpenSubKey(@"Software\Classes\" + typedId + @"\shell\open\command"))
+                typedCommand = command?.GetValue(null) as string;
+            var owned = string.Equals(typedCommand, "\"" + exe + "\" \"%1\"", StringComparison.OrdinalIgnoreCase);
+            using (var old = Registry.CurrentUser.OpenSubKey(@"Software\Classes\" + ext + @"\OpenWithProgids", writable: true))
+            {
+                old?.DeleteValue(progId, false);
+                if (owned) old?.DeleteValue(typedId, false);
+            }
+            using (var types = Registry.CurrentUser.OpenSubKey(@"Software\MD Split\Capabilities\FileAssociations", writable: true))
+            {
+                var value = types?.GetValue(ext) as string;
+                if (string.Equals(value, progId, StringComparison.OrdinalIgnoreCase) ||
+                    owned && string.Equals(value, typedId, StringComparison.OrdinalIgnoreCase)) types?.DeleteValue(ext, false);
+            }
+            RemoveExecutableOpenWithHistory(ext);
+            // Keep an existing default handler intact. Windows protects
+            // UserChoice and must remain in control of the actual default.
+        }
         foreach (var ext in TextFileTypes.AssociationExtensions)
         {
             var typedProgId = AssociationProgIdForExtension(ext);
@@ -298,11 +317,93 @@ internal static class Storage
         {
             cap.SetValue("ApplicationName", AppInfo.Title); cap.SetValue("ApplicationDescription", "Text, Markdown and CSV editor");
             using var types = cap.CreateSubKey("FileAssociations");
-            if (string.Equals(types.GetValue(".bat") as string, progId, StringComparison.OrdinalIgnoreCase)) types.DeleteValue(".bat", throwOnMissingValue: false);
             foreach (var ext in TextFileTypes.AssociationExtensions) types.SetValue(ext, AssociationProgIdForExtension(ext));
         }
+        RegisterApplicationTypes(exe);
+        RegisterExtensionIcons(iconDirectory);
         using (var registered = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications")) registered.SetValue(RegisteredApplicationName, @"Software\MD Split\Capabilities");
         NotifyAssociationsChanged();
+    }
+    private static string ApplicationCommand(string exe) => "\"" + exe + "\" \"%1\"";
+    private const string ApplicationKey = @"Software\Classes\Applications\MD-Split.exe";
+    private static void RemoveExecutableOpenWithHistory(string ext)
+    {
+        using var history = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\" + ext + @"\OpenWithList", true);
+        if (history is null) return;
+        var removed = history.GetValueNames().Where(name => name.Length == 1 &&
+            string.Equals(history.GetValue(name) as string, "MD-Split.exe", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (removed.Length == 0) return;
+        foreach (var name in removed) history.DeleteValue(name, false);
+        if (history.GetValue("MRUList") is string order)
+            history.SetValue("MRUList", new string(order.Where(c => !removed.Contains(c.ToString(), StringComparer.OrdinalIgnoreCase)).ToArray()));
+    }
+    private static void RegisterApplicationTypes(string exe)
+    {
+        using var existing = Registry.CurrentUser.OpenSubKey(ApplicationKey + @"\shell\open\command");
+        var previous = existing?.GetValue(null) as string;
+        if (previous is not null && !string.Equals(previous, ApplicationCommand(exe), StringComparison.OrdinalIgnoreCase)) return;
+        using (var command = Registry.CurrentUser.CreateSubKey(ApplicationKey + @"\shell\open\command")) command.SetValue("", ApplicationCommand(exe));
+        using var types = Registry.CurrentUser.CreateSubKey(ApplicationKey + @"\SupportedTypes");
+        foreach (var ext in TextFileTypes.ExecutableExtensions) types.DeleteValue(ext, false);
+        foreach (var ext in TextFileTypes.AssociationExtensions) types.SetValue(ext, "");
+    }
+    internal static void UnregisterApplicationTypes(string exe)
+    {
+        using var command = Registry.CurrentUser.OpenSubKey(ApplicationKey + @"\shell\open\command", true);
+        if (!string.Equals(command?.GetValue(null) as string, ApplicationCommand(exe), StringComparison.OrdinalIgnoreCase)) return;
+        command?.DeleteValue("", false);
+        using var types = Registry.CurrentUser.OpenSubKey(ApplicationKey + @"\SupportedTypes", true);
+        if (types is not null) foreach (var ext in TextFileTypes.AssociationExtensions) types.DeleteValue(ext, false);
+    }
+    internal static void RegisterExtensionIcons(string iconDirectory)
+    {
+        foreach (var ext in TextFileTypes.SupportedExtensions)
+        {
+            var path = Path.Combine(iconDirectory, ext[1..].ToLowerInvariant() + ".ico");
+            if (!File.Exists(path)) continue;
+            RegisterIcon(@"Software\Classes\" + ext + @"\DefaultIcon", path);
+        }
+        // Explorer may prefer these built-in execution classes to the
+        // extension-level icon. Register only their icon, never their verbs.
+        RegisterIcon(@"Software\Classes\batfile\DefaultIcon", Path.Combine(iconDirectory, "bat.ico"));
+        RegisterIcon(@"Software\Classes\cmdfile\DefaultIcon", Path.Combine(iconDirectory, "cmd.ico"));
+    }
+    internal static void UnregisterExtensionIcons(string iconDirectory)
+    {
+        foreach (var ext in TextFileTypes.SupportedExtensions)
+            UnregisterIcon(@"Software\Classes\" + ext + @"\DefaultIcon", Path.Combine(iconDirectory, ext[1..].ToLowerInvariant() + ".ico"));
+        UnregisterIcon(@"Software\Classes\batfile\DefaultIcon", Path.Combine(iconDirectory, "bat.ico"));
+        UnregisterIcon(@"Software\Classes\cmdfile\DefaultIcon", Path.Combine(iconDirectory, "cmd.ico"));
+    }
+    private static void RegisterIcon(string keyPath, string iconPath)
+    {
+        if (!File.Exists(iconPath)) return;
+        // Respect an existing per-user override from another application.
+        using var existing = Registry.CurrentUser.OpenSubKey(keyPath);
+        if (existing is not null && (existing.ValueCount != 0 || existing.SubKeyCount != 0)) return;
+        using var icon = Registry.CurrentUser.CreateSubKey(keyPath);
+        icon.SetValue("", "\"" + iconPath + "\",0");
+    }
+    private static void UnregisterIcon(string keyPath, string iconPath)
+    {
+        var empty = false;
+        using (var icon = Registry.CurrentUser.OpenSubKey(keyPath, true))
+        {
+            if (!string.Equals(icon?.GetValue(null) as string, "\"" + iconPath + "\",0", StringComparison.OrdinalIgnoreCase)) return;
+            icon!.DeleteValue("", false);
+            empty = icon.ValueCount == 0 && icon.SubKeyCount == 0;
+        }
+        if (empty)
+        {
+            Registry.CurrentUser.DeleteSubKey(keyPath, false);
+            // Avoid leaving an empty per-user file class that could mask
+            // Windows' machine-level execution class after uninstall.
+            var parentPath = keyPath[..keyPath.LastIndexOf('\\')];
+            var parentEmpty = false;
+            using (var parent = Registry.CurrentUser.OpenSubKey(parentPath))
+                parentEmpty = parent is not null && parent.ValueCount == 0 && parent.SubKeyCount == 0;
+            if (parentEmpty) Registry.CurrentUser.DeleteSubKey(parentPath, false);
+        }
     }
     internal static void NotifyAssociationsChanged() => SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
     [DllImport("shell32.dll")] private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
