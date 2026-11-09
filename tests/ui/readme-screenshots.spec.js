@@ -60,7 +60,7 @@ test('Discord mode and split panel',async({page})=>{
   await page.locator('#show-chunks').click();
   await expect(page.locator('.chunk')).toHaveCount(1);
   const point=await page.locator('.chunk-body').first().evaluate(el=>{
-    const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let node;let left=35;
+    const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let node;let left=22;
     while((node=walker.nextNode())){if(left<=node.length){const range=document.createRange();range.setStart(node,left);range.setEnd(node,Math.min(node.length,left+1));const rect=range.getBoundingClientRect();return {x:rect.left+Math.min(rect.width/2,2),y:rect.top+rect.height/2};}left-=node.length;}
     throw new Error('Sample text position was not found');
   });
