@@ -58,6 +58,33 @@ try {
             } catch [System.Windows.Automation.ElementNotAvailableException] { }
             Start-Sleep -Milliseconds 250
         } while ([DateTime]::UtcNow -lt $until)
+        # The automation runner may expose a tab as off-screen, leave the
+        # strip folded, or open a second window. Capture the actual accessibility
+        # tree and persisted fixtures so a restore failure can be distinguished
+        # from a visibility failure without guessing from the timeout alone.
+        try {
+            $pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+            $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pc)
+            foreach ($window in $windows) {
+                Write-Output ("DIAGNOSTIC window: name={0}; offscreen={1}; bounds={2}" -f $window.Current.Name,$window.Current.IsOffscreen,$window.Current.BoundingRectangle)
+                $items = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+                $printed = 0
+                foreach ($item in $items) {
+                    $itemName = $item.Current.Name
+                    if (-not [string]::IsNullOrWhiteSpace($itemName) -and $printed -lt 180) {
+                        Write-Output ("DIAGNOSTIC element: type={0}; name={1}; offscreen={2}" -f $item.Current.ControlType.ProgrammaticName,$itemName,$item.Current.IsOffscreen)
+                        $printed++
+                    }
+                }
+            }
+        } catch { Write-Output ("DIAGNOSTIC accessibility inspection failed: " + $_.Exception.Message) }
+        foreach ($folder in @($sessions, (Join-Path $data 'Recovery'))) {
+            if (Test-Path -LiteralPath $folder) {
+                foreach ($file in @(Get-ChildItem -LiteralPath $folder -Filter '*.json' -File)) {
+                    try { Write-Output ("DIAGNOSTIC state {0}: {1}" -f $file.Name,(Get-Content -LiteralPath $file.FullName -Raw)) } catch { Write-Output ("DIAGNOSTIC state read failed: " + $_.Exception.Message) }
+                }
+            }
+        }
         throw "Expected tab was not exposed: $Name"
     }
     function Close-Editor {
@@ -80,7 +107,7 @@ try {
     $process = Start-Editor $false
     Wait-Tab 'first.md'; Wait-Tab 'second.csv'; Close-Editor
     $saved = Read-SavedSession
-    if (@($saved.documents).Count -ne 2) { throw 'All-tabs session did not survive restart.' }
+    if (@($saved.documents).Count -ne 2 -or @($saved.documents.path) -notcontains $a -or @($saved.documents.path) -notcontains $b) { throw 'All-tabs session did not retain both fixture paths after restart.' }
     Write-Output 'PASS: saved tabs reopened after a real WebView2 shutdown and restart.'
 
     Set-TestSettings 'active'

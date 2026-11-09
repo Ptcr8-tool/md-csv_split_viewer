@@ -43,7 +43,10 @@ try {
     }
     function Element($window, [string] $name) {
         $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)
-        return $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+        foreach ($item in $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)) {
+            if (-not $item.Current.IsOffscreen) { return $item }
+        }
+        return $null
     }
     function Wait-Window([string] $name) {
         $until = [DateTime]::UtcNow.AddSeconds(90)
@@ -95,6 +98,41 @@ try {
         } while ([DateTime]::UtcNow -lt $until)
         throw "Expected unsaved fixture text was not visible: $expected"
     }
+    function Focus-Editor($window, [string] $expected) {
+        $until = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            try {
+                $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
+                foreach ($candidate in $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)) {
+                    if ($candidate.Current.IsOffscreen -or -not $candidate.Current.IsKeyboardFocusable) { continue }
+                    $content = $candidate.Current.Name
+                    $pattern = $null
+                    if ($candidate.TryGetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern, [ref]$pattern)) { $content += $pattern.DocumentRange.GetText(-1) }
+                    $pattern = $null
+                    if ($candidate.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { $content += $pattern.Current.Value }
+                    if ($content -and $content.Contains($expected)) { $candidate.SetFocus(); return }
+                }
+            } catch [System.Windows.Automation.ElementNotAvailableException] { }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $until)
+        throw "Could not locate the editable Markdown source containing: $expected"
+    }
+    function Wait-DetachedWindows {
+        $until = [DateTime]::UtcNow.AddSeconds(90)
+        do {
+            if ($process.HasExited) { throw 'Editor exited during detachment.' }
+            try {
+                $items = @(Windows)
+                $detached = $items | Where-Object { $_.Current.Name -like '*first.md*' } | Select-Object -First 1
+                $source = $items | Where-Object { $_.Current.Name -like '*second.md*' } | Select-Object -First 1
+                if ($null -ne $detached -and $null -ne $source -and $detached.Current.NativeWindowHandle -ne $source.Current.NativeWindowHandle) {
+                    return @($detached, $source)
+                }
+            } catch [System.Windows.Automation.ElementNotAvailableException] { }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $until)
+        throw 'Expected two distinct editor windows after detachment.'
+    }
     function Drag($element, [int] $toX, [int] $toY, [bool] $escape) {
         $rect = $element.Current.BoundingRectangle
         if ($rect.IsEmpty -or $rect.Width -le 4 -or $rect.Height -le 4) { throw 'Tab has no usable screen bounds.' }
@@ -110,17 +148,17 @@ try {
     $first = Wait-Tab $initial 'first.md'; [void](Wait-Tab $initial 'second.md')
     $invoke = $null
     if (-not $first.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { throw 'Could not select the first tab.' }
-    $invoke.Invoke(); Start-Sleep -Milliseconds 300
-    $rect = $initial.Current.BoundingRectangle
-    [void][DragTestNative]::SetCursorPos([int]($rect.Left+300),[int]($rect.Top+240))
-    [DragTestNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero); [DragTestNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+    $invoke.Invoke()
+    # Select the source editor by its actual content. Fixed screen coordinates
+    # can hit the preview or toolbar and silently leave the document unchanged.
+    Focus-Editor $initial 'First fixture'
     [Windows.Forms.SendKeys]::SendWait('^{END}'); [Windows.Forms.SendKeys]::SendWait(' UNSAVED_MARKER')
     Wait-Content $initial 'UNSAVED_MARKER'; $first = Wait-Tab $initial 'first.md'
     $screen = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     if ($screen.Width -lt 900 -or $screen.Height -lt 650) { throw 'The runner screen is too small for reliable drag testing.' }
     Drag $first ($screen.Right-10) 100 $false
-    $detached = Wait-Window 'first.md'; $source = Wait-Window 'second.md'
-    if ($detached.Current.NativeWindowHandle -eq $source.Current.NativeWindowHandle) { throw 'A distinct editor window was not created.' }
+    $windowsAfterDetach = @(Wait-DetachedWindows)
+    $detached = $windowsAfterDetach[0]; $source = $windowsAfterDetach[1]
     Wait-Content $detached 'UNSAVED_MARKER'
     Write-Output 'PASS: dragging a tab outside creates a separate editor window.'
     Foreground $source 10 20; $sourceTab = Wait-Tab $source 'second.md'; $destination = $sourceTab.Current.BoundingRectangle

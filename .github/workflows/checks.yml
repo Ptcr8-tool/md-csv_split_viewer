@@ -137,7 +137,9 @@ jobs:
         shell: powershell
         run: |
           & ./tests/installer/Run-BinaryViewer.ps1 -Payload 'release/MD-Split'
-      - run: npm run test:ui
+      - name: Verify browser UI
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        run: npm run test:ui
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: MD-Split-Windows-setup
