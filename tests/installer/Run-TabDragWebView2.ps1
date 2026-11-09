@@ -10,6 +10,9 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class DragTestNative {
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X,Y; public POINT(int x,int y) { X=x; Y=y; } }
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr handle, uint flags);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
     [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
@@ -144,6 +147,11 @@ try {
         } while ([DateTime]::UtcNow -lt $until)
         throw 'Expected two distinct editor windows after detachment.'
     }
+    function RootAt([int] $x, [int] $y) {
+        $point = New-Object DragTestNative+POINT
+        $point.X = $x; $point.Y = $y
+        return [DragTestNative]::GetAncestor([DragTestNative]::WindowFromPoint($point),2)
+    }
     function Drag($element, [int] $toX, [int] $toY, [bool] $escape) {
         $rect = $element.Current.BoundingRectangle
         if ($rect.IsEmpty -or $rect.Width -le 4 -or $rect.Height -le 4) { throw 'Tab has no usable screen bounds.' }
@@ -152,6 +160,10 @@ try {
         [DragTestNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
         try {
             for ($i=1; $i -le 20; $i++) { [void][DragTestNative]::SetCursorPos([int]($x+($toX-$x)*$i/20),[int]($y+($toY-$y)*$i/20)); Start-Sleep -Milliseconds 35 }
+            # Allow WebView2 to receive dragover at the final target before the
+            # release, as a real user settling the pointer over a small control.
+            Start-Sleep -Milliseconds 700
+            Write-Output ("DIAGNOSTIC drag: start={0},{1}; end={2},{3}; rootAtEnd={4}" -f $x,$y,$toX,$toY,(RootAt $toX $toY))
             if ($escape) { [DragTestNative]::keybd_event(0x1b,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 200; [DragTestNative]::keybd_event(0x1b,0,2,[UIntPtr]::Zero); Start-Sleep -Milliseconds 300 }
         } finally { [DragTestNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero) }
     }
@@ -194,10 +206,31 @@ try {
     $detachedTab = Wait-Tab $detached 'first.md'
     $detachedRect = $detached.Current.BoundingRectangle
     if ($destination.Top -lt $detachedRect.Bottom -and $destination.Bottom -gt $detachedRect.Top -and $destination.Right -gt $detachedRect.Left -and $destination.Left -lt $detachedRect.Right) { throw 'The detached window covers the folded source drop target.' }
-    Drag $detachedTab ([int]($destination.Left+$destination.Width/2)) ([int]($destination.Top+$destination.Height/2)) $false
+    $targetX = [int]($destination.Left+$destination.Width/2); $targetY = [int]($destination.Top+$destination.Height/2)
+    $underTarget = RootAt $targetX $targetY
+    $sourceRoot = [IntPtr]::new($source.Current.NativeWindowHandle)
+    Write-Output ("DIAGNOSTIC drop target: rect={0}; sourceBounds={1}; detachedBounds={2}; hitRoot={3}; expectedRoot={4}" -f $destination,$source.Current.BoundingRectangle,$detachedRect,$underTarget,$sourceRoot)
+    if ($underTarget -ne $sourceRoot) { throw 'The intended drop point is not over the source window.' }
+    Drag $detachedTab $targetX $targetY $false
     $until = [DateTime]::UtcNow.AddSeconds(90)
     do { $count=@(Windows).Count; if ($count -eq 1) { break }; Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt $until)
-    if ($count -ne 1) { throw 'The detached tab was not joined back into one window.' }
+    if ($count -ne 1) {
+        foreach ($window in @(Windows)) {
+            try {
+                Write-Output ("DIAGNOSTIC window: title={0}; bounds={1}" -f $window.Current.Name,$window.Current.BoundingRectangle)
+                $all = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+                foreach ($item in $all) {
+                    $name = $item.Current.Name
+                    if (-not [string]::IsNullOrWhiteSpace($name) -and -not $item.Current.IsOffscreen) {
+                        Write-Output ("DIAGNOSTIC UIA: type={0}; name={1}" -f $item.Current.ControlType.ProgrammaticName,$name)
+                    }
+                }
+            } catch [System.Windows.Automation.ElementNotAvailableException] { Write-Output 'DIAGNOSTIC window disappeared.' }
+        }
+        $errorLog = Join-Path $data 'errors.log'
+        if (Test-Path -LiteralPath $errorLog) { Write-Output 'DIAGNOSTIC native error log:'; Get-Content -LiteralPath $errorLog -Encoding UTF8 | Select-Object -Last 50 }
+        throw 'The detached tab was not joined back into one window.'
+    }
     $joined = @(Windows)[0]; $first = Wait-Tab $joined 'first.md'; [void](Wait-Tab $joined 'second.md'); Wait-Content $joined 'UNSAVED_MARKER'
     Write-Output 'PASS: dragging the detached tab into another editor joins its tab strip.'
     Foreground $joined 10 20; $first = Wait-Tab $joined 'first.md'
