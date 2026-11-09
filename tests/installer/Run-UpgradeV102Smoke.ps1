@@ -226,7 +226,7 @@ try {
     if ([version]$registeredVersion -ne $expectedNewVersion) { throw 'The registered version did not update.' }
     if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.File.bat' -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'HKCU:\Software\Classes\MD.Split.File.bat') -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw 'Upgrade retained or added a bat editor association.' }
     if (-not (Get-ItemProperty -LiteralPath $batchOpenWith -Name $batchOtherProgId -ErrorAction SilentlyContinue)) { throw 'Upgrade removed another bat app candidate.' }
-    if (-not (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.cmd\OpenWithProgids' -Name 'MD.Split.File.cmd' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name '.cmd' -ErrorAction Stop).PSObject.Properties['.cmd'].Value -ne 'MD.Split.File.cmd') { throw 'Upgrade lost cmd registration.' }
+    if ((Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.cmd\OpenWithProgids' -Name 'MD.Split.File.cmd' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\.cmd\OpenWithProgids' -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name '.cmd' -ErrorAction SilentlyContinue)) { throw 'Upgrade retained a cmd editor candidate.' }
     foreach ($file in $preserve) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $hashes[$file]) { throw 'Upgrade changed or removed a settings, session or recovery fixture.' }
     }
