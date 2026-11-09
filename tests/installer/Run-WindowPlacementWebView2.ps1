@@ -98,12 +98,14 @@ try {
     [Windows.Forms.SendKeys]::SendWait('x')
     Start-Sleep -Milliseconds 500
     if (-not $process.CloseMainWindow()) { throw 'Could not request a close.' }
-    $cancel = Wait-Name 'キャンセル' 20
+    $cancelName = -join @([char]0x30ad,[char]0x30e3,[char]0x30f3,[char]0x30bb,[char]0x30eb)
+    $cancel = Wait-Name $cancelName 20
     $cancel.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     Start-Sleep -Milliseconds 500
     if ($process.HasExited -or (Get-FileHash -LiteralPath $stateFile -Algorithm SHA256).Hash -ne $before) { throw 'Canceled close changed saved placement or closed the application.' }
     if (-not $process.CloseMainWindow()) { throw 'Could not request close after cancellation.' }
-    $discard = Wait-Name '保存せずに閉じる' 20
+    $discardName = -join @([char]0x4fdd,[char]0x5b58,[char]0x305b,[char]0x305a,[char]0x306b,[char]0x9589,[char]0x3058,[char]0x308b)
+    $discard = Wait-Name $discardName 20
     $discard.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     if (-not $process.WaitForExit(45000) -or $process.ExitCode -ne 0) { throw 'Application did not close after discard.' }
     Write-Output 'PASS: canceling a close leaves the saved window placement unchanged.'

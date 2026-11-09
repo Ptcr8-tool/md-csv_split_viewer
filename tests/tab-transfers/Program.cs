@@ -43,13 +43,14 @@ internal sealed class EditorWindow
     public bool FailAdd { get; set; }
     public bool FailEmit { get; set; }
     public Dictionary<string,DocumentData> Documents { get; } = [];
+    public List<DocumentData> InitialDocuments { get; } = [];
     public List<JsonElement> Events { get; } = [];
     public void AddDocument(DocumentData doc)
     {
         Documents.Add(doc.Id,doc);
         if(FailAdd)throw new IOException("synthetic add failure");
     }
-    public void ForgetTransferred(string id)=>Documents.Remove(id);
+    public void ForgetTransferred(string id){Documents.Remove(id);InitialDocuments.RemoveAll(d=>d.Id==id);}
     public void RecheckTransferred(string id) { }
     public void Emit(object value)
     {
@@ -64,7 +65,7 @@ internal sealed class EditorContext
     public EditorWindow AddWindow(RecoveryData initial,Action<EditorWindow>? beforeShow=null)
     {
         var window=new EditorWindow();
-        foreach(var doc in initial.Documents)window.Documents.Add(doc.Id,doc);
+        foreach(var doc in initial.Documents){window.Documents.Add(doc.Id,doc);window.InitialDocuments.Add(doc);}
         Windows.Add(window);beforeShow?.Invoke(window);OnShow?.Invoke(window);return window;
     }
 }
@@ -93,7 +94,7 @@ internal static class Program
     {
         var context=new EditorContext();
         using var transfers=new TabTransfers(context);
-        var source=new EditorWindow();var target=new EditorWindow();var trusted=Fixture();
+        var source=new EditorWindow();var target=new EditorWindow();context.Windows.Add(source);context.Windows.Add(target);var trusted=Fixture();
         source.Documents.Add(trusted.Id,trusted);
         var token=Token();
         using(var json=JsonDocument.Parse("{\"undo\":[{\"text\":\"previous\"}]}"))
@@ -108,9 +109,15 @@ internal static class Program
         transfers.Complete(target,token);
         Assert(!source.Documents.ContainsKey(trusted.Id)&&target.Documents.ContainsKey(trusted.Id)&&HasEvent(source,"tab-transfer-complete"),"only target acknowledgement commits ownership");
         Reject(()=>transfers.Accept(new EditorWindow(),token),"committed token cannot be replayed");
+        Assert(transfers.Cancel(source,token)=="committed","cancel reports a committed transfer even when its event is missed");
+        typeof(TabTransfers).GetMethod("Expire",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(transfers,null);
+        Assert(transfers.Cancel(source,token)=="committed","committed outcomes survive expiry until source acknowledgement");
+        Assert(!transfers.Finalized(new EditorWindow(),token)&&transfers.Finalized(source,token),"unrelated windows cannot acknowledge completed cleanup");
+        Assert(transfers.Cancel(target,token)=="committed","source acknowledgement alone cannot hide a committed outcome from the target");
+        Assert(transfers.Finalized(target,token),"target acknowledges its committed outcome");
 
         var original=Fixture();source.Documents.Add(original.Id,original);var cancel=Token();transfers.Prepare(source,cancel,Input(original),null);transfers.Accept(target,cancel);
-        Reject(()=>transfers.Cancel(new EditorWindow(),cancel),"unrelated windows cannot cancel a transfer");
+        Assert(transfers.Cancel(new EditorWindow(),cancel)=="unavailable","unregistered windows cannot cancel a transfer");
         transfers.Cancel(source,cancel);
         Assert(source.Documents.ContainsKey(original.Id)&&!target.Documents.ContainsKey(original.Id)&&HasEvent(source,"tab-transfer-aborted")&&HasEvent(target,"tab-transfer-rollback"),"cancellation rolls back the provisional target and preserves source");
         Reject(()=>transfers.Complete(target,cancel),"cancelled token cannot be acknowledged later");
@@ -146,6 +153,11 @@ internal static class Program
         Assert(transfers.PendingForTarget(newWindow) is null,"bootstrap reports no pending transfer after commit");
         Assert(!source.Documents.ContainsKey(original.Id)&&newWindow.Documents.ContainsKey(original.Id),"new-window acknowledgement commits detachment");
 
+        context.OnShow=null;var delayedDoc=Fixture();source.Documents.Add(delayedDoc.Id,delayedDoc);
+        var delayed=Token();transfers.Prepare(source,delayed,Input(delayedDoc),null);transfers.Detach(source,delayed);
+        var notBootstrapped=context.Windows.Last();
+        Assert(transfers.Cancel(source,delayed)=="cancelled"&&notBootstrapped.InitialDocuments.Count==0&&source.Documents.ContainsKey(delayedDoc.Id),"cancelling a detached window before bootstrap removes its initial copy");
+
         var rejectContext=new EditorContext();using var rejections=new TabTransfers(rejectContext);
         var sender=new EditorWindow();var receiver=new EditorWindow();var stranger=new EditorWindow();
         rejectContext.Windows.Add(sender);rejectContext.Windows.Add(receiver);rejectContext.Windows.Add(stranger);
@@ -159,10 +171,17 @@ internal static class Program
         var ready=Token();rejections.Prepare(sender,ready,Input(doc),null);
         Assert(!rejections.Reject(sender,ready),"source cannot use target rejection");
         Assert(rejections.Reject(receiver,ready)&&HasEvent(sender,"tab-transfer-aborted"),"target rejection immediately unlocks source");
+        Assert(rejections.Reject(receiver,ready),"repeating rejection by the same target is idempotent");
         Reject(()=>rejections.Prepare(sender,ready,Input(doc),null),"a rejected token cannot be reused");
+        var earlyCancel=Token();Assert(rejections.Cancel(sender,earlyCancel)=="cancelled","cancellation before prepare reserves the token");
+        Reject(()=>rejections.Prepare(sender,earlyCancel,Input(doc),null),"a late prepare cannot revive a cancelled transfer");
+        var failedRollback=Token();rejections.Prepare(sender,failedRollback,Input(doc),null);rejections.Accept(receiver,failedRollback);receiver.FailEmit=true;
+        Assert(rejections.Cancel(sender,failedRollback)=="unavailable"&&sender.Documents.ContainsKey(doc.Id)&&receiver.Documents.ContainsKey(doc.Id),"failed rollback notification does not unlock the source");
+        receiver.FailEmit=false;sender.FailEmit=true;Assert(rejections.Cancel(sender,failedRollback)=="cancelled"&&sender.Documents.ContainsKey(doc.Id)&&!receiver.Documents.ContainsKey(doc.Id),"cancel reports cancellation even if the source notification is lost");sender.FailEmit=false;
         var staged=Token();rejections.Prepare(sender,staged,Input(doc),null);rejections.Accept(receiver,staged);
         Assert(!rejections.Reject(stranger,staged)&&receiver.Documents.ContainsKey(doc.Id)&&sender.Documents.ContainsKey(doc.Id),"another window cannot reject an already-staged transfer");
         Assert(rejections.Reject(receiver,staged)&&!receiver.Documents.ContainsKey(doc.Id)&&sender.Documents.ContainsKey(doc.Id),"actual target can reject a staged transfer and roll it back");
+        Assert(rejections.Reject(receiver,staged),"staged rejection is idempotent");
         var completed=Token();rejections.Prepare(sender,completed,Input(doc),null);rejections.Accept(receiver,completed);rejections.Complete(receiver,completed);
         Assert(!rejections.Reject(stranger,completed)&&receiver.Documents.ContainsKey(doc.Id),"retired capability cannot affect a completed transfer");
         var capacityContext=new EditorContext();using var capacity=new TabTransfers(capacityContext);var requester=new EditorWindow();capacityContext.Windows.Add(requester);

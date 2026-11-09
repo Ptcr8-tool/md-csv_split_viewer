@@ -17,7 +17,10 @@ internal sealed class TabTransfers : IDisposable
     }
     private readonly EditorContext context;
     private readonly Dictionary<string,Transfer> pending = new(StringComparer.Ordinal);
-    private readonly Dictionary<string,(DateTimeOffset Until,EditorWindow? Rejecter)> rejected = new(StringComparer.Ordinal);
+    private readonly Dictionary<string,(DateTimeOffset Until,EditorWindow? Rejecter,bool Committed)> rejected = new(StringComparer.Ordinal);
+    // Committed outcomes cannot expire while the source UI might still need
+    // to distinguish them from a pre-prepare cancellation.
+    private readonly Dictionary<string,(EditorWindow Source,EditorWindow Target,bool SourceDone,bool TargetDone)> completed = new(StringComparer.Ordinal);
     private const int MaxRejectedTokens=256;
     private readonly System.Windows.Forms.Timer timer = new(){Interval=1000};
     internal TabTransfers(EditorContext context){this.context=context;timer.Tick+=(_,_)=>Expire();timer.Start();}
@@ -30,13 +33,13 @@ internal sealed class TabTransfers : IDisposable
     internal object Prepare(EditorWindow source,string? token,DocumentData input,JsonElement? state)
     {
         Expire();
-        if(token is null||!Guid.TryParse(token,out _)||pending.ContainsKey(token))throw new IOException("タブの移動情報が正しくありません。");
+        if(token is null||!Guid.TryParse(token,out _)||(pending.ContainsKey(token)||completed.ContainsKey(token)))throw new IOException("タブの移動情報が正しくありません。");
         if(rejected.TryGetValue(token,out var rejectUntil))
         {
             if(rejectUntil.Until>DateTimeOffset.UtcNow)throw new IOException("移動先がタブを受け付けられませんでした。");
             rejected.Remove(token);
         }
-        if(pending.Count+rejected.Count>=MaxRejectedTokens)throw new IOException("タブの移動が集中しています。しばらく待ってから再試行してください。");
+        if(pending.Count+rejected.Count+completed.Count>=MaxRejectedTokens)throw new IOException("タブの移動が集中しています。しばらく待ってから再試行してください。");
         if(source.IsSessionClosing||!source.CanTransferTabs)throw new IOException("ウィンドウの操作が終わってから移動してください。");
         if(pending.Values.Any(p=>p.Source==source&&p.Document.Id==input.Id))throw new IOException("このタブは移動中です。");
         var document=DocumentAuthority.Merge(source.Documents,input);
@@ -74,14 +77,25 @@ internal sealed class TabTransfers : IDisposable
         item.Source.Emit(new{type="tab-transfer-complete",token=item.Token,id=item.Document.Id});
         item.Source.ForgetTransferred(item.Document.Id);
         pending.Remove(item.Token);
-        rejected[item.Token]=(DateTimeOffset.UtcNow.AddMinutes(2),null);
+        completed[item.Token]=(item.Source,target,false,false);
         return true;
     }
-    internal bool Cancel(EditorWindow source,string? token)
+    // Return the actual terminal state, including when the host notification was
+    // lost. A pre-prepare cancellation reserves the token against a late prepare.
+    internal string Cancel(EditorWindow requester,string? token)
     {
-        if(token is null||!pending.TryGetValue(token,out var item))return true;
-        if(item.Source!=source&&item.Target!=source)throw new IOException("タブの移動元が一致しません。");
-        Abort(item);return true;
+        if(token is null||!Guid.TryParse(token,out _)||requester.IsDisposed||!context.Windows.Contains(requester))return "unavailable";
+        if(pending.TryGetValue(token,out var item))
+        {
+            if(item.Source!=requester&&item.Target!=requester)throw new IOException("タブの移動元が一致しません。");
+            return Abort(item)?"cancelled":"unavailable";
+        }
+        if(completed.TryGetValue(token,out var done))return done.Source==requester||done.Target==requester?"committed":"unavailable";
+        Expire();
+        if(rejected.TryGetValue(token,out var old))return old.Committed?"committed":"cancelled";
+        if(pending.Count+rejected.Count+completed.Count>=MaxRejectedTokens)return "unavailable";
+        rejected[token]=(DateTimeOffset.UtcNow.AddMinutes(2),null,false);
+        return "cancelled";
     }
     // The token is a capability: another registered editor may reject a drag
     // it received, but cannot cancel a transfer already staged in another target.
@@ -92,12 +106,22 @@ internal sealed class TabTransfers : IDisposable
         if(pending.TryGetValue(token,out var item))
         {
             if(item.Source==requester||(item.Target is not null&&item.Target!=requester))return false;
-            Abort(item);return true;
+            if(!Abort(item))return false;
+            rejected[token]=(DateTimeOffset.UtcNow.AddMinutes(2),requester,false);return true;
         }
+        if(completed.ContainsKey(token))return false;
         Expire();
         if(rejected.TryGetValue(token,out var old))return old.Rejecter==requester;
-        if(pending.Count+rejected.Count>=MaxRejectedTokens)return false;
-        rejected[token]=(DateTimeOffset.UtcNow.AddMinutes(2),requester);return true;
+        if(pending.Count+rejected.Count+completed.Count>=MaxRejectedTokens)return false;
+        rejected[token]=(DateTimeOffset.UtcNow.AddMinutes(2),requester,false);return true;
+    }
+    internal bool Finalized(EditorWindow window,string? token)
+    {
+        if(token is null||!completed.TryGetValue(token,out var item)||(item.Source!=window&&item.Target!=window))return false;
+        item.SourceDone |= item.Source==window;
+        item.TargetDone |= item.Target==window;
+        if(item.SourceDone&&item.TargetDone)completed.Remove(token);else completed[token]=item;
+        return true;
     }
     internal object? PendingForTarget(EditorWindow target)
     {
@@ -107,6 +131,7 @@ internal sealed class TabTransfers : IDisposable
     internal void WindowClosed(EditorWindow window)
     {
         foreach(var item in pending.Values.Where(x=>x.Source==window||x.Target==window).ToArray())Abort(item);
+        foreach(var pair in completed.Where(x=>x.Value.Source==window||x.Value.Target==window).ToArray())Finalized(window,pair.Key);
     }
     private void Expire()
     {
@@ -114,16 +139,21 @@ internal sealed class TabTransfers : IDisposable
         foreach(var item in pending.Values.Where(x=>x.Expires<=now).ToArray())Abort(item);
         foreach(var token in rejected.Where(x=>x.Value.Until<=now).Select(x=>x.Key).ToArray())rejected.Remove(token);
     }
-    private void Abort(Transfer item)
+    private bool Abort(Transfer item)
     {
-        if(!pending.Remove(item.Token))return;
-        rejected[item.Token]=(DateTimeOffset.UtcNow.AddMinutes(2),null);
+        if(!pending.ContainsKey(item.Token))return true;
         if(item.Target is {IsDisposed:false} target)
         {
-            try{target.ForgetTransferred(item.Document.Id);if(!target.IsSessionClosing)target.Emit(new{type="tab-transfer-rollback",token=item.Token,id=item.Document.Id});}
-            catch(Exception ex){Storage.Log(ex);}
+            // Do not release the source if the target could not be told to
+            // discard its provisional copy. Retry on the next cancellation.
+            if(!target.IsSessionClosing)try{target.Emit(new{type="tab-transfer-rollback",token=item.Token,id=item.Document.Id});}
+            catch(Exception ex){Storage.Log(ex);return false;}
+            target.ForgetTransferred(item.Document.Id);
         }
+        pending.Remove(item.Token);
+        rejected[item.Token]=(DateTimeOffset.UtcNow.AddMinutes(2),null,false);
         if(!item.Source.IsDisposed)try{item.Source.RecheckTransferred(item.Document.Id);item.Source.Emit(new{type="tab-transfer-aborted",token=item.Token,id=item.Document.Id});}catch(Exception ex){Storage.Log(ex);}
+        return true;
     }
     public void Dispose(){timer.Stop();timer.Dispose();}
 }
