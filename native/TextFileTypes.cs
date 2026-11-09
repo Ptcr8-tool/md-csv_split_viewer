@@ -43,13 +43,12 @@ internal static class TextFileTypes
         new("Vue", ["vue"], "vue"),
         new("Svelte", ["svelte"], "svelte")
     ];
-    // Scripts can still be opened explicitly in the editor, but must not be
-    // advertised as default-app candidates: users may execute them instead.
-    // Include the common Windows script hosts and interpreter script types;
-    // declarations such as .pyi and configuration such as .psd1 remain text.
+    // Some executable script types are deliberately excluded from default-app
+    // candidates. Python files remain candidates: registering a candidate
+    // does not change the user's existing default or stop command-line use.
     public static readonly string[] ExecutableExtensions =
     [
-        ".bat", ".cmd", ".ps1", ".psm1", ".py", ".pyw",
+        ".bat", ".cmd", ".ps1", ".psm1",
         ".js", ".mjs", ".cjs", ".sh", ".bash", ".zsh",
         ".rb", ".pl", ".php", ".lua", ".r", ".kts",
         ".vbs", ".vbe", ".wsf", ".wsh", ".jse", ".hta", ".exe", ".com"
