@@ -38,9 +38,25 @@ jobs:
       - run: npm audit --omit=dev
       - run: npm run check:version
       - run: npm test
+      - run: node --test tests/tab-host-queue.node.mjs
       - run: dotnet run --project tests/native/NativeChecks.csproj -c Release
+      - run: dotnet run --project tests/tab-transfers/TabTransferChecks.csproj -c Release
       - run: npx playwright install chromium
-      - run: npm run publish:win
+      - name: Publish Windows application
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $publishExitCode = 1
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            & npm run publish:win
+            $publishExitCode = $LASTEXITCODE
+            if ($publishExitCode -eq 0) { break }
+            if ($attempt -lt 4) {
+              Write-Warning "Windows publish failed (exit $publishExitCode); retrying in 10 seconds ($attempt/4)."
+              Start-Sleep -Seconds 10
+            }
+          }
+          if ($publishExitCode -ne 0) { exit $publishExitCode }
       - name: Verify the production web bundle
         run: node scripts/check-production.mjs
       - run: choco install nsis --yes --no-progress
@@ -56,10 +72,26 @@ jobs:
           path: release/runtime-cache/runtime.cab
           key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
       - name: Package complete offline setup
+        id: package
         shell: pwsh
         run: |
           $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
           python scripts/package-installer.py
+      - name: Verify window placement across restarts in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-WindowPlacementWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify tab transfers in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-TabDragWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify session restoration in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify Japanese setup text in the actual wizard
         shell: powershell
         run: |
@@ -76,7 +108,7 @@ jobs:
         shell: pwsh
         run: |
           $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.2-Setup.exe'
-          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.2/MD-Split-1.0.2-Setup.exe' -OutFile $old
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.2/MD-Split-1.0.2-Setup.exe' -OutFile $old -MaximumRetryCount 5 -RetryIntervalSec 10
           if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'd48c52d9292e479fca431674a68af1b9f80978694bc8b32ac8aaed19a2609a8d') { throw 'Published v1.0.2 setup hash mismatch.' }
       - name: Verify upgrade from v1.0.2 and preservation of user data
         shell: powershell
@@ -100,30 +132,30 @@ jobs:
           if ($baselines.Count -ne 1) { throw 'Expected exactly one baseline setup.' }
           & ./tests/installer/Measure-Startup.ps1 -BaselineSetup $baselines[0].FullName -CandidateWeb 'dist'
       - name: Verify CSV clipboard in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify both print dialogs in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-PrintWebView2.ps1 -Payload 'release/MD-Split'
-      - name: Verify session restoration in real WebView2
-        shell: powershell
-        run: |
-          & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify mixed line endings in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify optional startup trace in real WebView2
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-StartupTraceWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify binary viewer navigation in Windows
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: powershell
         run: |
           & ./tests/installer/Run-BinaryViewer.ps1 -Payload 'release/MD-Split'
-      - run: npm run test:ui
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: MD-Split-Windows-setup
@@ -134,3 +166,19 @@ jobs:
 
 
 
+
+
+  browser-ui:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run test:ui
