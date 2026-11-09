@@ -1,0 +1,271 @@
+name: Windows release with provenance
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions: {}
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'Ptcr8-tool/md-csv_split_viewer' && github.repository_id == '1440570920' && github.ref_type == 'tag'
+    runs-on: windows-2025
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      setup: ${{ steps.identity.outputs.setup }}
+      artifact_id: ${{ steps.artifact.outputs.artifact-id }}
+      setup_sha: ${{ steps.hashes.outputs.setup_sha }}
+      setup_size: ${{ steps.hashes.outputs.setup_size }}
+      sums_sha: ${{ steps.hashes.outputs.sums_sha }}
+      notes_sha: ${{ steps.hashes.outputs.notes_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check reviewed source and release identity
+        id: identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          if ($version -notmatch '^(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})\.(0|[1-9]\d{0,4})$' -or $env:GITHUB_REF -cne "refs/tags/v$version") { throw 'The tag must match the application version.' }
+          & git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'The tagged commit is not on main.' }
+          if (-not (Test-Path -LiteralPath "docs/releases/v$version.md" -PathType Leaf)) { throw 'Release notes are missing.' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "setup=MD-Split-$version-Setup.exe" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run check:version
+      - run: npm test
+      - run: dotnet run --project tests/native/NativeChecks.csproj -c Release
+      - run: npx playwright install chromium
+      - run: npm run publish:win
+      - run: node scripts/check-production.mjs
+      - run: choco install nsis --yes --no-progress
+      - name: Check installer directory validation
+        shell: pwsh
+        run: ./tests/installer/Run-DirectoryChecks.ps1 -MakeNsis "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: release/runtime-cache/runtime.cab
+          key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
+      - name: Build offline setup
+        shell: pwsh
+        run: |
+          $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          python scripts/package-installer.py
+          if ($LASTEXITCODE -ne 0) { throw 'Setup packaging failed.' }
+      - name: Verify setup wizard
+        shell: powershell
+        env:
+          SETUP_NAME: ${{ steps.identity.outputs.setup }}
+        run: ./tests/installer/Check-SetupJapanese.ps1 -Setup "release/$env:SETUP_NAME"
+      - name: Test install, repair and uninstall
+        shell: pwsh
+        env:
+          SETUP_NAME: ${{ steps.identity.outputs.setup }}
+        run: ./tests/installer/Run-SetupSmoke.ps1 -Setup "release/$env:SETUP_NAME"
+      - name: Download and verify previous release
+        shell: pwsh
+        run: |
+          $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.2-Setup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.2/MD-Split-1.0.2-Setup.exe' -OutFile $old
+          if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'd48c52d9292e479fca431674a68af1b9f80978694bc8b32ac8aaed19a2609a8d') { throw 'Published v1.0.2 setup hash mismatch.' }
+      - name: Verify upgrade and data preservation from v1.0.2
+        shell: powershell
+        env:
+          SETUP_NAME: ${{ steps.identity.outputs.setup }}
+        run: ./tests/installer/Run-UpgradeV102Smoke.ps1 -OldSetup (Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.2-Setup.exe') -NewSetup "release/$env:SETUP_NAME"
+      - name: Verify CSV clipboard in WebView2
+        shell: powershell
+        run: ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify print in WebView2
+        shell: powershell
+        run: ./tests/installer/Run-PrintWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify sessions in WebView2
+        shell: powershell
+        run: ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify line endings in WebView2
+        shell: powershell
+        run: ./tests/installer/Run-LineEndingsWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify startup tracing in WebView2
+        shell: powershell
+        run: ./tests/installer/Run-StartupTraceWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify binary viewer in WebView2
+        shell: powershell
+        run: ./tests/installer/Run-BinaryViewer.ps1 -Payload 'release/MD-Split'
+      - run: npm run test:ui
+      - name: Hash the tested release
+        id: hashes
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+          SETUP_NAME: ${{ steps.identity.outputs.setup }}
+        run: |
+          $exe = Get-Item -LiteralPath "release/$env:SETUP_NAME"
+          $sha = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ([IO.File]::ReadAllText((Resolve-Path 'release/SHA256SUMS.txt').Path).Trim() -cne "$sha  $env:SETUP_NAME") { throw 'Setup checksum mismatch.' }
+          "setup_sha=$sha" >> $env:GITHUB_OUTPUT
+          "setup_size=$($exe.Length)" >> $env:GITHUB_OUTPUT
+          "sums_sha=$((Get-FileHash -LiteralPath 'release/SHA256SUMS.txt' -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "notes_sha=$((Get-FileHash -LiteralPath "docs/releases/v$env:VERSION.md" -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+      - name: Store the tested setup and verifier
+        id: artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: MD-Split-tested-${{ steps.identity.outputs.version }}
+          path: |
+            release/${{ steps.identity.outputs.setup }}
+            release/SHA256SUMS.txt
+            release/MD-Split/MD-Split.dll
+            native/obj/update-verifier/
+            docs/releases/v${{ steps.identity.outputs.version }}.md
+          if-no-files-found: error
+
+  attest:
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      artifact_id: ${{ steps.artifact.outputs.artifact-id }}
+      bundle_sha: ${{ steps.bundle.outputs.sha }}
+      bundle_size: ${{ steps.bundle.outputs.size }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: release-input
+          merge-multiple: true
+      - name: Check tested installer before attestation
+        shell: pwsh
+        env:
+          SETUP_NAME: ${{ needs.build.outputs.setup }}
+          EXPECTED_SHA: ${{ needs.build.outputs.setup_sha }}
+          EXPECTED_SIZE: ${{ needs.build.outputs.setup_size }}
+        run: |
+          $exe = Get-Item -LiteralPath "release-input/release/$env:SETUP_NAME"
+          if (($exe.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $exe.Length -ne [long]$env:EXPECTED_SIZE -or (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:EXPECTED_SHA) { throw 'The tested installer changed.' }
+      - name: Attest tagged installer
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-input/release/${{ needs.build.outputs.setup }}
+      - name: Test real provenance and updater rejection paths
+        id: bundle
+        shell: pwsh
+        env:
+          SETUP_NAME: ${{ needs.build.outputs.setup }}
+          VERSION: ${{ needs.build.outputs.version }}
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proof = "release-input/release/$env:SETUP_NAME.sigstore.json"
+          Copy-Item -LiteralPath $env:BUNDLE_PATH -Destination $proof
+          $env:MDSPLIT_TEST_SIGNED_INSTALLER = (Resolve-Path "release-input/release/$env:SETUP_NAME").Path
+          $env:MDSPLIT_TEST_SIGSTORE_BUNDLE = (Resolve-Path $proof).Path
+          $env:MDSPLIT_TEST_VERIFIER_DIR = (Resolve-Path 'release-input/native/obj/update-verifier').Path
+          $env:MDSPLIT_TEST_APP_DLL = (Resolve-Path 'release-input/release/MD-Split/MD-Split.dll').Path
+          $env:MDSPLIT_TEST_VERSION = $env:VERSION
+          dotnet run --project tests/native/NativeChecks.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Real attestation or updater verification failed.' }
+          "sha=$((Get-FileHash -LiteralPath $proof -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "size=$((Get-Item -LiteralPath $proof).Length)" >> $env:GITHUB_OUTPUT
+      - name: Store verified attestation
+        id: artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: MD-Split-attestation-${{ needs.build.outputs.version }}
+          path: release-input/release/${{ needs.build.outputs.setup }}.sigstore.json
+          if-no-files-found: error
+
+  publish:
+    needs: [build, attest]
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: release-input
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.attest.outputs.artifact_id }}
+          path: release-input/release
+          merge-multiple: true
+      - name: Publish only the verified draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SETUP_NAME: ${{ needs.build.outputs.setup }}
+          SETUP_SHA: ${{ needs.build.outputs.setup_sha }}
+          SETUP_SIZE: ${{ needs.build.outputs.setup_size }}
+          SUMS_SHA: ${{ needs.build.outputs.sums_sha }}
+          NOTES_SHA: ${{ needs.build.outputs.notes_sha }}
+          BUNDLE_SHA: ${{ needs.attest.outputs.bundle_sha }}
+          BUNDLE_SIZE: ${{ needs.attest.outputs.bundle_size }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = $env:GITHUB_REPOSITORY; $tag = "v$env:VERSION"
+          if ($repo -cne 'Ptcr8-tool/md-csv_split_viewer' -or $env:GITHUB_REF -cne "refs/tags/$tag") { throw 'Unexpected release source.' }
+          $exe = "release-input/release/$env:SETUP_NAME"; $sums = 'release-input/release/SHA256SUMS.txt'; $proof = "$exe.sigstore.json"; $notes = "release-input/docs/releases/$tag.md"
+          foreach ($item in @(@{ Path=$exe; Hash=$env:SETUP_SHA; Size=[long]$env:SETUP_SIZE }, @{ Path=$sums; Hash=$env:SUMS_SHA; Size=(Get-Item $sums).Length }, @{ Path=$proof; Hash=$env:BUNDLE_SHA; Size=[long]$env:BUNDLE_SIZE }, @{ Path=$notes; Hash=$env:NOTES_SHA; Size=(Get-Item $notes).Length })) {
+            if ($item.Hash -notmatch '^[0-9a-f]{64}$' -or (Get-Item -LiteralPath $item.Path).Length -ne $item.Size -or (Get-FileHash -LiteralPath $item.Path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $item.Hash) { throw 'A tested release input changed.' }
+          }
+          $ref = & gh api "repos/$repo/git/ref/tags/$tag" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $ref.object.type -cne 'commit' -or $ref.object.sha -cne $env:GITHUB_SHA) { throw 'Release tag changed.' }
+          $query = '.[] | select(.tag_name == "' + $tag + '") | .id'
+          $existing = @(& gh api --paginate "repos/$repo/releases?per_page=100" --jq $query)
+          if ($LASTEXITCODE -ne 0 -or $existing.Count -ne 0) { throw 'Release already exists or could not be checked.' }
+          & gh release create $tag $exe $sums $proof --repo $repo --verify-tag --title "MD-CSV Split Editor $env:VERSION" --notes-file $notes --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft.' }
+          $ids = @(& gh api --paginate "repos/$repo/releases?per_page=100" --jq $query)
+          if ($LASTEXITCODE -ne 0 -or $ids.Count -ne 1 -or $ids[0] -notmatch '^\d+$') { throw 'Could not identify the draft.' }
+          function Check-Assets($release) {
+            if (@($release.assets).Count -ne 3) { throw 'Unexpected draft assets.' }
+            foreach ($item in @(@{ Name=$env:SETUP_NAME; Hash=$env:SETUP_SHA; Size=[long]$env:SETUP_SIZE }, @{ Name='SHA256SUMS.txt'; Hash=$env:SUMS_SHA; Size=(Get-Item $sums).Length }, @{ Name="$env:SETUP_NAME.sigstore.json"; Hash=$env:BUNDLE_SHA; Size=[long]$env:BUNDLE_SIZE })) {
+              $asset = @($release.assets | Where-Object { $_.name -ceq $item.Name })
+              if ($asset.Count -ne 1 -or $asset[0].state -cne 'uploaded' -or $asset[0].size -ne $item.Size -or $asset[0].digest -cne "sha256:$($item.Hash)") { throw 'Draft asset did not match the verified input.' }
+            }
+          }
+          $draft = & gh api "repos/$repo/releases/$($ids[0])" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $draft.draft -or $draft.prerelease -or $draft.tag_name -cne $tag) { throw 'Invalid release draft.' }
+          Check-Assets $draft
+          $ref = & gh api "repos/$repo/git/ref/tags/$tag" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $ref.object.sha -cne $env:GITHUB_SHA) { throw 'Tag changed before publication.' }
+          & gh release edit $tag --repo $repo --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the verified draft.' }
+          $published = & gh api "repos/$repo/releases/tags/$tag" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $published.draft -or $published.prerelease -or $published.tag_name -cne $tag) { throw 'Could not verify the published release.' }
+          Check-Assets $published

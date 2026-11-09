@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='md-split-build-') as temp:
     if digest.hexdigest() != pin['sha256']:
         raise SystemExit('GitHub CLI archive checksum mismatch.')
     with zipfile.ZipFile(archive) as source:
-        exe = [name for name in source.namelist() if name.endswith('/bin/gh.exe')]
+        exe = [name for name in source.namelist() if name.endswith('/bin/gh.exe') or name == 'bin/gh.exe']
         licenses = [name for name in source.namelist() if Path(name).name.lower() in ('license', 'license.txt')]
         if len(exe) != 1 or not licenses:
             raise SystemExit('Unexpected GitHub CLI archive layout.')

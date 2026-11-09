@@ -1,0 +1,42 @@
+# One-time bridge. Only a reviewed change to this file on main creates the
+# lightweight tag and starts the separately tested, tag-scoped release job.
+name: Start v1.0.3 bridge release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bootstrap-v1.0.3.yml']
+
+permissions: {}
+jobs:
+  dispatch:
+    if: github.repository == 'Ptcr8-tool/md-csv_split_viewer' && github.repository_id == '1440570920' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag reviewed source and dispatch tagged build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('./package.json').version")" = '1.0.3'
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          response=$(mktemp)
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.0.3" >"$response" 2>&1; then
+            echo 'Tag already exists; refusing to overwrite.' >&2
+            exit 1
+          elif ! grep -q 'HTTP 404' "$response"; then
+            echo 'Could not confirm tag absence.' >&2
+            exit 1
+          fi
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == "v1.0.3") | .id')
+          test -z "$existing"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/v1.0.3 -f "sha=$GITHUB_SHA" --silent
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.0.3" --jq '.object.sha')" = "$GITHUB_SHA"
+          gh workflow run windows-release.yml --repo "$GITHUB_REPOSITORY" --ref v1.0.3

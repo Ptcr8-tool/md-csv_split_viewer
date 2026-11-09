@@ -98,6 +98,8 @@ internal static class UpdateChecks
         var verifier=Environment.GetEnvironmentVariable("MDSPLIT_TEST_VERIFIER_DIR")??throw new IOException("Missing test verifier");
         var version=Environment.GetEnvironmentVariable("MDSPLIT_TEST_VERSION")??throw new IOException("Missing test version");
         var pins=File.ReadAllText(Path.Combine(verifier,"pins.json"));string hash;using(var input=File.OpenRead(setup))hash=Convert.ToHexString(SHA256.HashData(input));
+        var appDll=Environment.GetEnvironmentVariable("MDSPLIT_TEST_APP_DLL")??throw new IOException("Missing packaged application DLL");
+        var assembly=System.Reflection.Assembly.LoadFile(Path.GetFullPath(appDll));using(var embedded=assembly.GetManifestResourceStream("MdSplit.UpdateVerifierPins.json")){assert(embedded is not null,"published application embeds its verifier pins");using var reader=new StreamReader(embedded!);assert(await reader.ReadToEndAsync()==pins,"published application pins the exact tested verifier and trust roots");}
         var manifest=new UpdateManifest{Version=version,Sha256=hash};
         await UpdateProvenance.VerifyWithPins(setup,bundle,manifest,verifier,pins,CancellationToken.None);assert(true,"real tagged GitHub Actions attestation verifies with bundled CLI and roots");
         var rejected=false;try{manifest.Version="999.0.0";await UpdateProvenance.VerifyWithPins(setup,bundle,manifest,verifier,pins,CancellationToken.None);}catch(IOException){rejected=true;}assert(rejected,"real attestation rejects a different release tag");
