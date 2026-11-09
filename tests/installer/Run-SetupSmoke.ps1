@@ -30,8 +30,8 @@ if ((Get-Process -Name 'MD-Split' -ErrorAction SilentlyContinue) -or
     throw 'Existing MD Split data or registration was found; refusing the smoke test.'
 }
 # Derive the editable extension set from the native file-picker list. The
-# executable scripts remain editable without advertising the editor as a
-# default handler for files that users may want to run.
+# Selected command-oriented types remain editable without advertising the
+# editor as their default handler; Python is explicitly available as a candidate.
 $typesSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\..\native\TextFileTypes.cs'))
 $extensions = @([regex]::Matches($typesSource, 'new\("[^"\r\n]+",\s*\[([^\]]+)\]') | ForEach-Object {
     [regex]::Matches($_.Groups[1].Value, '"([a-z][a-z0-9]*)"') | ForEach-Object { '.' + $_.Groups[1].Value }
@@ -39,7 +39,7 @@ $extensions = @([regex]::Matches($typesSource, 'new\("[^"\r\n]+",\s*\[([^\]]+)\]
 if ($extensions.Count -lt 10 -or -not ($extensions -contains '.md') -or -not ($extensions -contains '.csv') -or -not ($extensions -contains '.html') -or -not ($extensions -contains '.txt') -or -not ($extensions -contains '.bat') -or -not ($extensions -contains '.cmd')) {
     throw 'Could not derive the supported extension list from TextFileTypes.'
 }
-$executableExtensions = @('.bat','.cmd','.ps1','.psm1','.py','.pyw','.js','.mjs','.cjs','.sh','.bash','.zsh','.rb','.pl','.php','.lua','.r','.kts','.vbs','.vbe','.wsf','.wsh','.jse','.hta','.exe','.com')
+$executableExtensions = @('.bat','.cmd','.ps1','.psm1','.js','.mjs','.cjs','.sh','.bash','.zsh','.rb','.pl','.php','.lua','.r','.kts','.vbs','.vbe','.wsf','.wsh','.jse','.hta','.exe','.com')
 $associationExtensions = @($extensions | Where-Object { $executableExtensions -notcontains $_ })
 function UserChoiceSnapshot([string] $Extension) {
     $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$Extension\UserChoice"
@@ -308,13 +308,27 @@ try {
         $applicationTypes = 'HKCU:\Software\Classes\Applications\MD-Split.exe\SupportedTypes'
         if (Get-ItemProperty -LiteralPath $applicationTypes -Name $extension -ErrorAction SilentlyContinue) { throw "Executable script was added to SupportedTypes: $extension." }
     }
+    foreach ($extension in @('.py','.pyw')) {
+        $openWith = 'HKCU:\Software\Classes\' + $extension + '\OpenWithProgids'
+        $typed = 'MD.Split.File.' + $extension.TrimStart('.')
+        $supportedTypes = 'HKCU:\Software\Classes\Applications\MD-Split.exe\SupportedTypes'
+        if (-not (Get-ItemProperty -LiteralPath $openWith -Name $typed -ErrorAction SilentlyContinue) -or -not (Get-ItemProperty -LiteralPath $supportedTypes -Name $extension -ErrorAction SilentlyContinue)) { throw "Python editor candidate is missing: $extension." }
+        if ((UserChoiceSnapshot $extension) -ne $initialUserChoices[$extension]) { throw "Registration changed the Python default app: $extension." }
+    }
+    $python = (Get-Command python -ErrorAction Stop).Source
+    $pythonFixture = Join-Path $testRoot 'synthetic-run.py'
+    $pythonMarker = Join-Path $testRoot 'synthetic-python-result.txt'
+    [IO.File]::WriteAllText($pythonFixture, "from pathlib import Path`nPath(__file__).with_name('synthetic-python-result.txt').write_text('PYTHON_OK', encoding='utf-8')`n", [Text.UTF8Encoding]::new($false))
+    Invoke-CheckedProcess $python @('"' + $pythonFixture + '"')
+    if (-not (Test-Path -LiteralPath $pythonMarker) -or [IO.File]::ReadAllText($pythonMarker) -ne 'PYTHON_OK') { throw 'Python command-line execution did not work.' }
+    Write-Output 'PASS: Python files are registered as candidates without changing defaults or command-line execution.'
     foreach ($probeExtension in @('.py','.cmd','.bat')) {
         $class = if ($probeExtension -eq '.cmd') { 'cmdfile' } elseif ($probeExtension -eq '.bat') { 'batfile' } else { $null }
         if ($null -eq $initialIconValues[$probeExtension] -and ($null -eq $class -or $null -eq $initialExecutionClassIcons[$class]) -and $initialUserChoices[$probeExtension] -eq '<absent>') {
             [MdSplitSmokeShellIcon]::VerifyIcon($probeExtension, (Join-Path $installPath ('doc-icons-v2\' + $probeExtension.TrimStart('.') + '.ico')), (Join-Path $installPath 'doc-icons-v2\txt.ico'))
         }
     }
-    Write-Output 'PASS: all supported extensions have individual icons and executable scripts are not app candidates.'
+    Write-Output 'PASS: all supported extensions have individual icons and excluded scripts are not app candidates.'
     $legacyIconPath = Join-Path $installPath 'doc-icons-v2\document.ico'
     Assert-File $legacyIconPath 'legacy generic document icon'
     $legacyIconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.Markdown\DefaultIcon')
