@@ -1,0 +1,5 @@
+.tab[draggable="true"]{cursor:grab}
+.tab.tab-dragging{opacity:.5}
+.tab.tab-drop-before{box-shadow:inset 3px 0 var(--green)}
+.tab.tab-drop-after{box-shadow:inset -3px 0 var(--green)}
+.tab-drop-zone{outline:2px solid var(--green);outline-offset:-2px}

@@ -39,6 +39,7 @@ jobs:
       - run: npm run check:version
       - run: npm test
       - run: dotnet run --project tests/native/NativeChecks.csproj -c Release
+      - run: dotnet run --project tests/tab-transfers/TabTransferChecks.csproj -c Release
       - run: npx playwright install chromium
       - run: npm run publish:win
       - name: Verify the production web bundle
@@ -111,6 +112,14 @@ jobs:
         shell: powershell
         run: |
           & ./tests/installer/Run-SessionWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify window placement across restarts in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-WindowPlacementWebView2.ps1 -Payload 'release/MD-Split'
+      - name: Verify tab transfers in real WebView2
+        shell: powershell
+        run: |
+          & ./tests/installer/Run-TabDragWebView2.ps1 -Payload 'release/MD-Split'
       - name: Verify mixed line endings in real WebView2
         shell: powershell
         run: |
@@ -131,6 +140,7 @@ jobs:
             release/MD-Split-*-Setup.exe
             release/SHA256SUMS.txt
           if-no-files-found: error
+
 
 
 

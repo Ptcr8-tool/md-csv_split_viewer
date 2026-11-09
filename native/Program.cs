@@ -43,6 +43,7 @@ internal sealed class EditorContext : ApplicationContext
         MessageBox.Show(owner, $"このファイルは約{size / 1024.0 / 1024.0:N1} MiBあります。\n読み込みや編集に時間がかかり、メモリを多く使用する場合があります。\n\n開きますか？", "大きなファイルを開く", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes);
     public RecentFiles Recent { get; } = new(Path.Combine(Storage.Root,"recent.json"));
     public UpdateService Updates { get; } = new();
+    internal TabTransfers Transfers { get; }
     private readonly HashSet<EditorWindow> updateReady=[];
     private readonly System.Windows.Forms.Timer updateWatchdog=new(){Interval=3*60*1000};
     private bool preparingUpdate;
@@ -56,6 +57,7 @@ internal sealed class EditorContext : ApplicationContext
     private bool initializing = true;
     public EditorContext(string[] args)
     {
+        Transfers=new TabTransfers(this);
         StartupTrace.Mark(StartupStage.ContextStart);
         updateWatchdog.Tick+=(_,_)=>{if(preparingUpdate)AbortUpdate("更新の準備が完了しなかったため中止しました。編集を続けられます。");};
         var restored = false;
@@ -121,7 +123,7 @@ internal sealed class EditorContext : ApplicationContext
     {
         if(disposing&&!contextDisposed)
         {
-            contextDisposed=true;
+            contextDisposed=true;Transfers.Dispose();
             updateWatchdog.Stop();updateWatchdog.Dispose();cancellation.Cancel();
             // The pipe listener may still be unwinding from an asynchronous read.
             // Dispose its token source only after that operation has finished.
@@ -130,12 +132,13 @@ internal sealed class EditorContext : ApplicationContext
         }
         base.Dispose(disposing);
     }
-    public EditorWindow AddWindow(RecoveryData? initial = null, bool recovered = false, string? recoveryFile = null, string? sessionFile = null)
+    public EditorWindow AddWindow(RecoveryData? initial = null, bool recovered = false, string? recoveryFile = null, string? sessionFile = null, Action<EditorWindow>? beforeShow = null)
     {
         if(preparingUpdate)AbortUpdate();
         var window = new EditorWindow(this, initial, recovered, recoveryFile, sessionFile); Windows.Add(window); lastActive = window;
         window.Activated += (_, _) => lastActive = window;
-        window.FormClosed += (_, _) => { if(preparingUpdate)AbortUpdate(); Windows.Remove(window); if (lastActive == window) lastActive = Windows.LastOrDefault(); if (Windows.Count == 0) { cancellation.Cancel(); ExitThread(); } };
+        window.FormClosed += (_, _) => { Transfers.WindowClosed(window); if(preparingUpdate)AbortUpdate(); Windows.Remove(window); if (lastActive == window) lastActive = Windows.LastOrDefault(); if (Windows.Count == 0) { cancellation.Cancel(); ExitThread(); } };
+        beforeShow?.Invoke(window);
         if (window.IsStartupTraceWindow) StartupTrace.Mark(StartupStage.WindowShowStart);
         window.Show();
         if (window.IsStartupTraceWindow) StartupTrace.Mark(StartupStage.WindowShowComplete);
@@ -289,3 +292,4 @@ internal sealed class EditorContext : ApplicationContext
         }
     }
 }
+

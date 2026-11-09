@@ -34,6 +34,7 @@ import {safeBrowserUrl} from './navigation.js';
 import {UpdateController} from './updates.js';
 import {RecoveryWriter} from './recovery.js';
 import {installFileDropOverlay} from './file-drop-overlay.js';
+import {installTabDrag} from './tab-drag.js';
 import './style.css';
 import './themes.css';
 import './workspace-features.css';
@@ -69,6 +70,7 @@ const detachedSide=paneSide();let paneSession=null,paneHub=null,updateView=()=>{
 let documents=[],activeId=null,mode='normal',side='source',cm=null,refreshing=false,composing=false,compositionRange=null,sourceBusy=false,renderTimer=0,recoveryTimer=0,scrollLock=0,showChunks=false;
 let lastSelection={from:0,to:0},plainPasteNext=false,sourceCompositionDocument=null;const languageConfig=new Compartment();let sourceLanguageKey=null,languageEpoch=0;const wrapConfig=new Compartment(),sourceThemeConfig=new Compartment(),whitespaceConfig=new Compartment();
 let startupTraceEnabled=false,startupInputReported=false;
+let tabTransfer=null,acceptingTab=null;
 const rich=new RichRenderer($('#preview'),{
   patch:(from,to,insert,options={})=>apply(from,to,insert,'command',options),
   refresh:()=>render(),copyText:text=>guard(()=>copyText(text))(),openLink:url=>guard(()=>openLink(url))(),
@@ -152,7 +154,45 @@ function apply(from,to,insert,kind='command',options={}){
 }
 function history(redo){if(peerInputLocked())return;if(!md()&&!textPreview.finishEdit())return;if((redo?current().redo():current().undo())){lastSelection=current().selection;render();if(md()&&side==='preview')rich.restoreSelection(lastSelection.from,lastSelection.to);else{cm.dispatch({selection:EditorSelection.range(rawToLf(current().raw,lastSelection.from),rawToLf(current().raw,lastSelection.to))});cm.focus();}saveRecovery();}}
 function applyFor(d,from,to,insert){if(!documents.includes(d)||d.composing||$('#app').inert)return;if(d.id===activeId)apply(from,to,insert);else{d.replace(from,to,insert);renderTabs();saveRecovery();}}
-function renderTabs(){const bar=$('.tabbar');bar.replaceChildren();for(const d of documents){const n=document.createElement('div');n.className='tab'+(d.id===activeId?' active':'');const b=document.createElement('button');b.className='tab-name';b.title=d.path||d.name;b.textContent=(d.dirty?'● ':'')+d.name;b.onclick=()=>switchDocument(d.id);const close=document.createElement('button');close.className='tab-close';close.textContent='×';close.setAttribute('aria-label',d.name+'を閉じる');close.onclick=guard(()=>closeDocument(d.id));n.append(b,close);bar.append(n);}}
+function renderTabs(){const bar=$('.tabbar');bar.replaceChildren();for(const d of documents){const n=document.createElement('div');n.className='tab'+(d.id===activeId?' active':'');n.dataset.tabId=d.id;n.draggable=!detachedSide;const b=document.createElement('button');b.className='tab-name';b.title=d.path||d.name;b.textContent=(d.dirty?'● ':'')+d.name;b.onclick=()=>switchDocument(d.id);const close=document.createElement('button');close.className='tab-close';close.textContent='×';close.setAttribute('aria-label',d.name+'を閉じる');close.onclick=guard(()=>closeDocument(d.id));n.append(b,close);bar.append(n);}}
+installTabDrag({bar:$('.tabbar'),canStart:id=>!detachedSide&&!tabTransfer&&!acceptingTab&&!$('#modal').open&&!csvDialogOpen&&!sourceBusy&&!composing&&!$('#app').inert&&!paneHub?.childDialogOpen()&&!documents.some(d=>d.composing||d.componentEditing||d.pendingImports||d.saving)&&documents.some(d=>d.id===id),onMove(id,targetId,after){
+  if(tabTransfer){const transfer=tabTransfer;transfer.local=true;transfer.prepared.then(()=>host('tab.cancel',{token:transfer.token})).then(()=>{if(tabTransfer===transfer)tabTransfer=null;}).catch(error=>notify('タブの移動を中止できませんでした。'+error.message,true));}
+  const from=documents.findIndex(d=>d.id===id);if(from<0)return;
+  let to=targetId?documents.findIndex(d=>d.id===targetId):documents.length;if(to<0)return;if(targetId&&after)to++;
+  if(from<to)to--;if(from===to)return;const [item]=documents.splice(from,1);documents.splice(to,0,item);renderTabs();saveRecovery();
+},onStart(item){
+  if(!isDesktop)return;const d=documents.find(x=>x.id===item.id);if(!d)return;
+  if(d.id===activeId)d.selection=selection();
+  const document=d.serialize(),state={undoStack:d.undoStack,redoStack:d.redoStack,historyChars:d.historyChars,selection:d.selection,csvView:d.csvView,previewViewMode:d.previewViewMode};
+  const transfer=tabTransfer={...item,local:false,cancelled:false};
+  transfer.prepared=(async()=>{await ensureRegistered(d);await recoveryWriter.write();await host('tab.prepare',{token:item.token,document,state});})();
+  transfer.prepared.catch(async error=>{try{await host('tab.cancel',{token:item.token});if(tabTransfer===transfer)tabTransfer=null;}catch{notify('移動の中止を確認中です。しばらくお待ちください。',true);return;}notify('タブの移動を開始できませんでした。'+error.message,true);});
+},onAccept(item){
+  if(!isDesktop)return;guard(async()=>{if(tabTransfer||acceptingTab||$('#modal').open||csvDialogOpen||sourceBusy||composing||$('#app').inert||paneHub?.childDialogOpen()||documents.some(d=>d.composing||d.componentEditing||d.pendingImports||d.saving))throw new Error('移動先の入力・保存・ダイアログを終えてからお試しください。');acceptingTab={token:item.token,id:item.id};let error;for(let i=0;i<30;i++){try{await host('tab.accept',{token:item.token});return;}catch(e){error=e;await new Promise(resolve=>setTimeout(resolve,100));}}await cancelAcceptedTab(item.token);throw error||new Error('タブの移動を開始できませんでした。');})();
+},onEnd(item,event){
+  const transfer=tabTransfer;if(!transfer||transfer.token!==item.token)return;
+  const effect=event.dataTransfer?.dropEffect,x=event.screenX,y=event.screenY;
+  guard(async()=>{try{await transfer.prepared;if(tabTransfer!==transfer)return;
+    if(transfer.local||transfer.cancelled){await host('tab.cancel',{token:item.token});tabTransfer=null;return;}
+    if(effect==='move'){setTimeout(()=>{if(tabTransfer===transfer)host('tab.cancel',{token:item.token}).catch(()=>{});},30000);return;}
+    if(Number.isFinite(x)&&Number.isFinite(y)&&(x!==0||y!==0)&&await host('tab.can-detach')){await host('tab.detach',{token:item.token});return;}
+    await host('tab.cancel',{token:item.token});tabTransfer=null;
+  }catch(error){try{await host('tab.cancel',{token:item.token});if(tabTransfer===transfer)tabTransfer=null;}catch{notify('移動の中止を確認中です。しばらくお待ちください。',true);}throw error;}})();
+}});
+// Keep the source stable during the two-phase handoff. Drag events remain
+// available, while user edits, closes and saves wait until commit or rollback.
+for(const type of ['click','beforeinput','input','paste','cut','keydown'])document.addEventListener(type,event=>{
+  if(!tabTransfer&&!acceptingTab)return;if(type==='keydown'&&event.key==='Escape'&&tabTransfer){tabTransfer.cancelled=true;return;}
+  event.preventDefault();event.stopImmediatePropagation();
+},true);
+async function cancelAcceptedTab(token){
+  for(let i=0;i<35;i++){
+    if(acceptingTab?.token!==token)return;
+    try{await host('tab.cancel',{token});if(acceptingTab?.token===token&&!documents.some(d=>d.id===acceptingTab.id))acceptingTab=null;return;}
+    catch{await new Promise(resolve=>setTimeout(resolve,1000));}
+  }
+  notify('タブの移動中止を確認できません。復旧をお待ちください。',true);
+}
 function updateToolbar(){
   $('#source-wrap-mode').value=sourceWrapMode(settings);
   const markdownFile=md(),label=filetypeLabel(current()),pk=previewKind(current());
@@ -523,8 +563,29 @@ document.addEventListener('contextmenu',e=>{
 document.addEventListener('keydown',e=>{if(e.isComposing||composing||current()?.composing)return;if(e.target.closest('dialog'))return;if(!(e.ctrlKey||e.metaKey))return;const key=e.key.toLowerCase();if(e.ctrlKey&&e.altKey&&!e.metaKey&&!e.shiftKey&&!e.getModifierState('AltGraph')){const wrapMode={x:'none',s:'column',w:'window'}[key];if(wrapMode){e.preventDefault();guard(async()=>{await setSettings({wrapMode,wrap:wrapMode!=='none'});notify({none:'原文を折り返さない',column:'原文を指定桁で折り返す',window:'原文を右端で折り返す'}[wrapMode]);})();}return;}if(e.altKey)return;if(detachedSide&&['n','o'].includes(key)){e.preventDefault();paneSession?.focusOwner();return;}let command={n:e.shiftKey?'new-options':'new',o:'open',s:e.shiftKey?'saveas':'save',b:'bold',i:'italic',k:'link',f:'search',h:'replace',w:e.shiftKey?'closewindow':'closetab'}[key];if(command){e.preventDefault();if(!md()&&markdownCommands.has(command))return;guard(commands[command])();}else if(key==='z'&&side==='preview'){e.preventDefault();history(e.shiftKey);}else if(key==='y'&&side==='preview'){e.preventDefault();history(true);}else if(key==='tab'&&!detachedSide&&!e.defaultPrevented){e.preventDefault();const at=documents.findIndex(d=>d.id===activeId);switchDocument(documents[(at+(e.shiftKey?documents.length-1:1))%documents.length].id);}});
 listen('.splitter','pointerdown',e=>{e.preventDefault();const divider=e.target;divider.setPointerCapture(e.pointerId);const move=e=>{const box=$('.editor-panes').getBoundingClientRect();settings.ratio=Math.min(.78,Math.max(.22,(e.clientX-box.left)/box.width));document.documentElement.style.setProperty('--split',settings.ratio*100+'%');};const up=()=>{divider.removeEventListener('pointermove',move);divider.removeEventListener('pointerup',up);guard(()=>setSettings({ratio:settings.ratio}))();};divider.addEventListener('pointermove',move);divider.addEventListener('pointerup',up);});
 async function openLink(url){const target=safeBrowserUrl(url);if(!target){notify('HTTP・HTTPSのリンクを指定してください。');return;}await host('shell.open',{url:target});}
-onHost(guard(async event=>{if(event.type==='new-in-directory'){if($('#modal').open||$('#app').inert){await host('file.cancel-directory',{folderToken:event.token});notify('開いている画面を閉じてからもう一度操作してください。',true);return;}await newDocumentWithOptions(event.token);return;}if(event.type==='editor-command'){if(!$('#modal').open&&!sourceBusy&&!composing&&!current()?.composing&&!$('#app').inert){if(detachedSide&&['new','new-options'].includes(event.command)){paneSession?.focusOwner();return;}if(['new','new-options','save','saveas','search','replace'].includes(event.command))await commands[event.command]();}return;}if(detachedSide){if(event.type==='pane-close-request')await closeWindow();return;}if(event.type==='pane-window-closed'){paneHub?.refresh();return;}if(event.type==='pane-window-error'){notify(event.message||'表示ウィンドウを閉じました。編集内容は元の画面に残っています。');paneHub?.refresh();return;}if(await updates.onEvent(event))return;if(event.type==='files-opened')acceptFiles(event.documents);if(event.type==='activate-document'&&documents.some(d=>d.id===event.id))switchDocument(event.id);if(event.type==='new-document')newDocument(event.document||{});if(event.type==='close-request')await closeWindow();if(event.type==='settings-changed'){settings={...settings,...event.settings};applySettings();}if(event.type==='encoding-open-existing'){notify('すでに開いています。下部の文字コードから開き直してください。');return;}if(event.type==='large-file-changed'){notify('外部でファイルが大きく変更されました。保存時に内容を確認してください。');return;}if(event.type==='file-changed'){const d=documents.find(d=>d.id===event.document.id);if(!d)return;if(!d.dirty&&!d.composing&&!d.componentEditing){Object.assign(d,{raw:event.document.text,saved:event.document.text,fingerprint:event.document.fingerprint,encoding:event.document.encoding,savedEncoding:event.document.encoding,hasBom:event.document.hasBom??defaultBom(event.document.encoding),savedHasBom:event.document.hasBom??defaultBom(event.document.encoding),encodingGuessed:event.document.encodingGuessed??false,encodingNotice:event.document.encodingNotice||null,format:event.document.format});if(d.id===activeId)render({resetSource:true});try{if(isDesktop)await host('file.accept-change',{id:d.id,fingerprint:event.document.fingerprint});}catch{notify('外部変更の確認に失敗しました。次の保存時に確認してください。',true);}saveRecovery();}else{const notice=$('.notice');notice.hidden=false;notice.textContent='このファイルは別のアプリでも変更されています。保存時に変更を確認してください。';}}}));
-function peerInputLocked(){return !!current()?.componentEditing&&current().componentEditing!==window||!!current()?.composing&&!composing&&!sourceBusy||!!$('#app').inert||!!paneSession?.isLocked()||!!paneHub?.childDialogOpen()||csvDialogOpen;}
+onHost(guard(async event=>{
+  if(event.type==='tab-transfer-pending'){
+    try{
+      const d=documents.find(x=>x.id===event.id);if(!d)throw new Error('移動先で文書を確認できません。');
+      const s=event.state||{};
+      if(Array.isArray(s.undoStack)&&Array.isArray(s.redoStack)){d.undoStack=s.undoStack;d.redoStack=s.redoStack;d.historyChars=Number.isFinite(s.historyChars)?s.historyChars:0;}
+      if(s.selection&&Number.isSafeInteger(s.selection.from)&&Number.isSafeInteger(s.selection.to))d.selection=s.selection;
+      if(s.csvView)d.csvView=normalizeCsvView(s.csvView);
+      if(isViewMode(s.previewViewMode))d.previewViewMode=s.previewViewMode;
+      if(!acceptingTab)acceptingTab={token:event.token,id:event.id};if(d.id===activeId)render({resetSource:true});await recoveryWriter.write();await host('tab.accepted',{token:event.token});if(acceptingTab?.token===event.token)acceptingTab=null;
+    }catch(error){await cancelAcceptedTab(event.token);throw error;}return;
+  }
+  if(event.type==='tab-transfer-aborted'){if(tabTransfer?.token===event.token){tabTransfer=null;notify('タブの移動を中止しました。文書は元のウィンドウに残っています。');}return;}
+  if(event.type==='tab-transfer-complete'||event.type==='tab-transfer-rollback'){
+    if(event.type==='tab-transfer-complete'&&tabTransfer?.token!==event.token)return;
+    const wasActive=activeId===event.id;documents=documents.filter(d=>d.id!==event.id);paneHub?.closeDocument(event.id);
+    if(event.type==='tab-transfer-complete')tabTransfer=null;else if(acceptingTab?.token===event.token)acceptingTab=null;
+    if(!documents.length){newDocument();await recoveryWriter.write();if(event.type==='tab-transfer-complete')await closeWindow('clear');}
+    else{if(wasActive)switchDocument(documents.at(-1).id);else renderTabs();await recoveryWriter.write();}
+  }
+}));
+onHost(guard(async event=>{if((tabTransfer||acceptingTab)&&event.type==='update-close-request'){await host('update.ready',{ready:false,session:event.session});notify('タブの移動が終わるまで更新できません。');return;}if((tabTransfer||acceptingTab)&&(event.type==='close-request'||event.type==='editor-command')){notify('タブの移動が終わるまでお待ちください。');return;}if(event.type==='file-changed'&&(event.document?.id===tabTransfer?.id||event.document?.id===acceptingTab?.id))return;if(event.type==='new-in-directory'){if($('#modal').open||$('#app').inert){await host('file.cancel-directory',{folderToken:event.token});notify('開いている画面を閉じてからもう一度操作してください。',true);return;}await newDocumentWithOptions(event.token);return;}if(event.type==='editor-command'){if(!$('#modal').open&&!sourceBusy&&!composing&&!current()?.composing&&!$('#app').inert){if(detachedSide&&['new','new-options'].includes(event.command)){paneSession?.focusOwner();return;}if(['new','new-options','save','saveas','search','replace'].includes(event.command))await commands[event.command]();}return;}if(detachedSide){if(event.type==='pane-close-request')await closeWindow();return;}if(event.type==='pane-window-closed'){paneHub?.refresh();return;}if(event.type==='pane-window-error'){notify(event.message||'表示ウィンドウを閉じました。編集内容は元の画面に残っています。');paneHub?.refresh();return;}if(await updates.onEvent(event))return;if(event.type==='files-opened')acceptFiles(event.documents);if(event.type==='activate-document'&&documents.some(d=>d.id===event.id))switchDocument(event.id);if(event.type==='new-document')newDocument(event.document||{});if(event.type==='close-request')await closeWindow();if(event.type==='settings-changed'){settings={...settings,...event.settings};applySettings();}if(event.type==='encoding-open-existing'){notify('すでに開いています。下部の文字コードから開き直してください。');return;}if(event.type==='large-file-changed'){notify('外部でファイルが大きく変更されました。保存時に内容を確認してください。');return;}if(event.type==='file-changed'){const d=documents.find(d=>d.id===event.document.id);if(!d)return;if(!d.dirty&&!d.composing&&!d.componentEditing){Object.assign(d,{raw:event.document.text,saved:event.document.text,fingerprint:event.document.fingerprint,encoding:event.document.encoding,savedEncoding:event.document.encoding,hasBom:event.document.hasBom??defaultBom(event.document.encoding),savedHasBom:event.document.hasBom??defaultBom(event.document.encoding),encodingGuessed:event.document.encodingGuessed??false,encodingNotice:event.document.encodingNotice||null,format:event.document.format});if(d.id===activeId)render({resetSource:true});try{if(isDesktop)await host('file.accept-change',{id:d.id,fingerprint:event.document.fingerprint});}catch{notify('外部変更の確認に失敗しました。次の保存時に確認してください。',true);}saveRecovery();}else{const notice=$('.notice');notice.hidden=false;notice.textContent='このファイルは別のアプリでも変更されています。保存時に変更を確認してください。';}}}));
+function peerInputLocked(){return !!tabTransfer||!!acceptingTab||!!current()?.componentEditing&&current().componentEditing!==window||!!current()?.composing&&!composing&&!sourceBusy||!!$('#app').inert||!!paneSession?.isLocked()||!!paneHub?.childDialogOpen()||csvDialogOpen;}
 async function csvSidecar(action,id,view){
   const d=documents.find(d=>d.id===id);if(!d||!['csv','tsv'].includes(previewKind(d)))throw new Error('CSV・TSVの文書を開いてください。');
   if(paneSession)return paneSession.csvSidecar(action,view);
@@ -553,7 +614,7 @@ async function start(){
       window.addEventListener('pagehide',()=>{textPreview.finishEdit({force:true});if(current()?.componentEditing===window)current().componentEditing=null;if(current()?.compositionOwner===window){current().composing=false;current().compositionOwner=null;}paneSession?.detach();});
     }catch(e){$('#app').replaceChildren();const p=document.createElement('p');p.textContent=e.message;$('#app').append(p);return;}
   }else{
-    const initial=await host('bootstrap');startupTraceEnabled=initial.startupTraceEnabled===true;settings={...settings,...initial.settings};settings.fileTypeSettings=normalizeFileTypeSettings(settings);mode=initial.mode||'normal';
+    const initial=await host('bootstrap');if(initial.tabTransfer?.token&&initial.tabTransfer?.id)acceptingTab=initial.tabTransfer;startupTraceEnabled=initial.startupTraceEnabled===true;settings={...settings,...initial.settings};settings.fileTypeSettings=normalizeFileTypeSettings(settings);mode=initial.mode||'normal';
     if(initial.documents?.length){for(const d of initial.documents)newDocument(d,{activate:false});activeId=documents.some(d=>d.id===initial.activeId)?initial.activeId:documents.at(-1).id;lastSelection=current().selection;side=md()&&effectiveView()==='preview'?'preview':'source';}
     else if(initial.showWelcome||!isDesktop&&!settings.welcomeShown){await openWelcome();settings.welcomeShown=true;await host('settings.set',settings);}
     else{const d=newDocument({name:'無題.'+(['md','csv','txt','html','json','tsv','xml'].includes(settings.startupFormat)?settings.startupFormat:'md')},{activate:false});activeId=d.id;lastSelection=d.selection;side=md()&&effectiveView()==='preview'?'preview':'source';}
@@ -574,3 +635,4 @@ async function start(){
 window.addEventListener('blur',()=>{if(!md())textPreview.finishEdit();});
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(settings.theme==='system')applySettings();});
 guard(start)();
+

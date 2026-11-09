@@ -49,6 +49,8 @@ test('header view toggles expose selection and keep controls inside a narrower w
 });
 
 test('wrapped header controls stay inside the header and above the tabs',async({page})=>{
+  const openTabs=page.getByRole('button',{name:'タブを展開'});
+  if(await openTabs.isVisible())await openTabs.click();
   for(const width of [1000,910,800,600,400]){
     await page.setViewportSize({width,height:800});
     const layout=await page.evaluate(()=>{
@@ -107,3 +109,4 @@ test('search and replace button and scroll sync linked or broken icons are acces
   await expect(sync).toHaveAttribute('aria-pressed','true');
   await expect(sync.locator('.sync-linked')).toBeVisible();
 });
+
