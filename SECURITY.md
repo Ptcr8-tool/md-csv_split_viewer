@@ -27,15 +27,15 @@ CSV/TSV view sidecars are optional. Before reading or writing, their JSON schema
 ## Update trust
 
 1. The native process queries the fixed GitHub repository `Ptcr8-tool/md-csv_split_viewer` over HTTPS. It accepts only stable, increasing three-part version numbers.
-2. Metadata and the detached signature must come from exact release paths in that repository. Redirects are limited to GitHub release hosts over HTTPS on the default port.
-3. An embedded RSA 3072-bit public key verifies the exact manifest bytes using SHA-256/RSA-PSS **before JSON parsing**. The signed manifest must bind repository, version, exact setup filename, SHA-256 and length.
-4. The user confirms the version. The executable is streamed to a native-controlled path with bounds on time and size. It is not accepted until its full SHA-256 and length match. Interrupted downloads remain non-executable temporary files and are removed.
+2. The setup and its Sigstore bundle must come from exact release paths in that repository. Redirects are limited to GitHub release hosts over HTTPS on the default port. Legacy RSA-signed manifests remain accepted only after their original signature verification.
+3. The user confirms the version. The executable is streamed to a native-controlled temporary path with bounds on time and size. A bundled, pinned GitHub CLI and Sigstore trust roots verify the signed build provenance, the repository and its numeric ID, the exact GitHub-hosted release workflow, the release tag, a witnessed timestamp, and the installer digest.
+4. The installer is accepted only after its full SHA-256 and length match and the provenance verifies. Interrupted or invalid downloads are removed.
 5. Before starting the setup, the native process verifies the executable again. An older or equal version cannot be an automatic update. The UI cannot supply an executable path, arbitrary repository, download URL, command or shell arguments.
 6. Each window prepares recovery and resolves unsaved documents. Waiting windows are locked. Any cancellation aborts the update for all windows. The verified setup is launched directly using `ProcessStartInfo` with `UseShellExecute=false`; no `cmd`, PowerShell, downloaded script or remote archive extraction is involved.
 
-The signature is independent of GitHub's own optional asset digest. A compromised release page or repository cannot produce a valid update without the private signing key. This does not protect a machine already controlled by an attacker with the user's own filesystem privileges. The private key must be kept separate from source, executable and public release assets. Key rotation requires a deliberately trusted application update.
+The provenance is independent of GitHub's asset digest. A release page change alone cannot produce an accepted update; the configured GitHub Actions workflow must attest the specific tagged build. Someone able to change and execute that trusted workflow can create valid provenance. This does not protect a machine already controlled by an attacker with the user's own filesystem privileges. Bundled verifier and trust-root hashes are embedded in the app; replacing the verifier requires a deliberately trusted application update.
 
-The initial installer is not Authenticode-signed. Custom update signatures do not establish Windows publisher identity for a first download. No code-signing certificate or Windows real-device test is implied.
+The installer is not Authenticode-signed. GitHub provenance does not establish Windows publisher identity for a first download. No code-signing certificate or Windows real-device test is implied.
 
 ## Offline installer and repair
 
@@ -52,3 +52,4 @@ The fixed WebView2 runtime is pinned by version and SHA-256 at build time. It do
 Windows uses .NET regex with a 250 ms per-match timeout, a 2-second enumeration budget, 100,000-match cap, 4,096-character patterns, 65,536-character replacement templates and a 64 MiB document/output cap. Captures are expanded directly and bounds are checked before adding repeated data. The browser development UI uses a worker that is terminated after 1.5 seconds. Regex expressions are never evaluated as code. This follows [Microsoft's regex guidance](https://learn.microsoft.com/dotnet/standard/base-types/best-practices).
 
 These checks reduce specific attack paths; they do not constitute an external security audit. Windows installer behavior and update/restart require real-device validation before broad distribution. Report reproducible security issues without posting private signing material or personal documents.
+

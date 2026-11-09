@@ -11,7 +11,7 @@
 ${StrStr}
 ${UnStrStr}
 !ifndef VERSION
-!define VERSION "1.0.2"
+!define VERSION "1.0.3"
 !endif
 !ifndef PAYLOAD
 !define PAYLOAD "..\release\MD-Split"
@@ -433,3 +433,4 @@ Section "Uninstall"
   ${EndIf}
   RMDir /r "$INSTDIR"
 SectionEnd
+
