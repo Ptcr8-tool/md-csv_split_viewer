@@ -41,6 +41,20 @@ try {
         $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
         return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
     }
+    function Wait-DocumentTitle([string] $Name) {
+        $until = [DateTime]::UtcNow.AddSeconds(90)
+        do {
+            if ($process.HasExited) { throw 'The application exited unexpectedly.' }
+            try {
+                $window = Window
+                # The only tab is folded by default; the active document is
+                # still identified by the native title even while it is hidden.
+                if ($null -ne $window -and $window.Current.Name.StartsWith($Name)) { return }
+            } catch [System.Windows.Automation.ElementNotAvailableException] { }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $until)
+        throw "Expected active document title was not shown: $Name"
+    }
     function Wait-Element([string] $Name) {
         $until = [DateTime]::UtcNow.AddSeconds(90)
         do {
@@ -100,8 +114,8 @@ try {
     $buttonName = -join @([char]0x6539,[char]0x884c,[char]0x30b3,[char]0x30fc,[char]0x30c9)
     $applyName = -join @([char]0x9069,[char]0x7528)
     $process = Start-Editor
-    $null = Wait-Element 'mixed.txt'
-    # The tab label can be exposed before the WebView's event handlers have
+    Wait-DocumentTitle 'mixed.txt'
+    # The title can be exposed before the WebView's event handlers have
     # finished startup. Wait for the application to settle before clicking.
     Start-Sleep -Seconds 3
     Click-Element (Wait-Element $buttonName)
@@ -116,7 +130,7 @@ try {
     Write-Output 'PASS: undo restored the original mixed line endings on disk.'
     Close-Editor
     $process = Start-Editor
-    $null = Wait-Element 'mixed.txt'
+    Wait-DocumentTitle 'mixed.txt'
     [Windows.Forms.SendKeys]::SendWait('^s')
     Wait-File $original
     Close-Editor

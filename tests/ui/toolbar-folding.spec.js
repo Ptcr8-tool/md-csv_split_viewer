@@ -3,6 +3,26 @@ import {test, expect} from '@playwright/test';
 test.beforeEach(async ({page}) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__mdSplit);
+  // Tests of the generic fold controls start with all sections open.
+  const tabs=page.getByRole('button',{name:'タブを展開'});
+  if(await tabs.isVisible()) await tabs.click();
+});
+
+test('a single tab is hidden by default and returns automatically when needed', async ({page}) => {
+  // Reload clears the explicit choice made in beforeEach.
+  await page.reload();await page.waitForFunction(()=>window.__mdSplit);
+  await expect(page.locator('.tabbar-row')).toBeHidden();
+  await expect(page.getByRole('button',{name:'タブを展開'})).toBeVisible();
+  await page.getByRole('button',{name:'新規作成 · Ctrl+N',exact:true}).click();
+  await expect(page.locator('.tabbar-row')).toBeVisible();
+  await expect(page.locator('.tabbar .tab')).toHaveCount(2);
+  await page.locator('.tabbar .tab-close').last().click();
+  await expect(page.locator('.tabbar-row')).toBeHidden();
+  // Users can still reveal the single tab to drag it to another window.
+  await page.getByRole('button',{name:'タブを展開'}).click();
+  await expect(page.locator('.tabbar-row')).toBeVisible();
+  await page.getByRole('button',{name:'新規作成 · Ctrl+N',exact:true}).click();
+  await expect(page.locator('.tabbar-row')).toBeVisible();
 });
 
 test('toolbar sections can be folded and restored without losing tabs or actions', async ({page}) => {
@@ -12,8 +32,11 @@ test('toolbar sections can be folded and restored without losing tabs or actions
   const actions = page.getByRole('button', {name: '操作を折りたたむ'});
   await actions.click();
   await expect(page.getByRole('button', {name: '操作を展開'})).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.brand')).toBeHidden();
+  await expect(page.locator('.topbar')).toBeHidden();
   await expect(page.locator('[data-cmd="open"]')).toBeHidden();
   await page.getByRole('button', {name: '操作を展開'}).click();
+  await expect(page.locator('.brand')).toBeVisible();
   await expect(page.locator('[data-cmd="open"]')).toBeVisible();
 
   await page.getByRole('button', {name: '書式を折りたたむ'}).click();
@@ -88,7 +111,17 @@ test('all sections can be folded at once and restored independently', async ({pa
 test('collapsed drawers stay at their original boundaries and do not block pane controls', async ({page}) => {
   await page.setViewportSize({width:1280,height:800});
   for (const label of ['タブ','書式','操作']) await page.getByRole('button',{name:`${label}を折りたたむ`}).click();
-  await page.waitForFunction(() => document.querySelector('.workspace').hasAttribute('data-fold-reserved'));
+  // A previous fold may already have reserved the workspace while the final
+  // click is still waiting for the next animation-frame layout. Wait for the
+  // actual non-overlapping result, not just that stale reservation attribute.
+  await page.waitForFunction(() => {
+    if (!document.querySelector('.workspace').hasAttribute('data-fold-reserved')) return false;
+    const buttons = [...document.querySelectorAll('.fold-edge:not([hidden]) > button')];
+    if (buttons.length !== 3) return false;
+    const rects = buttons.map(button => button.getBoundingClientRect());
+    return rects.every((a, i) => rects.slice(i + 1).every(b =>
+      !(a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)));
+  });
   const drawers=page.locator('.fold-edge:not([hidden])');
   await expect(drawers).toHaveCount(3);
   const geometry=await drawers.evaluateAll(nodes => nodes.map(node => {
@@ -224,3 +257,4 @@ test('tab fold control stays visible while the tab list overflows and is redrawn
   await page.getByRole('button',{name:'タブを展開'}).click();
   await expect(page.locator('.tabbar .tab')).toHaveCount(9);
 });
+

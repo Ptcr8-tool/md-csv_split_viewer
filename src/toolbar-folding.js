@@ -23,10 +23,11 @@ export function installToolbarFolding(root = document) {
   tabbar.before(tabRow);
   tabRow.append(tabbar);
   tabbar.id = 'foldable-tabs';
+  topbar.id = 'foldable-topbar';
   formatbar.id = 'foldable-format';
 
   const entries = [
-    {key:'actions', label:'操作', target:actions, section:actions, container:topbar, after:topbar},
+    {key:'actions', label:'操作', target:topbar, section:topbar, container:topbar, after:topbar},
     {key:'tabs', label:'タブ', target:tabbar, section:tabRow, container:tabRow, after:tabRow},
     {key:'format', label:'書式', target:formatbar, section:formatbar, container:formatbar, after:formatbar},
   ];
@@ -76,7 +77,8 @@ export function installToolbarFolding(root = document) {
     button.className = 'section-fold-toggle';
     button.dataset.foldToggle = key;
     button.setAttribute('aria-controls', target.id);
-    let expanded = true;
+    let expanded = key !== 'tabs';
+    let manual = false;
     function apply() {
       button.setAttribute('aria-expanded', String(expanded));
       button.setAttribute('aria-label', `${label}を${expanded ? '折りたたむ' : '展開'}`);
@@ -97,8 +99,21 @@ export function installToolbarFolding(root = document) {
       anchor.hidden = expanded;
       scheduleLayout();
     }
-    button.addEventListener('click', () => { expanded = !expanded; apply(); button.focus({preventScroll:true}); });
+    button.addEventListener('click', () => { manual = true; expanded = !expanded; apply(); button.focus({preventScroll:true}); });
     apply();
+    if (key === 'tabs') {
+      // Tab content is redrawn during editing. Change the automatic state only
+      // when the number of tabs changes, and honour explicit user choices.
+      let previousCount = tabbar.querySelectorAll('.tab').length;
+      const tabsChanged = new MutationObserver(() => {
+        const count = tabbar.querySelectorAll('.tab').length;
+        if (count === previousCount) return;
+        previousCount = count;
+        if (!manual && expanded !== (count > 1)) { expanded = count > 1; apply(); }
+      });
+      tabsChanged.observe(tabbar, {childList:true});
+      if (!manual && expanded !== (previousCount > 1)) { expanded = previousCount > 1; apply(); }
+    }
   }
 
   // Visibility changes when document kind, pane, search or notice changes.
@@ -111,3 +126,4 @@ export function installToolbarFolding(root = document) {
   root.defaultView?.addEventListener('resize', scheduleLayout);
   scheduleLayout();
 }
+

@@ -95,6 +95,7 @@ try
     DocumentAuthorityChecks.Run(root,Assert);
     await RecoveryChecks.Run(root,Assert);
     await SessionChecks.Run(root,Assert);
+    WindowPlacementChecks.Run(root,Assert);
     SearchConformanceChecks.Run(Assert);
     await PipeMessageChecks.Run(Assert);
     await CsvViewChecks.Run(root,Assert);
@@ -103,3 +104,4 @@ try
     Console.WriteLine($"{count} native checks passed.");
 }
 finally{Directory.Delete(root,true);}
+

@@ -9,6 +9,8 @@ namespace MdSplit;
 
 internal sealed class EditorWindow : Form
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
     private const string AppOrigin = UiContent.Origin;
     private readonly EditorContext context;
     private readonly WebView2 web = new() { Dock = DockStyle.Fill };
@@ -19,12 +21,24 @@ internal sealed class EditorWindow : Form
     private readonly SearchTextCache searchTextCache = new();
     private readonly bool recovered;
     private readonly bool startupTraceEnabled;
+    private bool lastMaximized;
+    private WindowPlacement? closingPlacement;
     internal bool IsStartupTraceWindow => startupTraceEnabled;
     private bool ready, allowClose, pollBusy, preserveRecovery;
     private SessionSnapshot? pendingSession;
     private string? sourceSessionFile;
     private readonly string cleanSessionFile = Path.Combine(Storage.SessionPath, Guid.NewGuid().ToString("N") + ".json");
     internal bool IsSessionClosing => allowClose || IsDisposed || Disposing;
+    internal bool CanTransferTabs => ready && !IsSessionClosing && paneWindows.Count==0;
+    internal void ForgetTransferred(string id)
+    {
+        Documents.Remove(id);writeTimes.Remove(id);pollRetryAfter.Remove(id);pendingExternal.Remove(id);searchTextCache.Remove(id);
+        if(!ready){initial.Documents.RemoveAll(d=>d.Id==id);if(initial.ActiveId==id)initial.ActiveId=initial.Documents.LastOrDefault()?.Id;}
+    }
+    internal void RecheckTransferred(string id)
+    {
+        if(Documents.TryGetValue(id,out var doc)&&doc.Path is not null){writeTimes[id]=DateTime.MinValue;pollRetryAfter.Remove(id);}
+    }
     private readonly Queue<object> queued = new();
     private readonly Dictionary<string, string> requestedDirectories = new(StringComparer.Ordinal);
     public void RequestNewInDirectory(string directory)
@@ -47,6 +61,11 @@ internal sealed class EditorWindow : Form
         this.context = context; this.initial = initial ?? new(); this.recovered = recovered; this.sourceSessionFile = sessionFile; this.recoveryFile=recoveryFile??Path.Combine(Storage.RecoveryPath,Guid.NewGuid().ToString("N")+".json");recoveryStore=new RecoveryStore(this.recoveryFile);preserveRecovery=recovered;
         Text = AppInfo.Title; Width = 1400; Height = 860; MinimumSize = new Size(800, 560); StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(245, 245, 241); AutoScaleMode = AutoScaleMode.Dpi;
+        var screens = Screen.AllScreens.OrderByDescending(screen => screen.Primary).Select(screen => screen.WorkingArea).ToArray();
+        var placement = WindowPlacementStore.Load(WindowPlacementStore.DefaultPath, screens, MinimumSize);
+        if (placement is not null) { StartPosition = FormStartPosition.Manual; Bounds = placement.Bounds; if (placement.Maximized) WindowState = FormWindowState.Maximized; }
+        lastMaximized = WindowState == FormWindowState.Maximized;
+        Resize += (_, _) => { if (WindowState != FormWindowState.Minimized) lastMaximized = WindowState == FormWindowState.Maximized; };
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowIconStart);
         var icon = Path.Combine(AppContext.BaseDirectory, "app.ico"); if (File.Exists(icon)) Icon = new Icon(icon);
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowIconComplete);
@@ -55,8 +74,8 @@ internal sealed class EditorWindow : Form
         Controls.Add(web);
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowControlsAddComplete);
         Shown += async (_, _) => { if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowShown); await InitializeWeb(); };
-        FormClosing += (_, e) => { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.CloseRequested); _ = Task.Run(StartupTrace.FlushAsync); } if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else ClosePaneWindows(); };
-        FormClosed += (_, _) => { timer.Stop(); timer.Dispose(); ClosePaneWindows(); web.Dispose(); if(!preserveRecovery) RecoveryStore.Delete(recoveryFile); if(startupTraceEnabled){StartupTrace.Mark(StartupStage.WindowClosed);_ = Task.Run(StartupTrace.FlushAsync);} };
+        FormClosing += (_, e) => { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.CloseRequested); _ = Task.Run(StartupTrace.FlushAsync); } if (!allowClose && ready) { e.Cancel = true; Emit(new { type = "close-request" }); } else { if (ready && allowClose) { var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds; closingPlacement = new WindowPlacement { X = bounds.X, Y = bounds.Y, Width = bounds.Width, Height = bounds.Height, Maximized = lastMaximized }; } ClosePaneWindows(); } };
+        FormClosed += (_, _) => { if (closingPlacement is not null) { try { WindowPlacementStore.Save(WindowPlacementStore.DefaultPath, closingPlacement.Bounds, closingPlacement.Maximized); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { Storage.Log(ex); } } timer.Stop(); timer.Dispose(); ClosePaneWindows(); web.Dispose(); if(!preserveRecovery) RecoveryStore.Delete(recoveryFile); if(startupTraceEnabled){StartupTrace.Mark(StartupStage.WindowClosed);_ = Task.Run(StartupTrace.FlushAsync);} };
         timer.Tick += async (_, _) => await PollFiles();
         if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WindowConstructorComplete);
     }
@@ -293,7 +312,7 @@ internal sealed class EditorWindow : Form
                 // Deliver queued opens only after the page has applied its initial documents.
                 _ = Task.Delay(200).ContinueWith(_ => { if(!IsDisposed) BeginInvoke(() => { while(queued.Count>0) Emit(queued.Dequeue()); }); });
                 if (startupTraceEnabled) StartupTrace.Mark(StartupStage.BootstrapReady);
-                return new { settings = context.Settings, documents = initial.Documents, mode = initial.Mode, activeId = initial.ActiveId, recoveryReason=initial.Reason, recovered, showWelcome, startupTraceEnabled };
+                return new { settings = context.Settings, documents = initial.Documents, mode = initial.Mode, activeId = initial.ActiveId, recoveryReason=initial.Reason, recovered, showWelcome, startupTraceEnabled, tabTransfer=context.Transfers.PendingForTarget(this) };
             case "startup.ready":
                 if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.EditorRendered); return await StartupTrace.FlushAsync(); }
                 return false;
@@ -302,6 +321,16 @@ internal sealed class EditorWindow : Form
                 return false;
             case "window.title": Text = args.GetProperty("title").GetString(); return true;
             case "window.focus": BringForward(); return true;
+            case "tab.prepare":
+                var transferDocument=args.GetProperty("document").Deserialize<DocumentData>(Storage.Json)??throw new IOException("文書が見つかりません。");
+                return context.Transfers.Prepare(this,args.GetProperty("token").GetString(),transferDocument,args.TryGetProperty("state",out var transferState)?transferState:null);
+            case "tab.accept": return context.Transfers.Accept(this,args.GetProperty("token").GetString());
+            case "tab.detach": return context.Transfers.Detach(this,args.GetProperty("token").GetString());
+            case "tab.accepted": return context.Transfers.Complete(this,args.GetProperty("token").GetString());
+            case "tab.cancel": return context.Transfers.Cancel(this,args.GetProperty("token").GetString());
+            case "tab.reject": return context.Transfers.Reject(this,args.GetProperty("token").GetString());
+            case "tab.finalized": return context.Transfers.Finalized(this,args.GetProperty("token").GetString());
+            case "tab.can-detach": return (GetAsyncKeyState(0x01)&0x8000)==0 && (GetAsyncKeyState(0x1B)&0x8000)==0 && !context.Windows.Any(w=>!w.IsDisposed&&w.Visible&&w.Bounds.Contains(Cursor.Position));
             case "document.register":
                 DocumentAuthority.RegisterUnsaved(Documents, args.GetProperty("id").GetString(), args.TryGetProperty("name", out var documentName) ? documentName.GetString() : null);
                 return true;
@@ -581,3 +610,4 @@ internal sealed class EditorWindow : Form
         }
     }
 }
+
