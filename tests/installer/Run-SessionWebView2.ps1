@@ -27,7 +27,7 @@ try {
     [IO.File]::WriteAllText($a, '# First', [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($b, "A,B`r`nx,y`r`n", [Text.UTF8Encoding]::new($false))
     function Set-TestSettings([string] $Policy) {
-        $settings = @{welcomeShown=$true;updateCheckDays=-1;sessionPolicy=$Policy;startupFormat='csv';openPolicy='tabs'} | ConvertTo-Json -Compress
+        $settings = @{language='ja';welcomeShown=$true;updateCheckDays=-1;sessionPolicy=$Policy;startupFormat='csv';openPolicy='tabs'} | ConvertTo-Json -Compress
         [IO.File]::WriteAllText((Join-Path $data 'settings.json'), $settings, [Text.UTF8Encoding]::new($false))
     }
     function Start-Editor([bool] $WithFixtures) {
