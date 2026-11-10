@@ -52,8 +52,8 @@ export class TextPreview{
   clear(){this._cancelDialog?.();this._layoutShape=null;this.finishEdit({redraw:false,force:true});this.container.replaceChildren();this.container.hidden=true;this.container.classList.remove('text-preview');if(this.originalEditable===null)this.container.removeAttribute('contenteditable');else this.container.setAttribute('contenteditable',this.originalEditable);this._visible=false;this._activePosition=null;this._scrollLayout=null;this.raw=null;this.kind=null;this.cache=null;this.options=null;this.csvSettings=null;this.parsed=null;this._parsedRaw=null;this.scroller=null;this.status=null;this.pagination=null;this.view=normalizeCsvView();this.selection=null;this._resizeCleanup?.();this._resizeCleanup=null;}
   render(raw,kind,options={}){
     if(!['html','csv','tsv'].includes(kind)){this.clear();return false;}
-    const cache={docId:options.docId??options.documentId??null,fontSize:options.fontSize??14,delimiter:options.delimiter??null,header:options.header??null,view:JSON.stringify(normalizeCsvView(options.csvView??(this.cache?.docId===(options.docId??options.documentId??null)?this.view:{})))};
-    if(this._editing&&this.kind===kind&&this.cache?.docId===cache.docId){this.raw=raw;this.cache=cache;this.options=options;this.view=normalizeCsvView(options.csvView??this.view);return true;}
+    const cache={docId:options.docId??options.documentId??null,fontSize:options.fontSize??14,delimiter:options.delimiter??null,header:options.header??null,language:currentUiLanguage(),view:JSON.stringify(normalizeCsvView(options.csvView??(this.cache?.docId===(options.docId??options.documentId??null)?this.view:{})))};
+    if(this._editing&&this.kind===kind&&this.cache?.docId===cache.docId){this.raw=raw;cache.language=this.cache.language;this.cache=cache;this.options=options;this.view=normalizeCsvView(options.csvView??this.view);return true;}
     if(this._editing)this.finishEdit({redraw:false,force:true});
     if(this.raw===raw&&this.kind===kind&&this.cache&&Object.keys(cache).every(key=>this.cache[key]===cache[key]))return true;
     const sameDocument=this.kind===kind&&this.cache?.docId===cache.docId;
@@ -431,6 +431,9 @@ export class TextPreview{
     const applied=cancel?this.emitCellToken(field,field.originalToken):this.applyCellInput(field);
     if(!applied&&!force){this._editing=field;return false;}
     this.api.editing?.(field.docId,false);
-    if(redraw&&['csv','tsv'].includes(this.kind)&&this.scroller)this.renderTable();return true;
+    if(redraw&&['csv','tsv'].includes(this.kind)&&this.scroller){
+      if(this.cache?.language!==currentUiLanguage())this.render(this.raw,this.kind,this.options);
+      else this.renderTable();
+    }return true;
   }
 }
