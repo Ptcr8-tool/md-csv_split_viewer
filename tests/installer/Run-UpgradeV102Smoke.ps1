@@ -1,7 +1,8 @@
-# Upgrade validation against the verified, published v1.0.2 installer.
+# Upgrade validation against a verified, published installer.
 param(
     [Parameter(Mandatory = $true)][string] $OldSetup,
-    [Parameter(Mandatory = $true)][string] $NewSetup
+    [Parameter(Mandatory = $true)][string] $NewSetup,
+    [ValidateSet('1.0.2', '1.0.3')][string] $OldVersion = '1.0.2'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,12 +15,15 @@ if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.Apartme
 
 $old = (Resolve-Path -LiteralPath $OldSetup).Path
 $new = (Resolve-Path -LiteralPath $NewSetup).Path
-$expectedOldSha = 'd48c52d9292e479fca431674a68af1b9f80978694bc8b32ac8aaed19a2609a8d'
-if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash -ine $expectedOldSha) { throw 'The v1.0.2 setup does not match the published release SHA-256.' }
+$expectedOldSha = @{
+    '1.0.2' = 'd48c52d9292e479fca431674a68af1b9f80978694bc8b32ac8aaed19a2609a8d'
+    '1.0.3' = '172cf4a064cbdd3016241403d64762ad6ea3a420560c85ad5df639873a5aa24a'
+}[$OldVersion]
+if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash -ine $expectedOldSha) { throw "The v$OldVersion setup does not match the published release SHA-256." }
 $versionText = [Diagnostics.FileVersionInfo]::GetVersionInfo($new).ProductVersion
 if ($versionText -notmatch '^(\d+\.\d+\.\d+)(?:\.\d+)?$') { throw 'Could not determine the new setup version.' }
 $expectedNewVersion = [version]$Matches[1]
-if ($expectedNewVersion -le [version]'1.0.2') { throw 'The new setup must be newer than v1.0.2.' }
+if ($expectedNewVersion -le [version]$OldVersion) { throw "The new setup must be newer than v$OldVersion." }
 
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MD Split'
 $progIdKey = 'HKCU:\Software\Classes\MD.Split.Markdown'
@@ -191,11 +195,11 @@ try {
     [IO.File]::WriteAllText($batchFixture, "@echo off`r`necho MD_SPLIT_UPGRADE_BATCH_FIXTURE>`"%~dp0synthetic-upgrade-result.txt`"`r`n", [Text.Encoding]::ASCII)
     Assert-BatchExecution $batchFixture $batchMarker
     Invoke-Setup $old
-    if ((InstalledVersion) -ne [version]'1.0.2') { throw 'The old setup did not install v1.0.2.' }
+    if ((InstalledVersion) -ne [version]$OldVersion) { throw "The old setup did not install v$OldVersion." }
     if (-not [string]::Equals((Get-ItemProperty -LiteralPath $uninstallKey -Name InstallLocation).InstallLocation, $app, [StringComparison]::OrdinalIgnoreCase)) { throw 'Old setup registered an unexpected install directory.' }
     Assert-UserChoices
     $associations = Join-Path $capabilities 'FileAssociations'
-    if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw 'v1.0.2 unexpectedly registered the bat editor candidate.' }
+    if ((Get-ItemProperty -LiteralPath $batchOpenWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) -or (Get-ItemProperty -LiteralPath $associations -Name '.bat' -ErrorAction SilentlyContinue)) { throw "v$OldVersion unexpectedly registered the bat editor candidate." }
     $otherKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($batchOpenWithNative)
     try { $otherKey.SetValue($batchOtherProgId, '') } finally { $otherKey.Dispose() }
     [IO.File]::WriteAllText($settings, '{"welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"all","openPolicy":"tabs","theme":"dark","fontSize":17}', [Text.UTF8Encoding]::new($false))
@@ -234,7 +238,7 @@ try {
     Assert-UserChoices
     Assert-BatchExecution $batchFixture $batchMarker
     Write-Output 'PASS: upgrade preserves other apps, defaults, cmd and bat execution.'
-    Write-Output 'PASS: v1.0.2 upgraded in place, preserving settings, session, recovery fixture, user documents and Windows default-app choices.'
+    Write-Output "PASS: v$OldVersion upgraded in place, preserving settings, session, recovery fixture, user documents and Windows default-app choices."
 
     $process = Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -PassThru
     Wait-Tab 'first.txt'; Wait-Tab 'second.txt'; Wait-Content 'UPGRADE_FIXTURE_BETA_91'; Close-Editor; Wait-WebViewExit
