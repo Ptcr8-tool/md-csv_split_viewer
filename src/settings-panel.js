@@ -4,6 +4,7 @@ import './settings-panel.css';
 import {normalizeFileTypeSettings,presentationCapabilities,presentationTypes} from './view-preference.js';
 import {supportedTextExtensions} from './file-types.js';
 import {isDesktop} from './bridge.js';
+import {currentUiLanguage,translateControls} from './i18n.js';
 
 const palettes=[['black','黒（標準）'],['green','緑'],['red','赤'],['blue','青'],['parchment','羊皮紙'],['parchment-texture','羊皮紙＋質感']];
 const brightness=[
@@ -20,6 +21,7 @@ const marks=[
 const pick=(value,choices,fallback)=>choices.includes(value)?value:fallback;
 const formMarkup=`
 <section class="settings-section settings-first"><h3>ウィンドウと画面</h3>
+  <div class="settings-fields"><label class="field">言語<select id="setting-language"><option value="ja">日本語</option><option value="en">English</option></select></label></div>
   <div class="settings-fields"><label class="field">次に開くファイル<select id="setting-layout"><option value="tabs">同じウィンドウのタブ</option><option value="windows">別ウィンドウ</option></select></label>
   </div><div class="settings-fields settings-type-fields"><label class="field">設定するファイル種類<select id="setting-file-kind" aria-label="設定するファイル種類"><option value="markdown">Markdown（.md）</option><option value="csv">CSV（.csv）</option><option value="tsv">TSV（.tsv）</option><option value="html">HTML（.html / .htm）</option></select></label><label class="field">編集画面の既定<select id="setting-view-mode"><option value="last">最後に選択したモード</option><option value="split">左右に並べる</option><option value="source">原文のみ</option><option value="preview">展開表示のみ</option></select></label></div>
   <p class="muted">表示の既定・見出しナビ・連動をファイル種類ごとに記憶します。通常は、その種類で最後に選択した表示を引き継ぎます。</p>
@@ -105,10 +107,11 @@ export async function showSettings(api){
   let applied=false,readSettings;
   modal.classList.add('settings-dialog');
   try{
-    const ok=await api.dialog('設定',formMarkup,body=>{
+    const ok=await api.dialog(currentUiLanguage()==='en'?'Settings':'設定',formMarkup,body=>{
       const $=selector=>body.querySelector(selector);
       const setChecked=(id,value)=>$(id).checked=!!value;
       api.updates.settingsFields(body);
+      $('#setting-language').value=pick(original.language,['ja','en'],currentUiLanguage());
       $('#setting-layout').value=pick(original.openPolicy,['tabs','windows'],'tabs');
       $('#setting-session-policy').value=pick(original.sessionPolicy,['clear','all','active'],'clear');
       $('#setting-startup-format').value=pick(original.startupFormat,['md','csv','txt','html','json','tsv','xml'],'md');
@@ -173,8 +176,9 @@ export async function showSettings(api){
         });
       }
       setupSettingsNavigation(body);
+      translateControls(body);
       readSettings=()=>{readType();return ({
-        updateCheckDays:api.updates.readDays(),openPolicy:$('#setting-layout').value,sessionPolicy:$('#setting-session-policy').value,startupFormat:$('#setting-startup-format').value,fileTypeSettings:typeSettings,
+        language:$('#setting-language').value,updateCheckDays:api.updates.readDays(),openPolicy:$('#setting-layout').value,sessionPolicy:$('#setting-session-policy').value,startupFormat:$('#setting-startup-format').value,fileTypeSettings:typeSettings,
         theme:readTheme(),colorTheme:readPalette(),fontSize:Math.round(Math.min(28,Math.max(11,Number($('#setting-size').value)||15))),wrapMode:$('#setting-wrap-mode').value,wrapColumn:sourceWrapColumn({wrapColumn:$('#setting-wrap-column').value}),wrap:$('#setting-wrap-mode').value!=='none',softBreaks:$('#setting-soft-breaks').checked,
         whitespaceStyles:readWhitespace(),distinguishLineBreaks:$('#setting-distinguish-line-breaks').checked,...Object.fromEntries(marks.map(mark=>[mark.setting,$('#'+mark.id).checked]))
       });};

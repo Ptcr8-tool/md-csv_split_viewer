@@ -27,10 +27,10 @@ internal static class SessionStore
     internal static HashSet<string> SupersededSessionIds(IEnumerable<SessionSnapshot> sessions) => sessions.Where(s => s.PreviousSessionId is not null).Select(s => s.PreviousSessionId!).ToHashSet(StringComparer.OrdinalIgnoreCase);
     internal static SessionSnapshot? Capture(string? policy, IReadOnlyList<string> order, string? activeId, string? mode, IDictionary<string, DocumentData> trusted)
     {
-        if (policy is not ("clear" or "all" or "active")) throw new IOException("終了時の設定が正しくありません。");
-        if (order.Count != order.Distinct(StringComparer.Ordinal).Count()) throw new IOException("タブの一覧が正しくありません。");
+        if (policy is not ("clear" or "all" or "active")) throw new IOException(UiLanguage.T("終了時の設定が正しくありません。", "The close behavior setting is invalid."));
+        if (order.Count != order.Distinct(StringComparer.Ordinal).Count()) throw new IOException(UiLanguage.T("タブの一覧が正しくありません。", "The tab list is invalid."));
         var docs = order.Select(id => DocumentAuthority.Require(trusted, id)).ToList();
-        if (docs.Count > 0 && !docs.Any(d => d.Id == activeId)) throw new IOException("現在のタブが見つかりません。");
+        if (docs.Count > 0 && !docs.Any(d => d.Id == activeId)) throw new IOException(UiLanguage.T("現在のタブが見つかりません。", "The active tab was not found."));
         var chosen = policy == "clear" ? Enumerable.Empty<DocumentData>() : policy == "active" ? docs.Where(d => d.Id == activeId) : docs;
         return new SessionSnapshot
         {
@@ -54,16 +54,16 @@ internal static class SessionStore
     }
     internal static SessionSnapshot Read(string path)
     {
-        var data = JsonSerializer.Deserialize<SessionSnapshot>(File.ReadAllText(path), Storage.Json) ?? throw new IOException("タブの復元情報を読み取れません。");
+        var data = JsonSerializer.Deserialize<SessionSnapshot>(File.ReadAllText(path), Storage.Json) ?? throw new IOException(UiLanguage.T("タブの復元情報を読み取れません。", "Could not read the saved tab information."));
         if (data.Version != 1 || (data.ClosedRecoveryId is not null && !Guid.TryParseExact(data.ClosedRecoveryId, "N", out _)) || (data.PreviousSessionId is not null && !Guid.TryParseExact(data.PreviousSessionId, "N", out _)) || data.Documents is null || data.Documents.Any(d => d is null || !Guid.TryParse(d.Id, out _)) || data.Documents.Select(d => d.Id).Distinct(StringComparer.Ordinal).Count() != data.Documents.Count)
-            throw new IOException("タブの復元情報が正しくありません。");
+            throw new IOException(UiLanguage.T("タブの復元情報が正しくありません。", "The saved tab information is invalid."));
         return data;
     }
     internal static void Consume(string path, string recoveryDirectory, string sessionDirectory, HashSet<string>? visited = null)
     {
         if (!File.Exists(path)) return;
         visited ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!visited.Add(Path.GetFullPath(path))) throw new IOException("タブの復元情報が循環しています。");
+        if (!visited.Add(Path.GetFullPath(path))) throw new IOException(UiLanguage.T("タブの復元情報が循環しています。", "The saved tab information contains a cycle."));
         var source = Read(path);
         if (source.ClosedRecoveryId is not null) RecoveryStore.Delete(Path.Combine(recoveryDirectory, source.ClosedRecoveryId + ".json"));
         if (source.PreviousSessionId is not null) Consume(Path.Combine(sessionDirectory, source.PreviousSessionId + ".json"), recoveryDirectory, sessionDirectory, visited);
@@ -95,8 +95,8 @@ internal static class SessionStore
                 {
                     var path = Path.GetFullPath(item.Path);
                     if (seenPaths.Contains(path)) continue;
-                    if (!File.Exists(path)) throw new IOException("ファイルが見つからないか、読み取れません。");
-                    if (!approveLarge(path)) throw new IOException("読み込みを中止しました。");
+                    if (!File.Exists(path)) throw new IOException(UiLanguage.T("ファイルが見つからないか、読み取れません。", "The file is missing or cannot be read."));
+                    if (!approveLarge(path)) throw new IOException(UiLanguage.T("読み込みを中止しました。", "Loading was cancelled."));
                     doc = Storage.ReadFile(path, item.Id, item.Encoding);
                     seenPaths.Add(path);
                 }

@@ -12,9 +12,9 @@ internal static class CsvViewStore
 
     public static string SidecarPath(string? documentPath)
     {
-        if (string.IsNullOrWhiteSpace(documentPath)) throw new IOException("表示設定を保存するには、先にCSV・TSVを保存してください。");
+        if (string.IsNullOrWhiteSpace(documentPath)) throw new IOException(UiLanguage.T("表示設定を保存するには、先にCSV・TSVを保存してください。", "Save the CSV or TSV file before saving its view settings."));
         var path = Path.GetFullPath(documentPath);
-        if (TextFileTypes.FormatFor(path) is not ("csv" or "tsv") || !File.Exists(path)) throw new IOException("CSV・TSVの元ファイルが見つかりません。");
+        if (TextFileTypes.FormatFor(path) is not ("csv" or "tsv") || !File.Exists(path)) throw new IOException(UiLanguage.T("CSV・TSVの元ファイルが見つかりません。", "The original CSV or TSV file was not found."));
         return path + ".mdsplit-view.json";
     }
 
@@ -92,7 +92,7 @@ internal static class CsvViewStore
 
     private static void CheckSidecar(string path)
     {
-        if (Directory.Exists(path) || File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("表示設定の保存先が通常のファイルではありません。");
+        if (Directory.Exists(path) || File.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException(UiLanguage.T("表示設定の保存先が通常のファイルではありません。", "The view settings destination is not a regular file."));
     }
     private static void Map(JsonElement value, bool cells, Action<JsonElement> validate)
     {
@@ -125,5 +125,5 @@ internal static class CsvViewStore
     {
         if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var n) || n < min || n > max) throw Invalid();
     }
-    private static IOException Invalid() => new("表示設定ファイルの形式が正しくないか、サイズが大きすぎます。");
+    private static IOException Invalid() => new(UiLanguage.T("表示設定ファイルの形式が正しくないか、サイズが大きすぎます。", "The view settings file is invalid or too large."));
 }

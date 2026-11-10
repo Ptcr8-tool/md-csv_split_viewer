@@ -8,6 +8,7 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
 }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
 $setupPath = (Resolve-Path -LiteralPath $Setup).Path
 $testRoot = Join-Path $env:RUNNER_TEMP ('md-split-ui-' + [Guid]::NewGuid().ToString('N'))
 $installPath = Join-Path $testRoot 'Application'
@@ -72,10 +73,35 @@ function Accept-License($Dialog) {
     throw 'The license acceptance checkbox was not exposed by UI Automation.'
 }
 
+function Select-InstallerLanguage([int] $ProcessId, [bool] $Japanese) {
+    $dialog = Wait-Text $ProcessId 'Select a language' 'language selection'
+    $combo = $null
+    foreach ($element in (Get-Elements $dialog)) {
+        if ($element.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox) {
+            $combo = $element
+            break
+        }
+    }
+    if ($null -eq $combo) { throw 'The installer language selector was not found.' }
+    $combo.SetFocus()
+    # The language dialog offers English and Japanese in this order.
+    if ($Japanese) { [System.Windows.Forms.SendKeys]::SendWait('{END}') }
+    else { [System.Windows.Forms.SendKeys]::SendWait('{HOME}') }
+    foreach ($element in (Get-Elements $dialog)) {
+        if ($element.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+            ($element.Current.Name -as [string]) -eq 'OK' -and $element.Current.IsEnabled) {
+            $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+            return
+        }
+    }
+    throw 'The language selection confirmation button was not found.'
+}
+
 $process = $null
 try {
     # /D must be the final argument. No page beyond components is visited.
     $process = Start-Process -FilePath $setupPath -ArgumentList "/D=$installPath" -PassThru
+    Select-InstallerLanguage $process.Id $true
     $dialog = Wait-Text $process.Id $welcome 'welcome'
     Write-Output 'PASS: the product-specific Japanese welcome text is readable.'
     Invoke-Next $dialog
@@ -93,6 +119,18 @@ try {
     }
     Write-Output 'PASS: the product-specific Japanese components text and option are readable.'
     Write-Output 'PASS: default-app selection is explained without an association checkbox.'
+    Stop-Process -Id $process.Id -Force
+    $null = $process.WaitForExit(10000)
+    $process = Start-Process -FilePath $setupPath -ArgumentList "/D=$installPath" -PassThru
+    Select-InstallerLanguage $process.Id $false
+    $dialog = Wait-Text $process.Id 'This installer includes the app and its runtime' 'English welcome'
+    Invoke-Next $dialog
+    $dialog = Wait-Text $process.Id 'These are the terms for the included Microsoft Edge WebView2 Runtime' 'English license'
+    Accept-License $dialog
+    Invoke-Next $dialog
+    $null = Wait-Text $process.Id 'Choose Windows integrations' 'English components'
+    $null = Wait-Text $process.Id 'Add to Start menu' 'English component list'
+    Write-Output 'PASS: the selected English language appears on the welcome, license, and components pages.'
 } finally {
     if ($null -ne $process -and -not $process.HasExited) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

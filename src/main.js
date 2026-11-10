@@ -15,6 +15,7 @@ import {normalizeCsvView} from './csv-view.js';
 import {initialViewMode,isViewMode,presentationFor,presentationCapabilities,normalizeFileTypeSettings,updateFileTypeSettings} from './view-preference.js';
 import {APP_TITLE} from './brand.js';
 import {applicationShell} from './app-shell.js';
+import {normalizeLanguage,setUiLanguage,translateShell} from './i18n.js';
 import {installToolbarFolding} from './toolbar-folding.js';
 import {encodingChoices,defaultBom,readBrowserFile,encodeBrowserText,MAX_BROWSER_FILE_BYTES} from './text-codecs.js';
 import './file-editor.css';
@@ -44,7 +45,7 @@ const $=s=>document.querySelector(s);
 $('#app').innerHTML=applicationShell();
 installToolbarFolding();
 
-let settings={openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:false,showFullWidthSpaces:false,showTabs:false,showSpaces:false};
+let settings={language:normalizeLanguage(null,navigator.language),openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:false,showFullWidthSpaces:false,showTabs:false,showSpaces:false};
 let textPreview={visible:false,editing:null,parsed:null,clear(){},finishEdit(){return true;},render(){return false;}};
 let textPreviewLoad=null;
 let pendingPreviewScroll=null;
@@ -271,6 +272,7 @@ function updateTitle(){const d=current();if(d)host('window.title',{title:`${d.di
 function saveRecovery(){if(paneSession){paneSession.changed();return;}publishPeers();clearTimeout(recoveryTimer);recoveryTimer=setTimeout(()=>recoveryWriter.write().catch(e=>notify('復元データを保存できません: '+e.message,true)),650);}
 async function setSettings(change){if(paneSession){await paneSession.setSettings(change);return;}if(change.fileTypeSettings&&current()){const kind=fileKind(current());if(presentationFor(settings,kind).outlineVisible!==presentationFor({...settings,...change},kind).outlineVisible)autoHideOutline=false;}settings={...settings,...change};settings.fileTypeSettings=normalizeFileTypeSettings(settings);applySettings();await host('settings.set',settings);publishPeers();}
 function applySettings(){
+  setUiLanguage(settings.language);
   if(!md()||effectiveView()==='source')side='source';else if(effectiveView()==='preview')side='preview';
   const palette=['black','green','red','blue','parchment','parchment-texture'].includes(settings.colorTheme)?settings.colorTheme:'black';
   document.documentElement.dataset.palette=palette;
@@ -278,7 +280,7 @@ function applySettings(){
   document.documentElement.style.setProperty('--font-size',settings.fontSize+'px');document.documentElement.style.setProperty('--split',settings.ratio*100+'%');$('#zoom-label').textContent=Math.round(settings.fontSize/15*100)+'%';
   if(cm)cm.dispatch({effects:[wrapConfig.reconfigure(sourceWrapExtension(settings)),sourceThemeConfig.reconfigure(sourceEditorTheme(document.documentElement.dataset.theme==='dark')),whitespaceConfig.reconfigure(visibleWhitespace(settings,()=>current()?.raw??''))]});
   applyWhitespaceStyles(settings);
-  if(current())render();updateToolbar();updateView();
+  if(current())render();updateToolbar();updateView();translateShell();
 }
 function sourceCodeAt(raw,from,to=from){
   let found=null;const visit=node=>{if(node.type==='code'&&node.position.start.offset<=from&&node.position.end.offset>=to)found=fenceInfo(raw,node.position.start.offset,node.position.end.offset);for(const child of node.children||[])visit(child);};visit(parseMarkdown(raw));return found;
@@ -663,7 +665,7 @@ async function start(){
       window.addEventListener('pagehide',()=>{textPreview.finishEdit({force:true});if(current()?.componentEditing===window)current().componentEditing=null;if(current()?.compositionOwner===window){current().composing=false;current().compositionOwner=null;}paneSession?.detach();});
     }catch(e){$('#app').replaceChildren();const p=document.createElement('p');p.textContent=e.message;$('#app').append(p);return;}
   }else{
-    const initial=await host('bootstrap');if(initial.tabTransfer?.token&&initial.tabTransfer?.id)acceptingTab={...initial.tabTransfer,staged:true};if(acceptingTab)startIncomingWatchdog(acceptingTab);startupTraceEnabled=initial.startupTraceEnabled===true;settings={...settings,...initial.settings};settings.fileTypeSettings=normalizeFileTypeSettings(settings);mode=initial.mode||'normal';
+    const initial=await host('bootstrap');if(initial.tabTransfer?.token&&initial.tabTransfer?.id)acceptingTab={...initial.tabTransfer,staged:true};if(acceptingTab)startIncomingWatchdog(acceptingTab);startupTraceEnabled=initial.startupTraceEnabled===true;settings={...settings,...initial.settings};setUiLanguage(settings.language);translateShell();settings.fileTypeSettings=normalizeFileTypeSettings(settings);mode=initial.mode||'normal';
     if(initial.documents?.length){for(const d of initial.documents)newDocument(d,{activate:false,nativeRegistered:initial.tabTransfer?.id===d.id});activeId=documents.some(d=>d.id===initial.activeId)?initial.activeId:documents.at(-1).id;lastSelection=current().selection;side=md()&&effectiveView()==='preview'?'preview':'source';}
     else if(initial.showWelcome||!isDesktop&&!settings.welcomeShown){await openWelcome();settings.welcomeShown=true;await host('settings.set',settings);}
     else{const d=newDocument({name:'無題.'+(['md','csv','txt','html','json','tsv','xml'].includes(settings.startupFormat)?settings.startupFormat:'md')},{activate:false});activeId=d.id;lastSelection=d.selection;side=md()&&effectiveView()==='preview'?'preview':'source';}

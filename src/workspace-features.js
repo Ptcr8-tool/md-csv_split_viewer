@@ -6,7 +6,7 @@ import {linkedEditor,activeSourceLine} from './linked-editor.js';
 import {linkAt,outlineFromHeadings} from './navigation.js';
 import {host,isDesktop} from './bridge.js';
 import {searchText,regexSamples} from './search.js';
-import {regexReference} from './regex-reference.js';
+import {getRegexReference} from './regex-reference.js';
 import {PreviewActiveLine} from './active-line.js';
 import {htmlOutline,HTML_OUTLINE_MANUAL_THRESHOLD} from './html-outline.js';
 const $=s=>document.querySelector(s);
@@ -143,7 +143,7 @@ export class WorkspaceFeatures{
     await this.regexInfoDialog('正規表現の表記一覧','<p class="regex-note">「正規表現」をオンにして、検索欄には式だけを入力します。検索は複数行モードです。Windows版は.NET、ブラウザー版はJavaScriptを使用するため、一部の動作が異なります。</p><nav id="regex-reference-nav" class="regex-reference-nav" aria-label="表記の分類"></nav><div id="regex-reference"></div><p class="regex-note">置換欄は上記の表記に対応しています。公式資料にある置換記号のすべてを使えるわけではありません。正規表現がオフのときは記号をそのまま置換します。</p><p class="regex-note">検索式の詳しい仕様：<a href="https://learn.microsoft.com/ja-jp/dotnet/standard/base-types/regular-expression-language-quick-reference" target="_blank" rel="noopener noreferrer">Windows版（Microsoft）</a> / <a href="https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Regular_expressions" target="_blank" rel="noopener noreferrer">ブラウザー版（MDN）</a></p>',container=>{
       const list=container.querySelector('#regex-reference'),nav=container.querySelector('#regex-reference-nav');
       const labels=['文字と記号','繰り返し','位置と条件','グループ','Windows版','置換欄'];
-      for(const [index,group] of regexReference.entries()){
+      for(const [index,group] of getRegexReference().entries()){
         const section=document.createElement('section');section.className='regex-reference-group';
         const heading=document.createElement('h3');heading.textContent=group.title;
         const jump=document.createElement('button');jump.type='button';jump.className='secondary';jump.textContent=labels[index]||group.title;jump.onclick=()=>section.scrollIntoView({block:'start',behavior:'smooth'});nav.append(jump);

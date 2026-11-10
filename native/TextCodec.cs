@@ -8,7 +8,7 @@ internal sealed record DecodedText(string Text, string Encoding, bool HasBom, bo
 // Distinguish a binary-looking file from access errors and explicit decoding errors.
 internal sealed class BinaryContentException : IOException
 {
-    public BinaryContentException() : base("バイナリ形式の可能性があるため、通常のテキストとして開けません。") { }
+    public BinaryContentException() : base(UiLanguage.T("バイナリ形式の可能性があるため、通常のテキストとして開けません。", "This may be a binary file and cannot be opened as ordinary text.")) { }
 }
 
 internal static class TextCodec
@@ -32,7 +32,7 @@ internal static class TextCodec
         "gb18030" or "gb-18030" or "54936" => "gb18030",
         "big5" or "big-5" or "cp950" or "950" => "big5",
         "korean949" or "cp949" or "windows-949" or "uhc" or "ks-c-5601-1987" or "949" => "korean949",
-        _ => throw new IOException("対応していない文字コードです。文字コードの一覧から選び直してください。")
+        _ => throw new IOException(UiLanguage.T("対応していない文字コードです。文字コードの一覧から選び直してください。", "This encoding is unsupported. Select another encoding from the list."))
     };
 
     // Every codec is strict and BOM-less. Preambles are managed separately so an
@@ -47,7 +47,7 @@ internal static class TextCodec
         "shiftjis" => CodePage(932), "eucjp" => CodePage(51932), "iso2022jp" => CodePage(50220),
         "windows1252" => CodePage(1252), "gb18030" => CodePage(54936), "big5" => CodePage(950),
         "korean949" => CodePage(949),
-        _ => throw new IOException("対応していない文字コードです。")
+        _ => throw new IOException(UiLanguage.T("対応していない文字コードです。", "This encoding is unsupported."))
     };
 
     private static Encoding CodePage(int codePage) => Encoding.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
@@ -67,7 +67,7 @@ internal static class TextCodec
         var codec = StrictEncoding(id);
         var bytes = codec.GetBytes(text);
         if (!codec.GetString(bytes).Equals(text, StringComparison.Ordinal))
-            throw new EncoderFallbackException("この文字コードでは文字をそのまま保存できません。UTF-8などへ変更してください。");
+            throw new EncoderFallbackException(UiLanguage.T("この文字コードでは文字をそのまま保存できません。UTF-8などへ変更してください。", "Some characters cannot be saved in this encoding. Change to UTF-8 or another encoding."));
         var preamble = (hasBom ?? DefaultBom(id)) ? Preamble(id) : [];
         return preamble.Length == 0 ? bytes : [.. preamble, .. bytes];
     }
@@ -80,7 +80,7 @@ internal static class TextCodec
             var selected = CanonicalId(forceEncoding);
             var matchingBom = bomLength > 0 && SameUnicodeFamily(selected, bomEncoding!);
             if (bomLength > 0 && !matchingBom)
-                throw new DecoderFallbackException("ファイルのBOMと指定した文字コードが一致しません。BOMに対応する文字コードを選んでください。");
+                throw new DecoderFallbackException(UiLanguage.T("ファイルのBOMと指定した文字コードが一致しません。BOMに対応する文字コードを選んでください。", "The file BOM does not match the selected encoding. Select an encoding matching the BOM."));
             var text = DecodeStrict(bytes, selected, matchingBom ? bomLength : 0);
             // For UTF-8, report the observed BOM rather than the dialog choice.
             if (selected is "utf8" or "utf8bom") selected = matchingBom ? "utf8bom" : "utf8";
@@ -257,14 +257,14 @@ internal static class TextCodec
         for (var i = 0; i < bytes.Length; i++)
         {
             var b = bytes[i];
-            if (b >= 0x80) throw new DecoderFallbackException("ISO-2022-JPに正しくないバイトがあります。");
+            if (b >= 0x80) throw new DecoderFallbackException(UiLanguage.T("ISO-2022-JPに正しくないバイトがあります。", "The ISO-2022-JP data contains an invalid byte."));
             if (b == 0x1b)
             {
-                if (i + 2 >= bytes.Length) throw new DecoderFallbackException("ISO-2022-JPのエスケープシーケンスが途中で終わっています。");
+                if (i + 2 >= bytes.Length) throw new DecoderFallbackException(UiLanguage.T("ISO-2022-JPのエスケープシーケンスが途中で終わっています。", "The ISO-2022-JP escape sequence is incomplete."));
                 if (bytes[i + 1] == '$' && bytes[i + 2] is (byte)'B' or (byte)'@') mode = 1;
                 else if (bytes[i + 1] == '(' && bytes[i + 2] is (byte)'B' or (byte)'J') mode = 0;
                 else if (bytes[i + 1] == '(' && bytes[i + 2] == 'I') mode = 2;
-                else throw new DecoderFallbackException("ISO-2022-JPのエスケープシーケンスが正しくありません。");
+                else throw new DecoderFallbackException(UiLanguage.T("ISO-2022-JPのエスケープシーケンスが正しくありません。", "The ISO-2022-JP escape sequence is invalid."));
                 i += 2;
                 continue;
             }
@@ -272,9 +272,9 @@ internal static class TextCodec
             if (mode == 1)
             {
                 if (b < 0x21 || b > 0x7e || ++i >= bytes.Length || bytes[i] < 0x21 || bytes[i] > 0x7e)
-                    throw new DecoderFallbackException("ISO-2022-JPの文字が途中で終わっているか、正しくありません。");
+                    throw new DecoderFallbackException(UiLanguage.T("ISO-2022-JPの文字が途中で終わっているか、正しくありません。", "An ISO-2022-JP character is incomplete or invalid."));
             }
-            else if (mode == 2 && (b < 0x21 || b > 0x5f)) throw new DecoderFallbackException("ISO-2022-JPの半角カナが正しくありません。");
+            else if (mode == 2 && (b < 0x21 || b > 0x5f)) throw new DecoderFallbackException(UiLanguage.T("ISO-2022-JPの半角カナが正しくありません。", "The ISO-2022-JP half-width kana is invalid."));
         }
     }
 }
