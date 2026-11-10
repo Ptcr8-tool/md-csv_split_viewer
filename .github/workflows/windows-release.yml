@@ -155,6 +155,17 @@ jobs:
         env:
           SETUP_NAME: ${{ steps.identity.outputs.setup }}
         run: ./tests/installer/Run-UpgradeV102Smoke.ps1 -OldSetup (Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.2-Setup.exe') -NewSetup "release/$env:SETUP_NAME"
+      - name: Download and verify v1.0.3
+        shell: pwsh
+        run: |
+          $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.3-Setup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.3/MD-Split-1.0.3-Setup.exe' -OutFile $old -MaximumRetryCount 5 -RetryIntervalSec 10
+          if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne '172cf4a064cbdd3016241403d64762ad6ea3a420560c85ad5df639873a5aa24a') { throw 'Published v1.0.3 setup hash mismatch.' }
+      - name: Verify upgrade and data preservation from v1.0.3
+        shell: powershell
+        env:
+          SETUP_NAME: ${{ steps.identity.outputs.setup }}
+        run: ./tests/installer/Run-UpgradeV102Smoke.ps1 -OldSetup (Join-Path $env:RUNNER_TEMP 'MD-Split-1.0.3-Setup.exe') -OldVersion '1.0.3' -NewSetup "release/$env:SETUP_NAME"
       - name: Verify CSV clipboard in WebView2
         shell: powershell
         run: ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
