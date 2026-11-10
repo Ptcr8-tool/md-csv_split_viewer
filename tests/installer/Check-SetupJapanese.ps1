@@ -51,10 +51,10 @@ function Wait-Text([int] $ProcessId, [string] $Expected, [string] $Page) {
     } while ([DateTime]::UtcNow -lt $until)
     throw "Setup UI text was not available or was incorrect on the $Page page. Ensure the CI runner has an interactive UI session."
 }
-function Invoke-Next($Dialog) {
+function Invoke-Next($Dialog, [string] $ButtonText) {
     foreach ($element in (Get-Elements $Dialog)) {
         if ($element.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
-            ($element.Current.Name -as [string]).Contains($next) -and $element.Current.IsEnabled) {
+            ($element.Current.Name -as [string]).Contains($ButtonText) -and $element.Current.IsEnabled) {
             $pattern = $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
             $pattern.Invoke()
             return
@@ -104,10 +104,10 @@ try {
     Select-InstallerLanguage $process.Id $true
     $dialog = Wait-Text $process.Id $welcome 'welcome'
     Write-Output 'PASS: the product-specific Japanese welcome text is readable.'
-    Invoke-Next $dialog
+    Invoke-Next $dialog $next
     $dialog = Wait-Text $process.Id $license 'license'
     Accept-License $dialog
-    Invoke-Next $dialog
+    Invoke-Next $dialog $next
     $dialog = Wait-Text $process.Id $componentHeader 'components'
     $null = Wait-Text $process.Id $componentHelp 'components help'
     $null = Wait-Text $process.Id $component 'component list'
@@ -124,10 +124,10 @@ try {
     $process = Start-Process -FilePath $setupPath -ArgumentList "/D=$installPath" -PassThru
     Select-InstallerLanguage $process.Id $false
     $dialog = Wait-Text $process.Id 'This installer includes the app and its runtime' 'English welcome'
-    Invoke-Next $dialog
+    Invoke-Next $dialog 'Next'
     $dialog = Wait-Text $process.Id 'These are the terms for the included Microsoft Edge WebView2 Runtime' 'English license'
     Accept-License $dialog
-    Invoke-Next $dialog
+    Invoke-Next $dialog 'Next'
     $null = Wait-Text $process.Id 'Choose Windows integrations' 'English components'
     $null = Wait-Text $process.Id 'Add to Start menu' 'English component list'
     Write-Output 'PASS: the selected English language appears on the welcome, license, and components pages.'
