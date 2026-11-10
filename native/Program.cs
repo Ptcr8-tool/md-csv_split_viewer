@@ -227,7 +227,9 @@ internal sealed class EditorContext : ApplicationContext
         settings.UpdateCheckDays=Math.Clamp(settings.UpdateCheckDays,-1,365);
         settings.FontSize = Math.Clamp(settings.FontSize, 11, 28); settings.Ratio = Math.Clamp(settings.Ratio, .22, .78); settings.Limit = Math.Clamp(settings.Limit, 32, 100000);
         settings.OpenPolicy = settings.OpenPolicy == "windows" ? "windows" : "tabs";
+        var languageChanged = Settings.Language != settings.Language;
         Settings = settings; UiLanguage.Current = settings.Language; await Storage.AtomicText(Storage.SettingsPath, JsonSerializer.Serialize(settings, Storage.Json));
+        if (languageChanged) { try { ContextMenuRegistration.RefreshLanguage(); } catch (Exception ex) { Storage.Log(ex); } }
         foreach (var w in Windows) w.Emit(new { type = "settings-changed", settings });
     }
     public async Task<bool> ClaimWelcome(bool noInitialDocuments)

@@ -1,3 +1,4 @@
+import {currentUiLanguage} from './i18n.js';
 const typeExtensions=Object.freeze({
   markdown:['md','markdown'],text:['txt','text','log'],html:['html','htm','xhtml'],csv:['csv'],tsv:['tsv'],json:['json','jsonc','json5'],xml:['xml','svg','xsd','xsl','xslt'],
   javascript:['js','mjs','cjs','jsx'],typescript:['ts','mts','cts','tsx'],css:['css'],scss:['scss','sass'],less:['less'],yaml:['yaml','yml'],toml:['toml'],ini:['ini','cfg','conf','properties'],
@@ -15,4 +16,4 @@ export function fileKind(doc){
 const kindOf=value=>typeof value==='string'&&Object.hasOwn(labels,value)?value:fileKind(value);
 export const isMarkdown=doc=>fileKind(doc)==='markdown';
 export const previewKind=doc=>['html','csv','tsv'].includes(kindOf(doc))?kindOf(doc):null;
-export const filetypeLabel=doc=>labels[kindOf(doc)]||labels.text;
+export const filetypeLabel=doc=>{const kind=kindOf(doc);return currentUiLanguage()==='en'?({text:'Text',ini:'Configuration',batch:'Batch'}[kind]||labels[kind]||'Text'):(labels[kind]||labels.text);};

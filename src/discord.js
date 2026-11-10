@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
 export function discordState(text, until) {
   let fence = null, inline = null, marks = [], quote = false, lineStart = 0;
@@ -79,13 +81,13 @@ function makePart(text,from,to,limit) {
 }
 export function splitDiscordAt(text, breaks, limit = 2000) {
   limit = Math.floor(Number(limit));
-  if (!Number.isFinite(limit) || limit < 32) throw new Error('文字数上限は32以上で指定してください。');
+  if (!Number.isFinite(limit) || limit < 32) throw new Error(tr('文字数上限は32以上で指定してください。','The character limit must be at least 32.'));
   const points=[0,...normalizeDiscordBreaks(text,breaks),text.length];
   return points.slice(1).map((to,i)=>makePart(text,points[i],to,limit));
 }
 export function splitDiscord(text, limit = 2000) {
   limit = Math.floor(Number(limit));
-  if (!Number.isFinite(limit) || limit < 32) throw new Error('文字数上限は32以上で指定してください。');
+  if (!Number.isFinite(limit) || limit < 32) throw new Error(tr('文字数上限は32以上で指定してください。','The character limit must be at least 32.'));
   if (!text) return [makePart('',0,0,limit)];
   if(clipboardLength(text)<=limit)return [makePart(text,0,text.length,limit)];
   const boundaries=discordBoundaries(text);
@@ -101,7 +103,7 @@ export function splitDiscord(text, limit = 2000) {
       const part=makePart(text,from,candidates[n],limit);
       if(!part.over){furthest=part;break;}
     }
-    if(!furthest)throw new Error('コードフェンスなどが上限内に入りません。上限を大きくするか、元の文章で区切ってください。');
+    if(!furthest)throw new Error(tr('コードフェンスなどが上限内に入りません。上限を大きくするか、元の文章で区切ってください。','A code fence or other block exceeds the limit. Increase the limit or split the source text.'));
     // Prefer a natural break only when it uses a reasonable part of the space.
     // Otherwise a single early paragraph could create several tiny messages.
     const min=from+Math.floor((furthest.to-from)*0.65);

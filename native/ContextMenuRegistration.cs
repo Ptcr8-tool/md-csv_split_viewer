@@ -22,12 +22,29 @@ internal static class ContextMenuRegistration
         return key?.GetValue(null) as string;
     }
     private static bool Owned(string path, string expected) => string.Equals(ExistingCommand(path), expected, StringComparison.OrdinalIgnoreCase);
+    internal static string OpenTitle => UiLanguage.T("MD-CSV Split Editor で開く", "Open with MD-CSV Split Editor");
+    internal static string NewTitle => UiLanguage.T("MD-CSV Split Editor で新規作成", "Create with MD-CSV Split Editor");
     private static (string Key, string Command, string Title)[] Entries() =>
     [
-        (FileKey, OpenCommand, "MD-CSV Split Editor で開く"),
-        (BackgroundKey, BackgroundCommand, "MD-CSV Split Editor で新規作成"),
-        (FolderKey, FolderCommand, "MD-CSV Split Editor で新規作成")
+        (FileKey, OpenCommand, OpenTitle),
+        (BackgroundKey, BackgroundCommand, NewTitle),
+        (FolderKey, FolderCommand, NewTitle)
     ];
+
+    public static void RefreshLanguage()
+    {
+        var changed = false;
+        foreach (var entry in Entries())
+        {
+            // Do not create entries or modify another installation's verbs.
+            if (!Owned(entry.Key, entry.Command)) continue;
+            using var verb = Registry.CurrentUser.OpenSubKey(entry.Key, writable: true);
+            if (verb is null || string.Equals(verb.GetValue("MUIVerb") as string, entry.Title, StringComparison.Ordinal)) continue;
+            verb.SetValue("MUIVerb", entry.Title);
+            changed = true;
+        }
+        if (changed) Storage.NotifyAssociationsChanged();
+    }
 
     public static object Status()
     {

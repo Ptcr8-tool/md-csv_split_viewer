@@ -129,6 +129,7 @@ export async function showSettings(api){
         $('#setting-outline').checked=entry.outlineVisible;$('#setting-outline').disabled=!caps.outline;
         $('#setting-sync').checked=entry.sync;$('#setting-sync').disabled=!caps.sync;
         $('#setting-type-note').textContent=chosenType==='markdown'?'見出しナビと左右連動に対応しています。':chosenType==='html'?'HTMLは原文と読み取り専用プレビューに対応します。見出しナビと左右連動は対象外です。':'CSV・TSVは原文と表の左右連動に対応します。見出しナビは対象外です。';
+        translateControls($('#setting-type-note'));
       };
       $('#setting-file-kind').addEventListener('change',()=>{readType();chosenType=$('#setting-file-kind').value;displayType();});
       for(const input of body.querySelectorAll('input[name="setting-theme"]'))input.checked=input.value===pick(original.theme,['system','light','dark'],'dark');
@@ -166,13 +167,13 @@ export async function showSettings(api){
         const refresh=async()=>{
           const state=await api.host('context-menu.status');
           control.checked=state.enabled||state.partial;status.textContent=state.partial?'一部のみ登録されています。オフにすると本アプリの登録を解除します。':state.enabled?'右クリックメニューを表示しています。':'右クリックメニューは表示していません。';
-          control.disabled=false;
+          translateControls(status);control.disabled=false;
         };
-        refresh().catch(()=>{status.textContent='右クリックメニューの設定を確認できませんでした。';});
+        refresh().catch(()=>{status.textContent='右クリックメニューの設定を確認できませんでした。';translateControls(status);});
         control.addEventListener('change',async()=>{
           control.disabled=true;
           try{await api.host('context-menu.set',{enabled:control.checked});await refresh();}
-          catch(error){status.textContent=error.message||'右クリックメニューを変更できませんでした。';try{const state=await api.host('context-menu.status');control.checked=state.enabled||state.partial;}catch{}control.disabled=false;}
+          catch(error){status.textContent=error.message||'右クリックメニューを変更できませんでした。';translateControls(status);try{const state=await api.host('context-menu.status');control.checked=state.enabled||state.partial;}catch{}control.disabled=false;}
         });
       }
       setupSettingsNavigation(body);

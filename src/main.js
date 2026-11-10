@@ -443,7 +443,7 @@ function download(name,mime,blob){const a=document.createElement('a');a.href=URL
 async function insertCodeBlock(){
   const d=current(),s=selection(),anchor=d.trackRange(s),selected=d.raw.slice(s.from,s.to);let automatic=selected;
   try{
-    const ok=await dialog(tr('コードブロックを挿入','Insert code block'),"<label class=\"field\">言語・プリセット<select id=\"code-preset\"></select></label><label class=\"field\">コード<textarea id=\"code-preset-body\" class=\"code-preset-body\" spellcheck=\"false\"></textarea></label><p class=\"muted\">言語を選ぶとサンプルを入れられます。入力済みのコードは維持します。</p>",()=>{
+    const ok=await dialog(tr('コードブロックを挿入','Insert code block'),tr('<label class="field">言語・プリセット<select id="code-preset"></select></label><label class="field">コード<textarea id="code-preset-body" class="code-preset-body" spellcheck="false"></textarea></label><p class="muted">言語を選ぶとサンプルを入れられます。入力済みのコードは維持します。</p>','<label class="field">Language / preset<select id="code-preset"></select></label><label class="field">Code<textarea id="code-preset-body" class="code-preset-body" spellcheck="false"></textarea></label><p class="muted">Choose a language to insert a sample. Existing code is preserved.</p>'),()=>{
       for(const preset of codePresets){const option=document.createElement('option');option.value=preset.id;option.textContent=preset.label;$('#code-preset').append(option);}
       $('#code-preset-body').value=selected;
       $('#code-preset').addEventListener('change',()=>{const input=$('#code-preset-body');if(!selected&&input.value===automatic){automatic=codePresets.find(p=>p.id===$('#code-preset').value)?.sample||'';input.value=automatic;}});
@@ -521,8 +521,8 @@ async function closeWindow(override){if(closingWindow)return;if(paneSession){if(
 function acceptFiles(items,options={}){for(const item of items){const old=documents.find(d=>d.path&&d.path.toLowerCase()===item.path?.toLowerCase());if(old)switchDocument(old.id);else newDocument(item,options);}}
 async function openFiles(){$('#file-input').dataset.encoding='';if(isDesktop){const items=await host('file.open');if(items)acceptFiles(items);}else $('#file-input').click();}
 async function encodingDialog(){
-  const d=current();const ok=await dialog(tr('文字コード','Encoding'),`<label class="field">文字コード<select id="chosen-encoding">${encodingChoices.map(c=>'<option value="'+c.id+'">'+c.label+'</option>').join('')}</select></label><label class="checkbox" id="encoding-bom-field"><input type="checkbox" id="encoding-bom">BOMを付けて保存する（UTF-16／32）</label><label class="field">操作<select id="encoding-action"><option value="save">次の保存から、この文字コードを使う</option><option value="reopen">この文字コードで元ファイルを開き直す</option><option value="open">この文字コードで別のファイルを開く</option></select></label><p class="muted" id="encoding-notice"></p>`,()=>{
-    $('#chosen-encoding').value=d.encoding;$('#encoding-bom').checked=d.hasBom??defaultBom(d.encoding);$('#encoding-notice').textContent=d.encodingNotice||'文字化けした場合は文字コードを選んで開き直せます。保存形式の変更は次に保存したときに反映します。';
+  const d=current();const ok=await dialog(tr('文字コード','Encoding'),`<label class="field">${tr('文字コード','Encoding')}<select id="chosen-encoding">${encodingChoices.map(c=>'<option value="'+c.id+'">'+c.label+'</option>').join('')}</select></label><label class="checkbox" id="encoding-bom-field"><input type="checkbox" id="encoding-bom">${tr('BOMを付けて保存する（UTF-16／32）','Save with BOM (UTF-16 / UTF-32)')}</label><label class="field">${tr('操作','Action')}<select id="encoding-action"><option value="save">${tr('次の保存から、この文字コードを使う','Use this encoding when saving')}</option><option value="reopen">${tr('この文字コードで元ファイルを開き直す','Reopen the original file with this encoding')}</option><option value="open">${tr('この文字コードで別のファイルを開く','Open another file with this encoding')}</option></select></label><p class="muted" id="encoding-notice"></p>`,()=>{
+    $('#chosen-encoding').value=d.encoding;$('#encoding-bom').checked=d.hasBom??defaultBom(d.encoding);$('#encoding-notice').textContent=d.encodingNotice||tr('文字化けした場合は文字コードを選んで開き直せます。保存形式の変更は次に保存したときに反映します。','If text looks incorrect, choose an encoding and reopen the file. Encoding changes take effect on the next save.');
     $('#encoding-action').querySelector('[value="reopen"]').disabled=!d.path&&!d.browserFile;
     const updateBom=()=>{$('#encoding-bom-field').hidden=!/^utf(?:16|32)/.test($('#chosen-encoding').value);$('#encoding-bom').disabled=$('#encoding-action').value!=='save';};
     $('#chosen-encoding').onchange=()=>{$('#encoding-bom').checked=defaultBom($('#chosen-encoding').value);updateBom();};$('#encoding-action').onchange=updateBom;updateBom();
@@ -539,11 +539,11 @@ async function lineEndingsDialog(){
   if(!current()||sourceBusy||composing||current().composing||peerInputLocked()){notify(tr('入力の変換を確定してから操作してください。','Finish text composition before continuing.'));return;}
   if(!md()&&!textPreview.finishEdit())return;
   const d=current(),raw=d.raw,revision=d.revision,counts=countLineEndings(raw);
-  const ok=await dialog(tr('改行コードの一括変換','Convert line endings'),`<p class="muted">文書全体の改行コードを変更します。CSVの引用符内やコードブロック内の改行も対象です。</p><p id="line-ending-counts"></p><label class="field">対象<select id="line-ending-from"><option value="CRLF">CRLF</option><option value="LF">LF</option><option value="CR">CR</option><option value="all">すべて</option></select></label><label class="field">変更後<select id="line-ending-to"><option value="LF">LF</option><option value="CRLF">CRLF</option><option value="CR">CR</option><option value="remove">改行を削除して行をつなぐ</option></select></label><p id="line-ending-summary" role="status"></p>`,body=>{
+  const ok=await dialog(tr('改行コードの一括変換','Convert line endings'),`<p class="muted">${tr('文書全体の改行コードを変更します。CSVの引用符内やコードブロック内の改行も対象です。','Changes line endings throughout the document, including inside quoted CSV cells and code blocks.')}</p><p id="line-ending-counts"></p><label class="field">${tr('対象','From')}<select id="line-ending-from"><option value="CRLF">CRLF</option><option value="LF">LF</option><option value="CR">CR</option><option value="all">${tr('すべて','All')}</option></select></label><label class="field">${tr('変更後','To')}<select id="line-ending-to"><option value="LF">LF</option><option value="CRLF">CRLF</option><option value="CR">CR</option><option value="remove">${tr('改行を削除して行をつなぐ','Remove line endings and join lines')}</option></select></label><p id="line-ending-summary" role="status"></p>`,body=>{
     const from=body.querySelector('#line-ending-from'),to=body.querySelector('#line-ending-to'),summary=body.querySelector('#line-ending-summary');
-    body.querySelector('#line-ending-counts').textContent=`CRLF: ${counts.CRLF.toLocaleString()}件 / LF: ${counts.LF.toLocaleString()}件 / CR: ${counts.CR.toLocaleString()}件`;
+    body.querySelector('#line-ending-counts').textContent=tr(`CRLF: ${counts.CRLF.toLocaleString()}件 / LF: ${counts.LF.toLocaleString()}件 / CR: ${counts.CR.toLocaleString()}件`,`CRLF: ${counts.CRLF.toLocaleString()} / LF: ${counts.LF.toLocaleString()} / CR: ${counts.CR.toLocaleString()}`);
     from.value=counts.CRLF?'CRLF':counts.LF?'LF':'CR';
-    const update=()=>{const total=from.value==='all'?counts.CRLF+counts.LF+counts.CR:counts[from.value];summary.textContent=to.value==='remove'?`${total.toLocaleString()}件の改行を削除し、前後の行をつなぎます。元に戻すことができます。`:`${total.toLocaleString()}件の対象を ${to.value} に変更します。元に戻すことができます。`;};
+    const update=()=>{const total=from.value==='all'?counts.CRLF+counts.LF+counts.CR:counts[from.value];summary.textContent=to.value==='remove'?tr(`${total.toLocaleString()}件の改行を削除し、前後の行をつなぎます。元に戻すことができます。`,`Remove ${total.toLocaleString()} line endings and join the lines. This can be undone.`):tr(`${total.toLocaleString()}件の対象を ${to.value} に変更します。元に戻すことができます。`,`Convert ${total.toLocaleString()} line endings to ${to.value}. This can be undone.`);};
     from.addEventListener('change',update);to.addEventListener('change',update);update();
   });
   if(!ok)return;
@@ -552,7 +552,7 @@ async function lineEndingsDialog(){
   if(result.text===raw){notify(tr('変更する改行コードはありません。','There are no line endings to change.'));return;}
   for(const anchor of d.anchors)anchor.valid=false;
   apply(0,raw.length,result.text,'command',{selection:result.selection});
-  notify(`${result.count.toLocaleString()}件の改行を処理しました。保存するとファイルに反映されます。`);
+  notify(tr(`${result.count.toLocaleString()}件の改行を処理しました。保存するとファイルに反映されます。`,`Processed ${result.count.toLocaleString()} line endings. Save to write the changes to the file.`));
 }
 listen('#line-endings','click',guard(lineEndingsDialog));
 const approvedBrowserFiles=new WeakSet();
