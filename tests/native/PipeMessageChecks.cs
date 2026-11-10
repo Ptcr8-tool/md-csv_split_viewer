@@ -6,6 +6,19 @@ internal static class PipeMessageChecks
 {
     public static async Task Run(Action<bool,string> assert)
     {
+        var originalLanguage = UiLanguage.Current;
+        try
+        {
+            UiLanguage.Current = "en";
+            var englishError = "";
+            try { PipeMessagePolicy.Decode("[null]"); } catch (IOException ex) { englishError = ex.Message; }
+            assert(englishError == "The file list format is invalid." && ContextMenuRegistration.OpenTitle.StartsWith("Open with"), "English pipe errors and context menu labels use the selected language");
+            UiLanguage.Current = "ja";
+            var japaneseError = "";
+            try { PipeMessagePolicy.Decode("[null]"); } catch (IOException ex) { japaneseError = ex.Message; }
+            assert(japaneseError == "ファイル一覧の形式が正しくありません。" && ContextMenuRegistration.OpenTitle.EndsWith("で開く"), "Japanese pipe errors and context menu labels use the selected language");
+        }
+        finally { UiLanguage.Current = originalLanguage; }
         var args = new[] { @"C:\Documents\文章 と 絵文字🙂.md", @"C:\Documents\表.csv", "--option" };
         var json = PipeMessagePolicy.Encode(args);
         assert(PipeMessagePolicy.Decode(json).SequenceEqual(args), "single-instance pipe preserves Windows paths, spaces, Unicode and options");

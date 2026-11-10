@@ -11,17 +11,18 @@ internal static class Program
     {
         StartupTrace.EnableIfRequested(args);
         ApplicationConfiguration.Initialize(); Storage.Initialize();
+        _ = Storage.LoadSettings(); // Apply the saved language before native startup dialogs.
         StartupTrace.Mark(StartupStage.StorageReady);
-        Application.ThreadException += (_, e) => { Storage.Log(e.Exception); MessageBox.Show("処理中にエラーが発生しました。\n" + e.Exception.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); };
+        Application.ThreadException += (_, e) => { Storage.Log(e.Exception); MessageBox.Show(UiLanguage.T("処理中にエラーが発生しました。\n", "An error occurred.\n") + e.Exception.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); };
         AppDomain.CurrentDomain.UnhandledException += (_, e) => { if(e.ExceptionObject is Exception ex) Storage.Log(ex); };
         try
         {
             if(args.Contains("--context-menu-enable")){ContextMenuRegistration.Set(true);return;}
             if(args.Contains("--context-menu-disable")){ContextMenuRegistration.Set(false);return;}
-            if (args.Contains("--register-only")||args.Contains("--register-quiet")) { Storage.RegisterAssociation(); try { ContextMenuRegistration.MigrateLegacy(); } catch (Exception ex) { Storage.Log(ex); } if(!args.Contains("--register-quiet"))MessageBox.Show("対応ファイルの候補にMD-CSV Split Editorを登録しました。既定のアプリはWindowsの設定で拡張子ごとに選んでください。", AppInfo.Title); return; }
+            if (args.Contains("--register-only")||args.Contains("--register-quiet")) { Storage.RegisterAssociation(); try { ContextMenuRegistration.MigrateLegacy(); } catch (Exception ex) { Storage.Log(ex); } if(!args.Contains("--register-quiet"))MessageBox.Show(UiLanguage.T("対応ファイルの候補にMD-CSV Split Editorを登録しました。既定のアプリはWindowsの設定で拡張子ごとに選んでください。", "MD-CSV Split Editor was registered as an app candidate for supported files. Choose default apps by file extension in Windows settings."), AppInfo.Title); return; }
             if(args.Contains("--unregister-quiet")){Maintenance.Unregister();return;}
             if(args.Contains("--repair")){Maintenance.Repair();return;}
-            var record=Array.IndexOf(args,"--record-installer");if(record>=0){if(record+1>=args.Length)throw new IOException("修復用ファイルがありません。");Maintenance.RecordInstaller(args[record+1]);return;}
+            var record=Array.IndexOf(args,"--record-installer");if(record>=0){if(record+1>=args.Length)throw new IOException(UiLanguage.T("修復用ファイルがありません。", "The repair file is missing."));Maintenance.RecordInstaller(args[record+1]);return;}
         }
         catch(Exception ex){Storage.Log(ex);MessageBox.Show(ex.Message,AppInfo.Title,MessageBoxButtons.OK,MessageBoxIcon.Warning);Environment.ExitCode=1;return;}
         using var mutex = new Mutex(true, "Local\\" + PipeName, out var first);
@@ -29,7 +30,7 @@ internal static class Program
         {
             StartupTrace.Mark(StartupStage.SecondaryInstance);
             try { var message=PipeMessagePolicy.Encode(args.Select(a=>a.StartsWith("--")?a:Path.GetFullPath(a)).ToArray()); using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out); StartupTrace.Mark(StartupStage.PipeConnectStart); client.Connect(5000); StartupTrace.Mark(StartupStage.PipeConnectComplete); using var writer = new StreamWriter(client); writer.WriteLine(message); }
-            catch (Exception ex) { StartupTrace.Mark(StartupStage.PipeConnectFailed); MessageBox.Show("起動中のMD-CSV Split Editorへファイルを渡せませんでした。\n" + ex.Message, AppInfo.Title); }
+            catch (Exception ex) { StartupTrace.Mark(StartupStage.PipeConnectFailed); MessageBox.Show(UiLanguage.T("起動中のMD-CSV Split Editorへファイルを渡せませんでした。\n", "Could not send the file to the running MD-CSV Split Editor.\n") + ex.Message, AppInfo.Title); }
             if (args.Contains("--startup-trace", StringComparer.Ordinal)) _ = StartupTrace.FlushAsync().GetAwaiter().GetResult();
             return;
         }
@@ -40,7 +41,7 @@ internal static class Program
 internal sealed class EditorContext : ApplicationContext
 {
     public bool ConfirmLargeFile(string path, IWin32Window? owner = null) => Storage.ApproveLargeFile(path, size =>
-        MessageBox.Show(owner, $"このファイルは約{size / 1024.0 / 1024.0:N1} MiBあります。\n読み込みや編集に時間がかかり、メモリを多く使用する場合があります。\n\n開きますか？", "大きなファイルを開く", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes);
+        MessageBox.Show(owner, UiLanguage.T($"このファイルは約{size / 1024.0 / 1024.0:N1} MiBあります。\n読み込みや編集に時間がかかり、メモリを多く使用する場合があります。\n\n開きますか？", $"This file is approximately {size / 1024.0 / 1024.0:N1} MiB. Opening or editing it may take time and use substantial memory.\n\nOpen it?"), UiLanguage.T("大きなファイルを開く", "Open large file"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes);
     public RecentFiles Recent { get; } = new(Path.Combine(Storage.Root,"recent.json"));
     public UpdateService Updates { get; } = new();
     internal TabTransfers Transfers { get; }
@@ -59,7 +60,7 @@ internal sealed class EditorContext : ApplicationContext
     {
         Transfers=new TabTransfers(this);
         StartupTrace.Mark(StartupStage.ContextStart);
-        updateWatchdog.Tick+=(_,_)=>{if(preparingUpdate)AbortUpdate("更新の準備が完了しなかったため中止しました。編集を続けられます。");};
+        updateWatchdog.Tick+=(_,_)=>{if(preparingUpdate)AbortUpdate(UiLanguage.T("更新の準備が完了しなかったため中止しました。編集を続けられます。", "The update was cancelled because preparation did not finish. You can continue editing."));};
         var restored = false;
         var sessionWarnings = new List<string>();
         var sessions = new Dictionary<string,SessionSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -67,10 +68,10 @@ internal sealed class EditorContext : ApplicationContext
         {
             try
             {
-                if (!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out _)) throw new IOException("タブの復元情報の名前が正しくありません。");
+                if (!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out _)) throw new IOException(UiLanguage.T("タブの復元情報の名前が正しくありません。", "The saved tab information filename is invalid."));
                 sessions.Add(file, SessionStore.Read(file));
             }
-            catch (Exception ex) { Storage.Log(ex); sessionWarnings.Add("保存されたタブの情報を読み取れませんでした。\n" + ex.Message); }
+            catch (Exception ex) { Storage.Log(ex); sessionWarnings.Add(UiLanguage.T("保存されたタブの情報を読み取れませんでした。\n", "Could not read the saved tab information.\n") + ex.Message); }
         }
         StartupTrace.Mark(StartupStage.SessionsScanned);
         // Clean-close markers commit the user's discard decision before the
@@ -105,7 +106,7 @@ internal sealed class EditorContext : ApplicationContext
                 if (initialSession.Documents.Count > 0) { AddWindow(initialSession, sessionFile: file); restored = true; }
                 else SessionStore.Consume(file, Storage.RecoveryPath, Storage.SessionPath);
             }
-            catch (Exception ex) { Storage.Log(ex); sessionWarnings.Add("保存されたタブの情報を読み取れませんでした。\n" + ex.Message); }
+            catch (Exception ex) { Storage.Log(ex); sessionWarnings.Add(UiLanguage.T("保存されたタブの情報を読み取れませんでした。\n", "Could not read the saved tab information.\n") + ex.Message); }
         }
         StartupTrace.Mark(StartupStage.SessionsRestored);
         var files = args.Where(a => !a.StartsWith("--") && File.Exists(a)).ToArray();
@@ -115,7 +116,7 @@ internal sealed class EditorContext : ApplicationContext
         else if (!restored) AddWindow();
         if(Windows.Count==0)AddWindow();
         RouteNewDirectory(args, lastActive);
-        if (sessionWarnings.Count > 0) MessageBox.Show("前回のタブの一部を開けませんでした。\n\n" + string.Join("\n\n", sessionWarnings), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        if (sessionWarnings.Count > 0) MessageBox.Show(UiLanguage.T("前回のタブの一部を開けませんでした。\n\n", "Some previously opened tabs could not be restored.\n\n") + string.Join("\n\n", sessionWarnings), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         pipeTask = ListenPipe();
         initializing = false; StartupTrace.Mark(StartupStage.ContextReady);
     }
@@ -155,7 +156,7 @@ internal sealed class EditorContext : ApplicationContext
         if (index < 0) return;
         if (index + 1 >= args.Length || !Path.IsPathFullyQualified(args[index + 1]) || !Directory.Exists(args[index + 1]))
         {
-            MessageBox.Show(origin, "新規作成するフォルダーが見つかりません。", AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(origin, UiLanguage.T("新規作成するフォルダーが見つかりません。", "The folder for the new file was not found."), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         var target = origin ?? lastActive ?? Windows.FirstOrDefault();
@@ -208,7 +209,7 @@ internal sealed class EditorContext : ApplicationContext
                 if (initializing) StartupTrace.Mark(target.IsStartupTraceWindow ? StartupStage.CommandFileInTracedWindow : StartupStage.CommandFileInOtherWindow);
                 target.BringForward();
             }
-            catch (Exception ex) { Storage.Log(ex); MessageBox.Show("ファイルを開けませんでした。\n" + candidate + "\n\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            catch (Exception ex) { Storage.Log(ex); MessageBox.Show(UiLanguage.T("ファイルを開けませんでした。\n", "Could not open the file.\n") + candidate + "\n\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         }
     }
     private void ShowBinary(string path, EditorWindow? origin)
@@ -226,7 +227,9 @@ internal sealed class EditorContext : ApplicationContext
         settings.UpdateCheckDays=Math.Clamp(settings.UpdateCheckDays,-1,365);
         settings.FontSize = Math.Clamp(settings.FontSize, 11, 28); settings.Ratio = Math.Clamp(settings.Ratio, .22, .78); settings.Limit = Math.Clamp(settings.Limit, 32, 100000);
         settings.OpenPolicy = settings.OpenPolicy == "windows" ? "windows" : "tabs";
-        Settings = settings; await Storage.AtomicText(Storage.SettingsPath, JsonSerializer.Serialize(settings, Storage.Json));
+        var languageChanged = Settings.Language != settings.Language;
+        Settings = settings; UiLanguage.Current = settings.Language; await Storage.AtomicText(Storage.SettingsPath, JsonSerializer.Serialize(settings, Storage.Json));
+        if (languageChanged) { try { ContextMenuRegistration.RefreshLanguage(); } catch (Exception ex) { Storage.Log(ex); } }
         foreach (var w in Windows) w.Emit(new { type = "settings-changed", settings });
     }
     public async Task<bool> ClaimWelcome(bool noInitialDocuments)

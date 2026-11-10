@@ -12,17 +12,17 @@ internal static class PipeMessagePolicy
 
     public static string Encode(string[] args)
     {
-        if (!Valid(args)) throw new IOException("一度に渡せるファイル数またはパスの長さを超えました。");
+        if (!Valid(args)) throw new IOException(UiLanguage.T("一度に渡せるファイル数またはパスの長さを超えました。", "The number of files or path length exceeds the limit."));
         var json = JsonSerializer.Serialize(args);
-        if (json.Length > MaxMessageLength) throw new IOException("起動中の画面へ渡すファイル一覧が大きすぎます。");
+        if (json.Length > MaxMessageLength) throw new IOException(UiLanguage.T("起動中の画面へ渡すファイル一覧が大きすぎます。", "The file list sent to the running window is too large."));
         return json;
     }
 
     public static string[] Decode(string json)
     {
-        if (json.Length > MaxMessageLength) throw new IOException("ファイル一覧が大きすぎます。");
+        if (json.Length > MaxMessageLength) throw new IOException(UiLanguage.T("ファイル一覧が大きすぎます。", "The file list is too large."));
         var args = JsonSerializer.Deserialize<string?[]>(json);
-        if (args is null || !Valid(args)) throw new IOException("ファイル一覧の形式が正しくありません。");
+        if (args is null || !Valid(args)) throw new IOException(UiLanguage.T("ファイル一覧の形式が正しくありません。", "The file list format is invalid."));
         return args.Select(x => x!).ToArray();
     }
 
@@ -40,7 +40,7 @@ internal static class PipeMessagePolicy
             {
                 if (buffer[i] == '\n') return result.Length > 0 && result[^1] == '\r' ? result.ToString(0, result.Length - 1) : result.ToString();
                 // Allow the CR in a maximum-length Windows CRLF-terminated message.
-                if (result.Length >= MaxMessageLength + 1) throw new IOException("ファイル一覧が大きすぎます。");
+                if (result.Length >= MaxMessageLength + 1) throw new IOException(UiLanguage.T("ファイル一覧が大きすぎます。", "The file list is too large."));
                 result.Append(buffer[i]);
             }
         }

@@ -18,20 +18,20 @@ internal sealed class RecoveryStore
     {
         if (order.Count != order.Distinct(StringComparer.Ordinal).Count() ||
             order.Any(id => !Guid.TryParse(id, out _)))
-            throw new IOException("復元データの文書IDが正しくありません。");
+            throw new IOException(UiLanguage.T("復元データの文書IDが正しくありません。", "The recovery document ID is invalid."));
         var changed = delta.Documents.ToDictionary(d => d.Id, StringComparer.Ordinal);
         if (changed.Count != delta.Documents.Count || changed.Keys.Any(id => !order.Contains(id)))
-            throw new IOException("復元データの文書IDが正しくありません。");
+            throw new IOException(UiLanguage.T("復元データの文書IDが正しくありません。", "The recovery document ID is invalid."));
 
         var next = new Dictionary<string, string>(committed, StringComparer.Ordinal);
         foreach (var doc in delta.Documents)
         {
-            if (!Guid.TryParse(doc.Id, out _)) throw new IOException("復元データの文書IDが正しくありません。");
+            if (!Guid.TryParse(doc.Id, out _)) throw new IOException(UiLanguage.T("復元データの文書IDが正しくありません。", "The recovery document ID is invalid."));
             var name = Guid.NewGuid().ToString("N") + ".json";
             await Storage.AtomicText(Path.Combine(directory, name), JsonSerializer.Serialize(doc, Storage.Json));
             next[doc.Id] = name;
         }
-        if (order.Any(id => !next.ContainsKey(id))) throw new IOException("復元データが不足しています。再度保存してください。");
+        if (order.Any(id => !next.ContainsKey(id))) throw new IOException(UiLanguage.T("復元データが不足しています。再度保存してください。", "Recovery data is missing. Save it again."));
         var manifest = new Manifest { Version = FormatVersion, Mode = delta.Mode, ActiveId = delta.ActiveId,
             Reason = delta.Reason, Documents = order.Select(id => new Entry { Id = id, File = next[id] }).ToList() };
         await Storage.AtomicText(path, JsonSerializer.Serialize(manifest, Storage.Json));
@@ -57,8 +57,8 @@ internal sealed class RecoveryStore
         if (!json.RootElement.TryGetProperty("version", out var version))
             return JsonSerializer.Deserialize<RecoveryData>(text, Storage.Json);
         if (version.ValueKind != JsonValueKind.Number || version.GetInt32() != FormatVersion)
-            throw new IOException("この復元データの形式には対応していません。");
-        var manifest = JsonSerializer.Deserialize<Manifest>(text, Storage.Json) ?? throw new IOException("復元データが壊れています。");
+            throw new IOException(UiLanguage.T("この復元データの形式には対応していません。", "This recovery data format is unsupported."));
+        var manifest = JsonSerializer.Deserialize<Manifest>(text, Storage.Json) ?? throw new IOException(UiLanguage.T("復元データが壊れています。", "The recovery data is corrupt."));
         var result = new RecoveryData { Mode = manifest.Mode, ActiveId = manifest.ActiveId, Reason = manifest.Reason };
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in manifest.Documents)
@@ -66,10 +66,10 @@ internal sealed class RecoveryStore
             if (!Guid.TryParse(entry.Id, out _) || !ids.Add(entry.Id) || entry.File.Length != 37 ||
                 !entry.File.EndsWith(".json", StringComparison.Ordinal) ||
                 !Guid.TryParseExact(entry.File[..32], "N", out _))
-                throw new IOException("復元データの参照が正しくありません。");
+                throw new IOException(UiLanguage.T("復元データの参照が正しくありません。", "The recovery data reference is invalid."));
             var doc = JsonSerializer.Deserialize<DocumentData>(File.ReadAllText(Path.Combine(path + ".documents", entry.File)), Storage.Json)
-                ?? throw new IOException("復元データが壊れています。");
-            if (!string.Equals(doc.Id, entry.Id, StringComparison.Ordinal)) throw new IOException("復元データの文書IDが一致しません。");
+                ?? throw new IOException(UiLanguage.T("復元データが壊れています。", "The recovery data is corrupt."));
+            if (!string.Equals(doc.Id, entry.Id, StringComparison.Ordinal)) throw new IOException(UiLanguage.T("復元データの文書IDが一致しません。", "The recovery document ID does not match."));
             result.Documents.Add(doc);
         }
         return result;

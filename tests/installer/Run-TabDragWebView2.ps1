@@ -33,7 +33,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Could not grant temporary runtime read access.' }
     }
     $data = Join-Path $application 'Data'; [void][IO.Directory]::CreateDirectory($data)
-    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","openPolicy":"tabs"}', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"language":"ja","welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","openPolicy":"tabs"}', [Text.UTF8Encoding]::new($false))
     $a = Join-Path $testRoot 'first.md'; $b = Join-Path $testRoot 'second.md'
     [IO.File]::WriteAllText($a, '# First fixture', [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($b, '# Second fixture', [Text.UTF8Encoding]::new($false))

@@ -107,8 +107,8 @@ internal static class BinaryPreview
         CancellationToken cancellation, Action<long, long>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(pattern);
-        if (pattern.Length == 0) throw new ArgumentException("検索文字を入力してください。", nameof(pattern));
-        if (pattern.Length > 1024 * 1024) throw new ArgumentException("検索文字が長すぎます。", nameof(pattern));
+        if (pattern.Length == 0) throw new ArgumentException(UiLanguage.T("検索文字を入力してください。", "Enter a search term."), nameof(pattern));
+        if (pattern.Length > 1024 * 1024) throw new ArgumentException(UiLanguage.T("検索文字が長すぎます。", "The search term is too long."), nameof(pattern));
         cancellation.ThrowIfCancellationRequested();
         var length = stream.Length;
         var candidates = length < pattern.Length ? 0 : length - pattern.Length + 1;

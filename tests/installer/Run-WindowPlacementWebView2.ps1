@@ -33,7 +33,7 @@ try {
     }
     $data = Join-Path $application 'Data'
     [void][IO.Directory]::CreateDirectory($data)
-    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","openPolicy":"tabs"}', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"language":"ja","welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","openPolicy":"tabs"}', [Text.UTF8Encoding]::new($false))
     $first = Join-Path $testRoot 'first.md'; $second = Join-Path $testRoot 'second.md'
     [IO.File]::WriteAllText($first, '# First', [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($second, '# Second', [Text.UTF8Encoding]::new($false))

@@ -1,3 +1,4 @@
+import {currentUiLanguage} from './i18n.js';
 // The search pattern uses .NET on Windows and JavaScript in the browser.
 // Replacement templates are expanded by this application in both versions.
 export const regexReference = [
@@ -63,3 +64,17 @@ export const regexReference = [
     ['空欄', '一致した文字列を削除します。']
   ]}
 ];
+
+// Keep syntax and engine-specific notes aligned with the Japanese reference.
+const englishTitles=['Search: characters and classes','Search: repetition','Search: positions and lookaround','Search: groups and alternation','Search: Windows-only syntax','Replacement syntax'];
+const englishDescriptions=[
+  ['Matches the literal character.','Any character; normally excludes LF on Windows and line terminators in the browser.','One of a, b, or c.','Any character except a, b, or c.','A character within the specified range.','Digit / non-digit. Windows includes Unicode digits; the browser matches ASCII digits.','Word character / non-word character. Character sets differ between Windows and browser.','Whitespace, including line breaks and tabs / non-whitespace.','Any character, including line breaks.','CR / LF / CRLF line endings.','Tab / vertical tab / form feed.','Two-digit hex / four-digit hex / control character.','NULL character.','Backspace within a character class.','Escape a special character to search for the character itself.','A literal backslash.'],
+  ['Repeat the preceding expression zero or more / one or more / zero or one times.','Repeat the preceding expression n / at least n / n to m times.','Match as few repetitions as possible.','Match as few repetitions as possible within the specified range.'],
+  ['Start / end of line. Multiline mode is enabled; CR may remain at the end of a CRLF line.','Word boundary / non-boundary.','Position followed by a matching / non-matching expression.','Position preceded by a matching / non-matching expression.'],
+  ['Match either expression.','Capture a numbered group.','Group without capturing.','Capture a named group.','Match the same text as a numbered group.','Match the same text as a named group.'],
+  ['Character in / outside a Unicode category or block.','Subtract one set of characters from another.','Start / absolute end / end or before final LF / end of previous match.','Bell / escape character.','Octal character code; digits can be interpreted as a backreference.','Alternative named-group syntax / its backreference.','Balancing group.','Atomic group; matched text is not reconsidered.','Choose an expression according to whether a group matched.','Choose an expression according to a condition.','Set case, multiline, capture, single-line or whitespace options / set them within a group.','A comment in the search expression.'],
+  ['The entire match.','Contents of a numbered group.','Contents of a named group. Names use letters, digits and underscores.','A literal dollar sign.',String.raw`Insert CR / LF / tab. Enter \r\n for CRLF.`,'A literal backslash.','Delete the matched text.']
+];
+const englishSyntax={ '文字':'character', '空欄':'empty', '式1|式2':'expression1|expression2', '(式)':'(expression)', '(?:式)':'(?:expression)', '(?<name>式)':'(?<name>expression)', '(?=式) / (?!式)':'(?=expression) / (?!expression)', '(?<=式) / (?<!式)':'(?<=expression) / (?<!expression)' };
+const englishReference=regexReference.map((group,i)=>({...group,title:englishTitles[i],rows:group.rows.map(([syntax],j)=>[englishSyntax[syntax]||syntax.replaceAll('式','expression').replaceAll('名前','name').replaceAll('条件','condition').replaceAll('分類','category').replaceAll('文字集合','set').replaceAll('除く文字','excluded').replaceAll(' など',' etc.').replaceAll(' ～ ',' to '),englishDescriptions[i][j]])}));
+export function getRegexReference(){return currentUiLanguage()==='en'?englishReference:regexReference;}

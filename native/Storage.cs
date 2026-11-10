@@ -53,7 +53,31 @@ internal static class Storage
         foreach(var file in Directory.EnumerateFiles(source))if((File.GetAttributes(file)&FileAttributes.ReparsePoint)==0&&!File.Exists(Path.Combine(target,Path.GetFileName(file))))File.Copy(file,Path.Combine(target,Path.GetFileName(file)));
         foreach(var directory in Directory.EnumerateDirectories(source))CopyDirectory(directory,Path.Combine(target,Path.GetFileName(directory)));
     }
-    public static AppSettings LoadSettings() { try { return (JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), Json) ?? new()).NormalizePresentation(); } catch { return new(); } }
+    public static AppSettings LoadSettings()
+    {
+        var result = new AppSettings();
+        var hasSavedLanguage = false;
+        try
+        {
+            var text = File.ReadAllText(SettingsPath);
+            using var document = JsonDocument.Parse(text);
+            hasSavedLanguage = document.RootElement.EnumerateObject().Any(p => p.Name.Equals("language", StringComparison.OrdinalIgnoreCase) && p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() is "ja" or "en");
+            result = JsonSerializer.Deserialize<AppSettings>(text, Json) ?? result;
+        }
+        catch { }
+        if (!hasSavedLanguage)
+        {
+            try
+            {
+                var selected = File.ReadAllText(Path.Combine(Root, "install-language.txt")).Trim('\uFEFF', '\0', ' ', '\t', '\r', '\n');
+                if (selected is "ja" or "en") result.Language = selected;
+            }
+            catch { }
+        }
+        result.NormalizePresentation();
+        UiLanguage.Current = result.Language;
+        return result;
+    }
     public static string DefaultSaveDirectory() => ExistingSaveDirectory(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
@@ -123,9 +147,9 @@ internal static class Storage
         {
             var attributes = File.GetAttributes(path);
             if ((attributes & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("シンボリックリンクなどの再解析ポイントには保存できません。リンク先のファイルを直接開いて保存してください。");
+                throw new IOException(UiLanguage.T("シンボリックリンクなどの再解析ポイントには保存できません。リンク先のファイルを直接開いて保存してください。", "Cannot save to a symbolic link or reparse point. Open the target file directly."));
             if ((attributes & FileAttributes.Directory) != 0)
-                throw new IOException("保存先はファイルではありません。");
+                throw new IOException(UiLanguage.T("保存先はファイルではありません。", "The save destination is not a file."));
             return true;
         }
         catch (FileNotFoundException) { return false; }
@@ -136,9 +160,9 @@ internal static class Storage
     {
         path = Path.GetFullPath(path);
         var info = new FileInfo(path);
-        if (!FileSizeApproved(path, info.Length)) throw new IOException("大きなファイルを開くには確認が必要です。");
+        if (!FileSizeApproved(path, info.Length)) throw new IOException(UiLanguage.T("大きなファイルを開くには確認が必要です。", "Confirmation is required to open a large file."));
         var bytes = File.ReadAllBytes(path);
-        if (!FileSizeApproved(path, bytes.LongLength)) throw new IOException("ファイルのサイズが変わりました。開き直してください。");
+        if (!FileSizeApproved(path, bytes.LongLength)) throw new IOException(UiLanguage.T("ファイルのサイズが変わりました。開き直してください。", "The file size has changed. Reopen the file."));
         var decoded = TextCodec.Decode(bytes, forceEncoding);
         return new DocumentData
         {
@@ -170,7 +194,7 @@ internal static class Storage
     }
     public static DocumentData ReloadDocument(DocumentData document)
     {
-        if (document.Path is null) throw new IOException("元ファイルが見つかりません。");
+        if (document.Path is null) throw new IOException(UiLanguage.T("元ファイルが見つかりません。", "The original file was not found."));
         var result = ReadFile(document.Path, document.Id, document.SavedEncoding ?? document.Encoding);
         result.EncodingGuessed = document.EncodingGuessed;
         result.EncodingNotice = document.EncodingNotice;
@@ -198,7 +222,7 @@ internal static class Storage
     public static string UrlPath(string path) => string.Join("/",path.Replace('\\','/').Split('/').Select(Uri.EscapeDataString));
     public static string StagingDirectory(string id)
     {
-        if (!Guid.TryParse(id, out _)) throw new IOException("文書IDが正しくありません。");
+        if (!Guid.TryParse(id, out _)) throw new IOException(UiLanguage.T("文書IDが正しくありません。", "Invalid document ID."));
         return Path.Combine(Root, "Images", id);
     }
     internal const int MaxPreviewImageBytes = 32 * 1024 * 1024;
@@ -207,14 +231,14 @@ internal static class Storage
         // Open asynchronously so a slow disk does not block the WebView thread.
         // Recheck while reading because a file can grow after its initial stat.
         await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        if (input.Length > MaxPreviewImageBytes) throw new IOException("画像は1枚32MBまでプレビューできます。");
+        if (input.Length > MaxPreviewImageBytes) throw new IOException(UiLanguage.T("画像は1枚32MBまでプレビューできます。", "Images up to 32 MB can be previewed."));
         using var output = new MemoryStream((int)input.Length);
         var buffer = new byte[65536];
         while (true)
         {
             var count = await input.ReadAsync(buffer, cancellation);
             if (count == 0) break;
-            if (output.Length + count > MaxPreviewImageBytes) throw new IOException("画像は1枚32MBまでプレビューできます。");
+            if (output.Length + count > MaxPreviewImageBytes) throw new IOException(UiLanguage.T("画像は1枚32MBまでプレビューできます。", "Images up to 32 MB can be previewed."));
             output.Write(buffer, 0, count);
         }
         return output.ToArray();
@@ -259,7 +283,7 @@ internal static class Storage
     }
     public static void RegisterAssociation()
     {
-        var exe = Environment.ProcessPath ?? throw new IOException("実行ファイルが見つかりません。");
+        var exe = Environment.ProcessPath ?? throw new IOException(UiLanguage.T("実行ファイルが見つかりません。", "The executable was not found."));
         const string progId = AssociationProgId;
         // A new path makes Explorer reload redesigned icons instead of reusing
         // stale per-user cached images from earlier versions.
@@ -427,6 +451,7 @@ internal static class Storage
 
 internal sealed class AppSettings
 {
+    public string Language { get; set; } = UiLanguage.SystemDefault();
     public string SessionPolicy { get; set; } = "clear";
     public string StartupFormat { get; set; } = "md";
     public string OpenPolicy { get; set; } = "tabs";
@@ -454,6 +479,7 @@ internal sealed class AppSettings
     public int Limit { get; set; } = 2000;
     public AppSettings NormalizePresentation()
     {
+        Language = Language is "ja" or "en" ? Language : UiLanguage.SystemDefault();
         SessionPolicy = SessionPolicy is "all" or "active" ? SessionPolicy : "clear";
         StartupFormat = StartupFormat is "md" or "csv" or "txt" or "html" or "json" or "tsv" or "xml" ? StartupFormat : "md";
         ViewMode = ViewMode is "source" or "preview" ? ViewMode : "split";
@@ -486,6 +512,7 @@ internal sealed class AppSettings
         return this;
     }
 }
+
 internal sealed class FileTypePresentation
 {
     public string? ViewMode { get; set; }

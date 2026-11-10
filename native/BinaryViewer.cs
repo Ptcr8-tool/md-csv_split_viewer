@@ -10,18 +10,18 @@ internal sealed class BinaryViewer : Form
 {
     private const int ScrollScale = 1_000_000;
     private readonly string path;
-    private readonly Label status = new() { Name = "BinaryStatus", AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 8), Text = "ファイルを読み込んでいます…" };
-    private readonly HexTextBox output = new() { Name = "BinaryContent", Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Horizontal, Font = new Font("Consolas", 10), ShortcutsEnabled = true, MaxLength = int.MaxValue, AccessibleName = "バイナリ内容" };
-    private readonly VScrollBar scroll = new() { Name = "BinaryScroll", Dock = DockStyle.Fill, Minimum = 0, Maximum = ScrollScale, LargeChange = 1, SmallChange = 1, Enabled = false, AccessibleName = "ファイル全体をスクロール" };
-    private readonly ComboBox searchMode = new() { Name = "BinarySearchMode", DropDownStyle = ComboBoxStyle.DropDownList, Width = 155, AccessibleName = "検索方法" };
-    private readonly TextBox searchText = new() { Name = "BinarySearchText", Width = 230, MaxLength = 4096, AccessibleName = "検索する文字列" };
-    private readonly Button searchNext = new() { Name = "BinarySearchNext", Text = "次を検索", AutoSize = true, Enabled = false };
-    private readonly Button searchPrevious = new() { Name = "BinarySearchPrevious", Text = "前を検索", AutoSize = true, Enabled = false };
-    private readonly Button searchCancel = new() { Name = "BinarySearchCancel", Text = "検索を中止", AutoSize = true, Enabled = false };
-    private readonly Button first = new() { Name = "BinaryFirst", Text = "先頭", AutoSize = true, Enabled = false };
-    private readonly Button last = new() { Name = "BinaryLast", Text = "末尾", AutoSize = true, Enabled = false };
-    private readonly TextBox offsetInput = new() { Name = "BinaryOffset", Width = 150, AccessibleName = "移動するバイト位置", PlaceholderText = "10進数または0x16進数" };
-    private readonly Button goToOffset = new() { Name = "BinaryGoOffset", Text = "位置へ移動", AutoSize = true, Enabled = false };
+    private readonly Label status = new() { Name = "BinaryStatus", AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 8), Text = UiLanguage.T("ファイルを読み込んでいます…", "Loading file…") };
+    private readonly HexTextBox output = new() { Name = "BinaryContent", Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Horizontal, Font = new Font("Consolas", 10), ShortcutsEnabled = true, MaxLength = int.MaxValue, AccessibleName = UiLanguage.T("バイナリ内容", "Binary contents") };
+    private readonly VScrollBar scroll = new() { Name = "BinaryScroll", Dock = DockStyle.Fill, Minimum = 0, Maximum = ScrollScale, LargeChange = 1, SmallChange = 1, Enabled = false, AccessibleName = UiLanguage.T("ファイル全体をスクロール", "Scroll the entire file") };
+    private readonly ComboBox searchMode = new() { Name = "BinarySearchMode", DropDownStyle = ComboBoxStyle.DropDownList, Width = 155, AccessibleName = UiLanguage.T("検索方法", "Search mode") };
+    private readonly TextBox searchText = new() { Name = "BinarySearchText", Width = 230, MaxLength = 4096, AccessibleName = UiLanguage.T("検索する文字列", "Search text") };
+    private readonly Button searchNext = new() { Name = "BinarySearchNext", Text = UiLanguage.T("次を検索", "Find next"), AutoSize = true, Enabled = false };
+    private readonly Button searchPrevious = new() { Name = "BinarySearchPrevious", Text = UiLanguage.T("前を検索", "Find previous"), AutoSize = true, Enabled = false };
+    private readonly Button searchCancel = new() { Name = "BinarySearchCancel", Text = UiLanguage.T("検索を中止", "Cancel search"), AutoSize = true, Enabled = false };
+    private readonly Button first = new() { Name = "BinaryFirst", Text = UiLanguage.T("先頭", "First"), AutoSize = true, Enabled = false };
+    private readonly Button last = new() { Name = "BinaryLast", Text = UiLanguage.T("末尾", "Last"), AutoSize = true, Enabled = false };
+    private readonly TextBox offsetInput = new() { Name = "BinaryOffset", Width = 150, AccessibleName = UiLanguage.T("移動するバイト位置", "Byte offset"), PlaceholderText = UiLanguage.T("10進数または0x16進数", "Decimal or 0x hexadecimal") };
+    private readonly Button goToOffset = new() { Name = "BinaryGoOffset", Text = UiLanguage.T("位置へ移動", "Go to offset"), AutoSize = true, Enabled = false };
     private long length;
     private long requestedLine;
     private long? highlightOffset;
@@ -37,16 +37,16 @@ internal sealed class BinaryViewer : Form
     internal BinaryViewer(string path)
     {
         this.path = path;
-        Text = Path.GetFileName(path) + " — バイナリ表示（読み取り専用）";
+        Text = Path.GetFileName(path) + UiLanguage.T(" — バイナリ表示（読み取り専用）", " — Binary view (read-only)");
         Width = 1120; Height = 700; MinimumSize = new Size(650, 380); StartPosition = FormStartPosition.CenterParent;
         KeyPreview = true;
 
-        searchMode.Items.AddRange(["文字列（UTF-8）", "文字列（UTF-16 LE）", "文字列（Shift_JIS）", "16進数"]);
+        searchMode.Items.AddRange([UiLanguage.T("文字列（UTF-8）", "Text (UTF-8)"), UiLanguage.T("文字列（UTF-16 LE）", "Text (UTF-16 LE)"), UiLanguage.T("文字列（Shift_JIS）", "Text (Shift_JIS)"), UiLanguage.T("16進数", "Hexadecimal")]);
         searchMode.SelectedIndex = 0;
         var searchBar = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = true, Padding = new Padding(8, 0, 8, 0) };
-        searchBar.Controls.AddRange([new Label { Text = "全体を検索", AutoSize = true, Padding = new Padding(0, 7, 0, 0) }, searchMode, searchText, searchPrevious, searchNext, searchCancel]);
+        searchBar.Controls.AddRange([new Label { Text = UiLanguage.T("全体を検索", "Search entire file"), AutoSize = true, Padding = new Padding(0, 7, 0, 0) }, searchMode, searchText, searchPrevious, searchNext, searchCancel]);
         var navigation = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = true, Padding = new Padding(8, 0, 8, 4) };
-        navigation.Controls.AddRange([first, last, new Label { Text = "バイト位置", AutoSize = true, Padding = new Padding(8, 7, 0, 0) }, offsetInput, goToOffset]);
+        navigation.Controls.AddRange([first, last, new Label { Text = UiLanguage.T("バイト位置", "Byte offset"), AutoSize = true, Padding = new Padding(8, 7, 0, 0) }, offsetInput, goToOffset]);
 
         var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
         content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -146,7 +146,7 @@ internal sealed class BinaryViewer : Form
         var digits = hex ? raw[2..] : raw;
         if (!long.TryParse(digits, hex ? NumberStyles.AllowHexSpecifier : NumberStyles.None, CultureInfo.InvariantCulture, out var offset) || offset < 0)
         {
-            status.Text = "バイト位置には 0 以上の整数、または 0x で始まる16進数を入力してください。";
+            status.Text = UiLanguage.T("バイト位置には 0 以上の整数、または 0x で始まる16進数を入力してください。", "Enter a non-negative integer or hexadecimal offset starting with 0x.");
             return;
         }
         RequestView(offset / BinaryPreview.BytesPerLine, offset);
@@ -208,12 +208,12 @@ internal sealed class BinaryViewer : Form
                             output.SelectionLength = Math.Min(Math.Max(0, output.TextLength - output.SelectionStart),
                                 Math.Max(2, Math.Min(highlightLength, BinaryPreview.BytesPerLine - column) * 3 - 1));
                         }
-                        status.Text = $"読み取り専用・全 {length:N0} バイト　一致位置 {match:N0} バイト";
+                        status.Text = UiLanguage.T($"読み取り専用・全 {length:N0} バイト　一致位置 {match:N0} バイト", $"Read-only · {length:N0} bytes · Match at {match:N0}");
                     }
                     else
                     {
-                        var range = result.Bytes.Length == 0 ? "空のファイル" : $"表示位置 {result.Offset:N0}〜{result.Offset + result.Bytes.Length - 1:N0} バイト";
-                        status.Text = $"読み取り専用・全 {length:N0} バイト　{range}";
+                        var range = result.Bytes.Length == 0 ? UiLanguage.T("空のファイル", "Empty file") : UiLanguage.T($"表示位置 {result.Offset:N0}〜{result.Offset + result.Bytes.Length - 1:N0} バイト", $"Showing {result.Offset:N0}–{result.Offset + result.Bytes.Length - 1:N0}");
+                        status.Text = UiLanguage.T($"読み取り専用・全 {length:N0} バイト　{range}", $"Read-only · {length:N0} bytes · {range}");
                     }
                     return;
                 }
@@ -221,7 +221,7 @@ internal sealed class BinaryViewer : Form
                 {
                     if (IsDisposed) return;
                     if (request != viewRequest) continue;
-                    status.Text = "ファイルを読み込めませんでした: " + ex.Message;
+                    status.Text = UiLanguage.T("ファイルを読み込めませんでした: ", "Could not load the file: ") + ex.Message;
                     return;
                 }
             }
@@ -231,13 +231,13 @@ internal sealed class BinaryViewer : Form
 
     private byte[] SearchBytes()
     {
-        if (searchText.Text.Length == 0) throw new ArgumentException("検索する文字列を入力してください。");
+        if (searchText.Text.Length == 0) throw new ArgumentException(UiLanguage.T("検索する文字列を入力してください。", "Enter text to search for."));
         if (searchMode.SelectedIndex == 3)
         {
             var hex = new string(searchText.Text.Where(c => !char.IsWhiteSpace(c) && c != '-').ToArray());
-            if (hex.Length == 0) throw new ArgumentException("検索する16進数を入力してください。");
+            if (hex.Length == 0) throw new ArgumentException(UiLanguage.T("検索する16進数を入力してください。", "Enter hexadecimal bytes to search for."));
             try { return Convert.FromHexString(hex); }
-            catch (FormatException) { throw new ArgumentException("16進数は「DE AD BE EF」のように入力してください。"); }
+            catch (FormatException) { throw new ArgumentException(UiLanguage.T("16進数は「DE AD BE EF」のように入力してください。", "Enter hexadecimal bytes like DE AD BE EF.")); }
         }
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var encoding = searchMode.SelectedIndex switch
@@ -247,7 +247,7 @@ internal sealed class BinaryViewer : Form
             _ => new UTF8Encoding(false, true)
         };
         try { return encoding.GetBytes(searchText.Text); }
-        catch (EncoderFallbackException) { throw new ArgumentException("選択した文字コードに変換できない文字が含まれています。"); }
+        catch (EncoderFallbackException) { throw new ArgumentException(UiLanguage.T("選択した文字コードに変換できない文字が含まれています。", "The text contains characters that cannot be converted to the selected encoding.")); }
     }
 
     private async Task SearchAsync(bool backwards)
@@ -264,13 +264,13 @@ internal sealed class BinaryViewer : Form
         searchCancellation = cts;
         searchNext.Enabled = searchPrevious.Enabled = searchText.Enabled = searchMode.Enabled = false;
         searchCancel.Enabled = true;
-        status.Text = "ファイル全体を検索しています…";
+        status.Text = UiLanguage.T("ファイル全体を検索しています…", "Searching the entire file…");
         var watch = Stopwatch.StartNew();
         IProgress<(long Done, long Total)> progress = new Progress<(long Done, long Total)>(p =>
         {
             if (searchCancellation != cts || IsDisposed) return;
             var percent = p.Total == 0 ? 100 : Math.Min(100, (int)(100m * p.Done / p.Total));
-            status.Text = $"ファイル全体を検索しています… {percent}%";
+            status.Text = UiLanguage.T($"ファイル全体を検索しています… {percent}%", $"Searching the entire file… {percent}%");
         });
 
         try
@@ -293,12 +293,12 @@ internal sealed class BinaryViewer : Form
                 return (Found: found, Wrapped: wrapped);
             }, cts.Token);
             if (IsDisposed) return;
-            if (result.Found < 0) { status.Text = "ファイル全体に一致する内容はありませんでした。"; return; }
+            if (result.Found < 0) { status.Text = UiLanguage.T("ファイル全体に一致する内容はありませんでした。", "No matches were found in the file."); return; }
             lastMatch = result.Found;
             RequestView(result.Found / BinaryPreview.BytesPerLine, result.Found, pattern.Length);
         }
-        catch (OperationCanceledException) { if (!IsDisposed) status.Text = "検索を中止しました。"; }
-        catch (Exception ex) { if (!IsDisposed) status.Text = "検索できませんでした: " + ex.Message; }
+        catch (OperationCanceledException) { if (!IsDisposed) status.Text = UiLanguage.T("検索を中止しました。", "Search cancelled."); }
+        catch (Exception ex) { if (!IsDisposed) status.Text = UiLanguage.T("検索できませんでした: ", "Search failed: ") + ex.Message; }
         finally
         {
             searchCancellation = null;

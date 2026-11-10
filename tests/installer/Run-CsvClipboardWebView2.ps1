@@ -47,7 +47,7 @@ try {
     }
     $data = Join-Path $application 'Data'
     [void][IO.Directory]::CreateDirectory($data)
-    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"welcomeShown":true,"updateCheckDays":-1}', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"language":"ja","welcomeShown":true,"updateCheckDays":-1}', [Text.UTF8Encoding]::new($false))
     $csv = Join-Path $testRoot 'fixture.csv'
     # Physical CRLF row separators with two distinct in-cell newline styles.
     $lfRow = "`"lf`nvalue`",lfTarget`r`n"

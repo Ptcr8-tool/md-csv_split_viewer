@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 import {buildHtmlPreview} from './html-preview.js';
 import {parseDelimited} from './csv-parser.js';
 import {csvCellAlignment} from './csv-view.js';
@@ -49,7 +51,7 @@ export function buildPrintContent({side,raw,kind,preview,textPreview,fontSize=15
     }
     root.append(table);return root;
   }
-  throw new Error('このファイルには展開表示がありません。');
+  throw new Error(tr('このファイルには展開表示がありません。','This file has no preview.'));
 }
 
 export function setPrintContent(content){
