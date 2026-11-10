@@ -6,7 +6,7 @@ const originals=new WeakMap();
 let language='ja';
 export function preferredLanguage(locale){return !locale||/^ja(?:-|$)/i.test(locale)?'ja':'en';}
 export function normalizeLanguage(value,locale){return value==='ja'||value==='en'?value:preferredLanguage(locale);}
-export function setUiLanguage(value){language=normalizeLanguage(value,globalThis.navigator?.language);if(typeof document!=='undefined')document.documentElement.lang=language;}
+export function setUiLanguage(value){const previous=language;language=normalizeLanguage(value,globalThis.navigator?.language);if(typeof document!=='undefined'){document.documentElement.lang=language;if(previous!==language)document.dispatchEvent(new Event('mdsplit-languagechange'));}}
 export function currentUiLanguage(){return language;}
 
 // Only call on application-owned control roots. Never traverse editable content,

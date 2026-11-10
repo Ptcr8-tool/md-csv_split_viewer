@@ -86,7 +86,7 @@ internal sealed class EditorWindow : Form
     public void Emit(object message) { if (!ready) { queued.Enqueue(message); return; } if (!IsDisposed) web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, Storage.Json)); }
     private void Track(DocumentData doc)
     {
-        if (!Guid.TryParse(doc.Id, out _)) throw new IOException("文書IDが正しくありません。");
+        if (!Guid.TryParse(doc.Id, out _)) throw new IOException(UiLanguage.T("文書IDが正しくありません。", "The document ID is invalid."));
         Documents[doc.Id] = doc;
         // The first background poll will establish the timestamp without blocking
         // the editor when the document is on a slow or unavailable drive.
@@ -97,7 +97,7 @@ internal sealed class EditorWindow : Form
         try
         {
             var contentFolder = UiContent.GetFolder(AppContext.BaseDirectory);
-            var runtime=Path.Combine(AppContext.BaseDirectory,"WebView2Runtime");if(!File.Exists(Path.Combine(runtime,"msedgewebview2.exe")))throw new IOException("同梱の表示環境が見つかりません。セットアップの「修復」を実行してください。");
+            var runtime=Path.Combine(AppContext.BaseDirectory,"WebView2Runtime");if(!File.Exists(Path.Combine(runtime,"msedgewebview2.exe")))throw new IOException(UiLanguage.T("同梱の表示環境が見つかりません。セットアップの「修復」を実行してください。", "The included display runtime was not found. Run Repair from the installer."));
             if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WebEnvironmentStart);
             var environment = await CoreWebView2Environment.CreateAsync(runtime, Path.Combine(Storage.Root, "WebView2"),new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments="--disable-background-networking --disable-component-update", IsCustomCrashReportingEnabled=true });
             if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WebEnvironmentReady);
@@ -116,7 +116,7 @@ internal sealed class EditorWindow : Form
             MessageBox.Show(this,UiLanguage.T("同梱のWebView2 Runtimeを起動できません。セットアップの「修復」を実行してください。", "Could not start the included WebView2 Runtime. Run Repair from the installer."),AppInfo.Title,MessageBoxButtons.OK,MessageBoxIcon.Warning);
             allowClose = true; Close();
         }
-        catch (Exception ex) { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.WebInitializationFailed); _ = Task.Run(StartupTrace.FlushAsync); } Storage.Log(ex); MessageBox.Show(this, "起動できませんでした。\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); allowClose = true; Close(); }
+        catch (Exception ex) { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.WebInitializationFailed); _ = Task.Run(StartupTrace.FlushAsync); } Storage.Log(ex); MessageBox.Show(this, UiLanguage.T("起動できませんでした。\n", "Could not start.\n") + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); allowClose = true; Close(); }
     }
     private static void PrepareWebView(CoreWebView2 core, string contentFolder)
     {
@@ -171,7 +171,7 @@ internal sealed class EditorWindow : Form
             Storage.Log(new IOException($"UI navigation failed: {core.Source}; error={e.WebErrorStatus}; contentFolder={contentFolder}"));
             if (popup is not null) { popup.ForceClose(); NotifyPane(new { type = "pane-window-error", pane = popup.Pane, message = UiLanguage.T("別ウィンドウを読み込めませんでした。", "Could not load the separate window.") }); }
             else if (!ready && !allowClose)
-                MessageBox.Show(this, "画面を読み込めませんでした。\nエラー: " + e.WebErrorStatus + "\n\n詳しい原因をエラーログへ記録しました。", AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, UiLanguage.T("画面を読み込めませんでした。\nエラー: ", "Could not load the view.\nError: ") + e.WebErrorStatus + UiLanguage.T("\n\n詳しい原因をエラーログへ記録しました。", "\n\nDetails were recorded in the error log."), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
         };
         core.NewWindowRequested += async (_, e) =>
         {
@@ -230,7 +230,7 @@ internal sealed class EditorWindow : Form
                 if (popup is not null && method == "window.title") { popup.Text = root.GetProperty("args").GetProperty("title").GetString(); result = true; }
                 else if (popup is not null && method == "window.close") { popup.BeginInvoke(popup.ForceClose); result = true; }
                 else if (method == "print.show") { core.ShowPrintUI(); result = true; }
-                else if (popup is not null && method is "bootstrap" or "recovery.write" or "update.ready" or "startup.ready" or "startup.firstInput") throw new IOException("別ウィンドウは元の編集ウィンドウを通して操作してください。");
+                else if (popup is not null && method is "bootstrap" or "recovery.write" or "update.ready" or "startup.ready" or "startup.firstInput") throw new IOException(UiLanguage.T("別ウィンドウは元の編集ウィンドウを通して操作してください。", "Control the separate window through the original editor window."));
                 else if (method == "file.drop")
                 {
                     // Accept native-backed File objects rather than paths supplied in JSON.
@@ -282,7 +282,7 @@ internal sealed class EditorWindow : Form
         public PanePopup(string pane, Icon? icon)
         {
             Pane = pane;
-            Text = pane == "source" ? $"Markdown原文 — {AppInfo.Title}" : $"展開表示 — {AppInfo.Title}";
+            Text = pane == "source" ? UiLanguage.T($"Markdown原文 — {AppInfo.Title}", $"Markdown source — {AppInfo.Title}") : UiLanguage.T($"展開表示 — {AppInfo.Title}", $"Preview — {AppInfo.Title}");
             Width = 850; Height = 820; MinimumSize = new Size(480, 360);
             StartPosition = FormStartPosition.CenterParent; AutoScaleMode = AutoScaleMode.Dpi;
             if (icon is not null) Icon = (Icon)icon.Clone();
@@ -344,7 +344,7 @@ internal sealed class EditorWindow : Form
                 var changedFingerprint = args.GetProperty("fingerprint").GetString();
                 var currentDoc = DocumentAuthority.Require(Documents, changedId);
                 if (!pendingExternal.TryGetValue(changedId!, out var pending) || pending.Changed.Fingerprint != changedFingerprint || currentDoc.Fingerprint != pending.PreviousFingerprint || !string.Equals(currentDoc.Path, pending.Changed.Path, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException("ファイルの変更状態が更新されました。開き直してください。");
+                    throw new IOException(UiLanguage.T("ファイルの変更状態が更新されました。開き直してください。", "The file modification state changed. Reopen the file."));
                 Track(pending.Changed); pendingExternal.Remove(changedId!); return true;
             case "file.new":
                 var proposedName = args.TryGetProperty("name", out var newName) ? newName.GetString() : null;
@@ -352,7 +352,7 @@ internal sealed class EditorWindow : Form
                 if (args.TryGetProperty("folderToken", out var folderTokenValue))
                 {
                     var folderToken = folderTokenValue.GetString();
-                    if (folderToken is null || !requestedDirectories.Remove(folderToken, out var folder)) throw new IOException("作成先を確認できません。もう一度フォルダーから操作してください。");
+                    if (folderToken is null || !requestedDirectories.Remove(folderToken, out var folder)) throw new IOException(UiLanguage.T("作成先を確認できません。もう一度フォルダーから操作してください。", "Could not confirm the destination. Retry from the folder."));
                     return CreateFileInDirectory(folder, proposedName, proposedEncoding);
                 }
                 context.NewFile(this, proposedName, proposedEncoding); return true;

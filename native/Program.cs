@@ -19,10 +19,10 @@ internal static class Program
         {
             if(args.Contains("--context-menu-enable")){ContextMenuRegistration.Set(true);return;}
             if(args.Contains("--context-menu-disable")){ContextMenuRegistration.Set(false);return;}
-            if (args.Contains("--register-only")||args.Contains("--register-quiet")) { Storage.RegisterAssociation(); try { ContextMenuRegistration.MigrateLegacy(); } catch (Exception ex) { Storage.Log(ex); } if(!args.Contains("--register-quiet"))MessageBox.Show("対応ファイルの候補にMD-CSV Split Editorを登録しました。既定のアプリはWindowsの設定で拡張子ごとに選んでください。", AppInfo.Title); return; }
+            if (args.Contains("--register-only")||args.Contains("--register-quiet")) { Storage.RegisterAssociation(); try { ContextMenuRegistration.MigrateLegacy(); } catch (Exception ex) { Storage.Log(ex); } if(!args.Contains("--register-quiet"))MessageBox.Show(UiLanguage.T("対応ファイルの候補にMD-CSV Split Editorを登録しました。既定のアプリはWindowsの設定で拡張子ごとに選んでください。", "MD-CSV Split Editor was registered as an app candidate for supported files. Choose default apps by file extension in Windows settings."), AppInfo.Title); return; }
             if(args.Contains("--unregister-quiet")){Maintenance.Unregister();return;}
             if(args.Contains("--repair")){Maintenance.Repair();return;}
-            var record=Array.IndexOf(args,"--record-installer");if(record>=0){if(record+1>=args.Length)throw new IOException("修復用ファイルがありません。");Maintenance.RecordInstaller(args[record+1]);return;}
+            var record=Array.IndexOf(args,"--record-installer");if(record>=0){if(record+1>=args.Length)throw new IOException(UiLanguage.T("修復用ファイルがありません。", "The repair file is missing."));Maintenance.RecordInstaller(args[record+1]);return;}
         }
         catch(Exception ex){Storage.Log(ex);MessageBox.Show(ex.Message,AppInfo.Title,MessageBoxButtons.OK,MessageBoxIcon.Warning);Environment.ExitCode=1;return;}
         using var mutex = new Mutex(true, "Local\\" + PipeName, out var first);
@@ -68,7 +68,7 @@ internal sealed class EditorContext : ApplicationContext
         {
             try
             {
-                if (!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out _)) throw new IOException("タブの復元情報の名前が正しくありません。");
+                if (!Guid.TryParseExact(Path.GetFileNameWithoutExtension(file), "N", out _)) throw new IOException(UiLanguage.T("タブの復元情報の名前が正しくありません。", "The saved tab information filename is invalid."));
                 sessions.Add(file, SessionStore.Read(file));
             }
             catch (Exception ex) { Storage.Log(ex); sessionWarnings.Add(UiLanguage.T("保存されたタブの情報を読み取れませんでした。\n", "Could not read the saved tab information.\n") + ex.Message); }

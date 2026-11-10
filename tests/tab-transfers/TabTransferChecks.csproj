@@ -11,4 +11,5 @@
     <Compile Include="../../native/TabTransfers.cs" Link="TabTransfers.cs" />
     <Compile Include="../../native/DocumentAuthority.cs" Link="DocumentAuthority.cs" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../../native/UiLanguage.cs" Link="UiLanguage.cs" /></ItemGroup>
 </Project>

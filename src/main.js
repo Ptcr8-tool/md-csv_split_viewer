@@ -15,7 +15,8 @@ import {normalizeCsvView} from './csv-view.js';
 import {initialViewMode,isViewMode,presentationFor,presentationCapabilities,normalizeFileTypeSettings,updateFileTypeSettings} from './view-preference.js';
 import {APP_TITLE} from './brand.js';
 import {applicationShell} from './app-shell.js';
-import {normalizeLanguage,setUiLanguage,translateShell} from './i18n.js';
+import {normalizeLanguage,setUiLanguage,translateShell,currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 import {installToolbarFolding} from './toolbar-folding.js';
 import {encodingChoices,defaultBom,readBrowserFile,encodeBrowserText,MAX_BROWSER_FILE_BYTES} from './text-codecs.js';
 import './file-editor.css';
@@ -65,7 +66,7 @@ function ensureTextPreview(){
   if(!textPreviewLoad)textPreviewLoad=import('./text-preview.js').then(({TextPreview})=>{
     textPreview=new TextPreview($('#text-preview'),textPreviewApi);
     if(current()&&previewKind(current()))scheduleRender();
-  }).catch(error=>{textPreviewLoad=null;notify('プレビューを読み込めませんでした: '+error.message,true);});
+  }).catch(error=>{textPreviewLoad=null;notify(tr('プレビューを読み込めませんでした: ','Could not load preview: ')+error.message,true);});
   return textPreviewLoad;
 }
 const detachedSide=paneSide();let paneSession=null,paneHub=null,updateView=()=>{},csvDialogOpen=false;
@@ -98,7 +99,7 @@ const listen=(selector,event,fn)=>$(selector).addEventListener(event,fn);
 $('[data-cmd="outline"]').id='outline-toggle';$('[data-cmd="sync"]').id='sync-toggle';
 function rememberPendingPreviewScroll(anchor){if(current()&&['csv','tsv'].includes(previewKind(current()))&&!textPreview.visible)pendingPreviewScroll={id:current().id,anchor};}
 const features=new WorkspaceFeatures({current,editor:()=>cm,settings:viewSettings,isMarkdown:md,isHtml,textPreview:()=>textPreview,rich,guard,notify,render,dialog,apply,openLink,onPendingPreviewScroll:rememberPendingPreviewScroll,onScrollAnchor(anchor){rememberPendingPreviewScroll(anchor);if(paneSession)paneSession.scroll(anchor);else paneHub?.scroll(activeId,anchor);},selectSource(s){if(!md()&&!isHtml()&&effectiveView()==='preview'){current().previewViewMode='split';updateDocumentLayout();updateView();cm?.requestMeasure();}lastSelection=current().selection=s;if(md()&&effectiveView()==='preview'){side='preview';rich.restoreSelection(s.from,s.to);return;}side='source';cm.dispatch({selection:EditorSelection.range(rawToLf(current().raw,s.from),rawToLf(current().raw,s.to)),effects:EditorView.scrollIntoView(rawToLf(current().raw,s.from),{y:'center'})});cm.focus();}});
-async function toggleOutlineFromPane(focusTarget){if(sourceBusy||composing||current()?.composing){notify('入力の変換を確定してから操作してください。');return;}await toggleOutline();$(focusTarget).focus();}
+async function toggleOutlineFromPane(focusTarget){if(sourceBusy||composing||current()?.composing){notify(tr('入力の変換を確定してから操作してください。','Finish text composition before continuing.'));return;}await toggleOutline();$(focusTarget).focus();}
 listen('#source-wrap-mode','change',guard(async event=>{const wrapMode=event.target.value;await setSettings({wrapMode,wrap:wrapMode!=='none'});}));
 listen('#outline-close','click',guard(()=>toggleOutlineFromPane('#outline-drawer')));
 listen('#outline-drawer','click',guard(()=>toggleOutlineFromPane('#outline-close')));
@@ -120,7 +121,7 @@ function createEditor(text){
   sourceLanguageKey=null;
   cm=new EditorView({parent:$('#source'),state:EditorState.create({doc:normalized(text),extensions:[features.extensions(),lineNumbers(),highlightActiveLine(),drawSelection(),languageConfig.of(md()?markdown({codeLanguages:languages}):[]),syntaxHighlighting(sourceHighlightStyle),sourceThemeConfig.of(sourceEditorTheme(document.documentElement.dataset.theme==='dark')),whitespaceConfig.of(visibleWhitespace(settings,()=>current()?.raw??'')),Prec.highest(keymap.of(customKeys)),keymap.of(defaultKeymap),wrapConfig.of(sourceWrapExtension(settings)),EditorView.updateListener.of(u=>{
     if(refreshing||!current())return;
-    if(u.docChanged){const d=current();if(peerInputLocked()||u.startState.doc.toString()!==normalized(d.raw)){scheduleRender();notify('別の表示から更新されました。もう一度入力してください。');return;}side='source';const s=u.state.selection.main;d.editNormalized(normalized(d.raw),u.state.doc.toString(),{from:s.from,to:s.to});lastSelection=d.selection;saveRecovery();scheduleRender();if(startupTraceEnabled&&!startupInputReported&&u.transactions.some(t=>t.isUserEvent('input'))){startupInputReported=true;requestAnimationFrame(()=>host('startup.firstInput').catch(()=>{}));}}
+    if(u.docChanged){const d=current();if(peerInputLocked()||u.startState.doc.toString()!==normalized(d.raw)){scheduleRender();notify(tr('別の表示から更新されました。もう一度入力してください。','The document changed in another view. Please try typing again.'));return;}side='source';const s=u.state.selection.main;d.editNormalized(normalized(d.raw),u.state.doc.toString(),{from:s.from,to:s.to});lastSelection=d.selection;saveRecovery();scheduleRender();if(startupTraceEnabled&&!startupInputReported&&u.transactions.some(t=>t.isUserEvent('input'))){startupInputReported=true;requestAnimationFrame(()=>host('startup.firstInput').catch(()=>{}));}}
     if(u.selectionSet){const d=current(),s=u.state.selection.main;d.selection=lastSelection={from:lfToRaw(d.raw,s.from),to:lfToRaw(d.raw,s.to)};updateStatus();features.active(d.selection.from);publishPosition(d.selection.from);}
   }),EditorView.domEventHandlers({mousedown:(e,view)=>features.sourcePointer(e,view),dblclick:(e,view)=>features.sourcePointer(e,view),focus:()=>{side='source';updateToolbar();},compositionstart:()=>{if(peerInputLocked())return true;sourceBusy=true;sourceCompositionDocument=current();current().composing=true;current().compositionOwner=window;publishPeers();},compositionend:()=>{const d=sourceCompositionDocument;if(!d)return;setTimeout(()=>{if(sourceCompositionDocument!==d)return;sourceCompositionDocument=null;sourceBusy=false;if(d.compositionOwner===window){d.composing=false;d.compositionOwner=null;}publishPeers();scheduleRender();},0);}})]})});
   cm.scrollDOM.addEventListener('scroll',()=>{features.onScroll('source');if(showChunks)splitSourceMarkers.schedule();});
@@ -159,7 +160,7 @@ function history(redo){if(peerInputLocked())return;if(!md()&&!textPreview.finish
 function applyFor(d,from,to,insert){if(!documents.includes(d)||d.composing||$('#app').inert)return;if(d.id===activeId)apply(from,to,insert);else{d.replace(from,to,insert);renderTabs();saveRecovery();}}
 function renderTabs(){const bar=$('.tabbar');bar.replaceChildren();for(const d of documents){const n=document.createElement('div');n.className='tab'+(d.id===activeId?' active':'');n.dataset.tabId=d.id;n.draggable=!detachedSide;const b=document.createElement('button');b.className='tab-name';b.title=d.path||d.name;b.textContent=(d.dirty?'● ':'')+d.name;b.onclick=()=>switchDocument(d.id);const close=document.createElement('button');close.className='tab-close';close.textContent='×';close.setAttribute('aria-label',d.name+'を閉じる');close.onclick=guard(()=>closeDocument(d.id));n.append(b,close);bar.append(n);}}
 installTabDrag({bar:$('.tabbar'),canStart:id=>!detachedSide&&!tabTransfer&&!acceptingTab&&!$('#modal').open&&!csvDialogOpen&&!sourceBusy&&!composing&&!$('#app').inert&&!paneHub?.childDialogOpen()&&!documents.some(d=>d.composing||d.componentEditing||d.pendingImports||d.saving)&&documents.some(d=>d.id===id),onMove(id,targetId,after){
-  if(tabTransfer){const transfer=tabTransfer;transfer.local=true;cancelSourceTransfer(transfer).catch(error=>notify('タブの移動を中止できませんでした。'+error.message,true));}
+  if(tabTransfer){const transfer=tabTransfer;transfer.local=true;cancelSourceTransfer(transfer).catch(error=>notify(tr('タブの移動を中止できませんでした。','Could not cancel the tab transfer. ')+error.message,true));}
   const from=documents.findIndex(d=>d.id===id);if(from<0)return;
   let to=targetId?documents.findIndex(d=>d.id===targetId):documents.length;if(to<0)return;if(targetId&&after)to++;
   if(from<to)to--;if(from===to)return;const [item]=documents.splice(from,1);documents.splice(to,0,item);renderTabs();saveRecovery();
@@ -168,10 +169,10 @@ installTabDrag({bar:$('.tabbar'),canStart:id=>!detachedSide&&!tabTransfer&&!acce
   if(d.id===activeId)d.selection=selection();
   const document=d.serialize(),state={undoStack:d.undoStack,redoStack:d.redoStack,historyChars:d.historyChars,selection:d.selection,csvView:d.csvView,previewViewMode:d.previewViewMode};
   const transfer=tabTransfer={...item,local:false,cancelled:false};
-  transfer.prepared=(async()=>{await ensureRegistered(d);await recoveryWriter.write();if(tabTransfer!==transfer)throw new Error('タブの移動は中止されました。');await host('tab.prepare',{token:item.token,document,state});})();
-  transfer.prepared.catch(async error=>{if(tabTransfer!==transfer)return;try{await cancelSourceTransfer(transfer);}catch{notify('移動の中止を確認中です。しばらくお待ちください。',true);return;}notify('タブの移動を開始できませんでした。'+error.message,true);});
+  transfer.prepared=(async()=>{await ensureRegistered(d);await recoveryWriter.write();if(tabTransfer!==transfer)throw new Error(tr('タブの移動は中止されました。','Tab transfer was cancelled.'));await host('tab.prepare',{token:item.token,document,state});})();
+  transfer.prepared.catch(async error=>{if(tabTransfer!==transfer)return;try{await cancelSourceTransfer(transfer);}catch{notify(tr('移動の中止を確認中です。しばらくお待ちください。','Checking that the transfer was cancelled. Please wait.'),true);return;}notify(tr('タブの移動を開始できませんでした。','Could not start the tab transfer. ')+error.message,true);});
 },onAccept(item){
-  if(!isDesktop)return;guard(async()=>{if(tabTransfer||acceptingTab||$('#modal').open||csvDialogOpen||sourceBusy||composing||$('#app').inert||paneHub?.childDialogOpen()||documents.some(d=>d.composing||d.componentEditing||d.pendingImports||d.saving)){notify('移動先の入力・保存・ダイアログを終えてからお試しください。',true);if(!await host('tab.reject',{token:item.token}))notify('タブ移動の中止を確認できませんでした。移動元で移動の中止を確認してください。',true);return;}acceptingTab={token:item.token,id:item.id};startIncomingWatchdog(acceptingTab);let error;for(let i=0;i<30;i++){try{await host('tab.accept',{token:item.token});return;}catch(e){error=e;await new Promise(resolve=>setTimeout(resolve,100));}}await cancelAcceptedTab(item.token);throw error||new Error('タブの移動を開始できませんでした。');})();
+  if(!isDesktop)return;guard(async()=>{if(tabTransfer||acceptingTab||$('#modal').open||csvDialogOpen||sourceBusy||composing||$('#app').inert||paneHub?.childDialogOpen()||documents.some(d=>d.composing||d.componentEditing||d.pendingImports||d.saving)){notify(tr('移動先の入力・保存・ダイアログを終えてからお試しください。','Finish editing, saving, and dialogs in the destination window first.'),true);if(!await host('tab.reject',{token:item.token}))notify(tr('タブ移動の中止を確認できませんでした。移動元で移動の中止を確認してください。','Could not confirm cancellation. Check the source window.'),true);return;}acceptingTab={token:item.token,id:item.id};startIncomingWatchdog(acceptingTab);let error;for(let i=0;i<30;i++){try{await host('tab.accept',{token:item.token});return;}catch(e){error=e;await new Promise(resolve=>setTimeout(resolve,100));}}await cancelAcceptedTab(item.token);throw error||new Error(tr('タブの移動を開始できませんでした。','Could not start the tab transfer. '));})();
 },onEnd(item,event){
   const transfer=tabTransfer;if(!transfer||transfer.token!==item.token)return;
   const effect=event.dataTransfer?.dropEffect,x=event.screenX,y=event.screenY;
@@ -181,14 +182,14 @@ installTabDrag({bar:$('.tabbar'),canStart:id=>!detachedSide&&!tabTransfer&&!acce
     if(effect==='move')return;
     if(Number.isFinite(x)&&Number.isFinite(y)&&(x!==0||y!==0)&&await host('tab.can-detach')){if(tabTransfer!==transfer||transfer.finishing)return;await host('tab.detach',{token:item.token});return;}
     await cancelSourceTransfer(transfer);
-  }catch(error){if(tabTransfer!==transfer)return;try{await cancelSourceTransfer(transfer);}catch{notify('移動の中止を確認中です。しばらくお待ちください。',true);}throw error;}})();
+  }catch(error){if(tabTransfer!==transfer)return;try{await cancelSourceTransfer(transfer);}catch{notify(tr('移動の中止を確認中です。しばらくお待ちください。','Checking that the transfer was cancelled. Please wait.'),true);}throw error;}})();
 }});
 function scheduleTransferWatchdog(transfer,delay){
   clearTimeout(transfer.watchdog);
   transfer.watchdog=setTimeout(async()=>{
     if(tabTransfer!==transfer||transfer.finishing)return;
     try{await cancelSourceTransfer(transfer);}
-    catch{if(tabTransfer!==transfer)return;if(!transfer.warned){notify('移動の中止を確認中です。しばらくお待ちください。',true);transfer.warned=true;}scheduleTransferWatchdog(transfer,1000);}
+    catch{if(tabTransfer!==transfer)return;if(!transfer.warned){notify(tr('移動の中止を確認中です。しばらくお待ちください。','Checking that the transfer was cancelled. Please wait.'),true);transfer.warned=true;}scheduleTransferWatchdog(transfer,1000);}
   },delay);
 }
 async function finishSourceTransfer(transfer){
@@ -201,7 +202,7 @@ async function finishSourceTransfer(transfer){
   }catch(error){
     // The destination already persisted the document. Keep the remaining
     // source usable and retry its recovery snapshot if cleanup failed.
-    saveRecovery();notify('移動は完了しましたが、元の画面の後処理を完了できませんでした。'+error.message,true);
+    saveRecovery();notify(tr('移動は完了しましたが、元の画面の後処理を完了できませんでした。','The transfer completed, but cleanup in the source window failed. ')+error.message,true);
   }finally{
     if(tabTransfer===transfer)tabTransfer=null;flushTabHostEvents();
     host('tab.finalized',{token:transfer.token}).catch(()=>{});
@@ -212,7 +213,7 @@ async function cancelSourceTransfer(transfer){
   const status=await host('tab.cancel',{token:transfer.token});
   if(tabTransfer!==transfer||transfer.finishing)return;
   if(status==='committed'){await finishSourceTransfer(transfer);return;}
-  if(status!=='cancelled')throw new Error('移動の中止を確認できませんでした。');
+  if(status!=='cancelled')throw new Error(tr('移動の中止を確認できませんでした。','Could not confirm transfer cancellation.'));
   clearTimeout(transfer.watchdog);tabTransfer=null;flushTabHostEvents();
 }
 // Keep the source stable during the two-phase handoff. Drag events remain
@@ -227,10 +228,10 @@ function startIncomingWatchdog(incoming){
 async function cancelAcceptedTab(token){
   for(let i=0;i<35;i++){
     if(acceptingTab?.token!==token)return;
-    try{const status=await host('tab.cancel',{token});if(status==='unavailable')throw new Error('移動の中止を確認できません。');if(status==='cancelled')await rollbackIncomingTransfer(token);else if(acceptingTab?.token===token&&status==='committed'){clearTimeout(acceptingTab.watchdog);acceptingTab=null;flushTabHostEvents();host('tab.finalized',{token}).catch(()=>{});}return;}
+    try{const status=await host('tab.cancel',{token});if(status==='unavailable')throw new Error(tr('移動の中止を確認できません。','Cannot confirm transfer cancellation.'));if(status==='cancelled')await rollbackIncomingTransfer(token);else if(acceptingTab?.token===token&&status==='committed'){clearTimeout(acceptingTab.watchdog);acceptingTab=null;flushTabHostEvents();host('tab.finalized',{token}).catch(()=>{});}return;}
     catch{try{if(await host('tab.reject',{token})){await rollbackIncomingTransfer(token);return;}}catch{}await new Promise(resolve=>setTimeout(resolve,1000));}
   }
-  notify('タブの移動中止を確認できません。復旧をお待ちください。',true);
+  notify(tr('タブの移動中止を確認できません。復旧をお待ちください。','Cannot confirm cancellation. Please wait for recovery.'),true);
 }
 async function rollbackIncomingTransfer(token){
   const incoming=acceptingTab;if(!incoming||incoming.token!==token||incoming.rollingBack)return;
@@ -243,7 +244,7 @@ async function rollbackIncomingTransfer(token){
       if(!documents.length)newDocument();else if(wasActive)switchDocument(documents.at(-1).id);else renderTabs();
       await recoveryWriter.write();
     }
-  }catch(error){saveRecovery();notify('タブの移動は中止しましたが、復元データを更新できませんでした。'+error.message,true);}
+  }catch(error){saveRecovery();notify(tr('タブの移動は中止しましたが、復元データを更新できませんでした。','The transfer was cancelled, but recovery data could not be updated. ')+error.message,true);}
   finally{clearTimeout(incoming.watchdog);if(acceptingTab===incoming)acceptingTab=null;flushTabHostEvents();}
 }
 function updateToolbar(){
@@ -267,9 +268,9 @@ function updateToolbar(){
   const pos=lastSelection.from;
   for(const cmd of ['bold','italic','strike','underline']){const tag={bold:'strong',italic:'em',strike:'s',underline:'u'}[cmd];const active=Array.from($('#preview').querySelectorAll(tag)).some(n=>{const leaves=n.querySelectorAll('[data-from]');return leaves.length&&pos>=Number(leaves[0].dataset.from)&&pos<=Number(leaves[leaves.length-1].dataset.to);});$(`[data-cmd="${cmd}"]`).classList.toggle('applied',active);}
 }
-function updateStatus(){const d=current();if(!d)return;$('#save-state').textContent=d.dirty?'未保存の変更':'保存済み';$('#save-state').title=$('#save-state').textContent;$('#save-state').classList.toggle('unsaved',d.dirty);const p=rawToLf(d.raw,lastSelection.from);const line=cm?.state.doc.lineAt(Math.min(p,cm.state.doc.length));$('#position').textContent=line?`${line.number}行 ${p-line.from+1}列`:'';$('#count').textContent=d.raw.length.toLocaleString()+'字';$('#encoding').textContent=(encodingChoices.find(c=>c.id===d.encoding)?.label||d.encoding)+(d.hasBom&&!defaultBom(d.encoding)?' · BOM':'');$('#encoding').title=d.encodingNotice||'文字コードを変更・開き直す';$('#encoding').classList.toggle('guessed',!!d.encodingGuessed);$('#limit-status').textContent=`${d.raw.length.toLocaleString()} / ${settings.limit.toLocaleString()}`;$('#limit-status').classList.toggle('over',d.raw.length>settings.limit);$('#limit').value=[2000,4000].includes(settings.limit)?String(settings.limit):'custom';}
+function updateStatus(){const d=current();if(!d)return;$('#save-state').textContent=d.dirty?tr('未保存の変更','Unsaved changes'):tr('保存済み','Saved');$('#save-state').title=$('#save-state').textContent;$('#save-state').classList.toggle('unsaved',d.dirty);const p=rawToLf(d.raw,lastSelection.from);const line=cm?.state.doc.lineAt(Math.min(p,cm.state.doc.length));$('#position').textContent=line?(currentUiLanguage()==='en'?`Line ${line.number}, column ${p-line.from+1}`:`${line.number}行 ${p-line.from+1}列`):'';$('#count').textContent=d.raw.length.toLocaleString()+tr('字',' characters');$('#encoding').textContent=(encodingChoices.find(c=>c.id===d.encoding)?.label||d.encoding)+(d.hasBom&&!defaultBom(d.encoding)?' · BOM':'');$('#encoding').title=d.encodingNotice||'文字コードを変更・開き直す';$('#encoding').classList.toggle('guessed',!!d.encodingGuessed);$('#limit-status').textContent=`${d.raw.length.toLocaleString()} / ${settings.limit.toLocaleString()}`;$('#limit-status').classList.toggle('over',d.raw.length>settings.limit);$('#limit').value=[2000,4000].includes(settings.limit)?String(settings.limit):'custom';}
 function updateTitle(){const d=current();if(d)host('window.title',{title:`${d.dirty?'● ':''}${d.name}${detachedSide?' · '+(detachedSide==='source'?'原文':'展開表示'):''} — ${APP_TITLE}`}).catch(()=>{});}
-function saveRecovery(){if(paneSession){paneSession.changed();return;}publishPeers();clearTimeout(recoveryTimer);recoveryTimer=setTimeout(()=>recoveryWriter.write().catch(e=>notify('復元データを保存できません: '+e.message,true)),650);}
+function saveRecovery(){if(paneSession){paneSession.changed();return;}publishPeers();clearTimeout(recoveryTimer);recoveryTimer=setTimeout(()=>recoveryWriter.write().catch(e=>notify(tr('復元データを保存できません: ','Could not save recovery data: ')+e.message,true)),650);}
 async function setSettings(change){if(paneSession){await paneSession.setSettings(change);return;}if(change.fileTypeSettings&&current()){const kind=fileKind(current());if(presentationFor(settings,kind).outlineVisible!==presentationFor({...settings,...change},kind).outlineVisible)autoHideOutline=false;}settings={...settings,...change};settings.fileTypeSettings=normalizeFileTypeSettings(settings);applySettings();await host('settings.set',settings);publishPeers();}
 function applySettings(){
   setUiLanguage(settings.language);
@@ -329,7 +330,7 @@ listen('#preview','beforeinput',e=>{
     insert='';if(from===to){if(e.inputType.endsWith('Backward'))from=rich.neighbor(from,-1);else to=rich.neighbor(to,1);}
     if(info){from=Math.max(info.contentFrom,from);to=Math.min(info.contentTo,to);}
   }else if(e.inputType==='insertParagraph'||e.inputType==='insertLineBreak'){
-    if(inCell){notify('表内の移動はTab、セル内のTab入力はCtrl+Tabです。');return;}
+    if(inCell){notify(tr('表内の移動はTab、セル内のTab入力はCtrl+Tabです。','Use Tab to navigate cells and Ctrl+Tab to insert a tab in a cell.'));return;}
     const eol=preferredEol(raw);insert=eol;
     if(info){const line=lineAt(raw,from),indent=line.text.match(/^[ \t]*/)[0];insert=eol+indent;}
     else if(!literal){
@@ -358,13 +359,13 @@ listen('#preview','keydown',e=>{
   }
 });
 
-async function copyText(text){if(isDesktop)await host('clipboard.text',{text});else await navigator.clipboard.writeText(text);notify('コピーしました');}
+async function copyText(text){if(isDesktop)await host('clipboard.text',{text});else await navigator.clipboard.writeText(text);notify(tr('コピーしました','Copied'));}
 function clipboardContent(range){const frag=range.cloneContents();frag.querySelectorAll?.('.component-tools,.code-tools,.heading-fold,textarea,.diagram-error').forEach(n=>n.remove());const shell=document.createElement('div');shell.append(frag);const plain=shell.cloneNode(true);for(const n of plain.querySelectorAll('.mermaid-block')){const from=Number(n.dataset.from),to=Number(n.dataset.to);n.replaceWith(document.createTextNode(current().raw.slice(from,to)));}for(const n of shell.querySelectorAll('*')){for(const a of Array.from(n.attributes))if(a.name.startsWith('data-')||a.name==='contenteditable')n.removeAttribute(a.name);}return {html:shell.innerHTML,text:plain.textContent.replaceAll('\u200b','')};}
 listen('#preview','copy',e=>{if(e.target.closest?.('textarea'))return;const s=rich.selection();if(!s)return;e.preventDefault();if(mode==='discord'){let text=current().raw.slice(s.from,s.to);const formats=rich.formats.filter(f=>s.from>=f.contentFrom&&s.to<=f.contentTo).sort((a,b)=>a.from-b.from);text=formats.map(f=>f.open).join('')+text+formats.toReversed().map(f=>f.close).join('');e.clipboardData.setData('text/plain',text);}else{const data=clipboardContent(getSelection().getRangeAt(0));e.clipboardData.setData('text/html',data.html);e.clipboardData.setData('text/plain',data.text);}});
 listen('#preview','cut',e=>{if(e.target.closest?.('textarea'))return;const s=rich.selection();if(!s)return;e.preventDefault();const data=mode==='discord'?{text:current().raw.slice(s.from,s.to)}:clipboardContent(getSelection().getRangeAt(0));e.clipboardData.setData('text/plain',data.text);if(data.html)e.clipboardData.setData('text/html',data.html);const info=rich.codeAt(s.from,s.to);const c=info?patchCode(current().raw,info,s.from,s.to,''):replaceRich(current().raw,s.from,s.to,'',rich.formats);applyEdit(c);});
 document.addEventListener('paste',guard(async e=>{
   if(e.target.closest('dialog,#search-panel,textarea.diagram-code'))return;
-  const files=Array.from(e.clipboardData?.files||[]).filter(f=>f.type.startsWith('image/'));if(files.length){e.preventDefault();e.stopPropagation();if(!md()){notify('画像の挿入はMarkdown文書で利用できます。');return;}await importImages(files);return;}
+  const files=Array.from(e.clipboardData?.files||[]).filter(f=>f.type.startsWith('image/'));if(files.length){e.preventDefault();e.stopPropagation();if(!md()){notify(tr('画像の挿入はMarkdown文書で利用できます。','Images can be inserted in Markdown documents.'));return;}await importImages(files);return;}
   if(!md())return;
   if(side!=='preview'||!$('#preview').contains(e.target))return;e.preventDefault();const s=selection();const html=e.clipboardData.getData('text/html'),text=e.clipboardData.getData('text/plain');const info=rich.codeAt(s.from,s.to),literal=!!info||rich.leaves.find(l=>l.node===getSelection().focusNode)?.kind==='code';const insert=literal?text:html&&!plainPasteNext?td.turndown(DOMPurify.sanitize(html)):escapeLiteral(text);plainPasteNext=false;if(info)applyEdit(patchCode(current().raw,info,s.from,s.to,insert));else apply(s.from,s.to,insert);
 }),{capture:true});
@@ -376,10 +377,10 @@ document.addEventListener('dragover',e=>{if(e.dataTransfer?.types.includes('File
 document.addEventListener('drop',guard(async e=>{
   if(!e.dataTransfer?.files.length)return;e.preventDefault();e.stopPropagation();
   const files=Array.from(e.dataTransfer.files),images=files.filter(f=>f.type.startsWith('image/')),textFiles=files.filter(f=>!f.type.startsWith('image/'));
-  if(images.length){if(md())await importImages(images);else notify('画像の挿入はMarkdown文書で利用できます。');}
+  if(images.length){if(md())await importImages(images);else notify(tr('画像の挿入はMarkdown文書で利用できます。','Images can be inserted in Markdown documents.'));}
   if(!textFiles.length)return;
   if(isDesktop&&typeof window.chrome.webview.postMessageWithAdditionalObjects==='function')await host('file.drop',{},textFiles);
-  else if(paneSession){paneSession.focusOwner();notify('ファイルは元のウィンドウへドロップしてください。');}
+  else if(paneSession){paneSession.focusOwner();notify(tr('ファイルは元のウィンドウへドロップしてください。','Drop the file into the original window.'));}
   else for(const file of textFiles)await openBrowserFile(file);
 }),{capture:true});
 
@@ -387,12 +388,12 @@ async function dialog(title,body,setup=()=>{}){const modal=$('#modal');$('#dialo
 async function printPane(target){
   if(!current()||(!md()&&!textPreview.finishEdit()))return;
   const d=current(),kind=fileKind(d),isGrid=target==='preview'&&(kind==='csv'||kind==='tsv');
-  if(isGrid&&!textPreview.parsed){notify('先に表のプレビューを表示してください。',true);return;}
+  if(isGrid&&!textPreview.parsed){notify(tr('先に表のプレビューを表示してください。','Show the table preview first.'),true);return;}
   const large=d.raw.length>2*1024*1024||(isGrid&&textPreview.parsed.rowCount*textPreview.parsed.columnCount>20000);
-  const choices=isGrid?'<label class="field">表の印刷対象<select id="print-scope"><option value="visible">表示中の行・列（絞り込みと非表示を反映、全ページ）</option><option value="all">すべての行・列（絞り込みと非表示を無視）</option></select></label>':'';
-  const body='<p>次に開く印刷画面で、用紙サイズ・向き・ページ範囲を選べます。PDFは出力先に「Microsoft Print to PDF」などを選択してください。</p>'+choices+(target==='preview'&&kind==='html'?'<p>HTMLの外部通信とスクリプトは無効です。安全のためスタイルシートを除くので、プレビューと見た目が異なる場合があります。</p>':'')+(target==='preview'&&md()?'<p>外部 URL の画像は印刷されません。文書内の画像や埋め込み画像を使用してください。</p>':'')+(large?'<p>大きな文書です。印刷プレビューの作成に時間やメモリが必要になることがあります。</p>':'');
-  if(!await dialog(target==='source'?'原文を印刷・PDF出力':'展開表示を印刷・PDF出力',body))return;
-  if(current()!==d)throw new Error('文書が変更されたため、印刷を中止しました。');
+  const choices=isGrid?tr('<label class="field">表の印刷対象<select id="print-scope"><option value="visible">表示中の行・列（絞り込みと非表示を反映、全ページ）</option><option value="all">すべての行・列（絞り込みと非表示を無視）</option></select></label>','<label class="field">Table print scope<select id="print-scope"><option value="visible">Visible rows and columns (all pages, honoring filters and hidden items)</option><option value="all">All rows and columns (ignore filters and hidden items)</option></select></label>'):'';
+  const body=tr('<p>次に開く印刷画面で、用紙サイズ・向き・ページ範囲を選べます。PDFは出力先に「Microsoft Print to PDF」などを選択してください。</p>','<p>Choose paper size, orientation and page range in the print dialog. To create a PDF, select Microsoft Print to PDF or another PDF printer.</p>')+choices+(target==='preview'&&kind==='html'?tr('<p>HTMLの外部通信とスクリプトは無効です。安全のためスタイルシートを除くので、プレビューと見た目が異なる場合があります。</p>','<p>External requests and scripts are disabled. Stylesheets are omitted for safety, so output may differ from the preview.</p>'):'')+(target==='preview'&&md()?tr('<p>外部 URL の画像は印刷されません。文書内の画像や埋め込み画像を使用してください。</p>','<p>Images from external URLs are not printed. Use local or embedded images.</p>'):'')+(large?tr('<p>大きな文書です。印刷プレビューの作成に時間やメモリが必要になることがあります。</p>','<p>This document is large. Preparing the print preview may require extra time and memory.</p>'):'');
+  if(!await dialog(target==='source'?tr('原文を印刷・PDF出力','Print source / export PDF'):tr('展開表示を印刷・PDF出力','Print preview / export PDF'),body))return;
+  if(current()!==d)throw new Error(tr('文書が変更されたため、印刷を中止しました。','Printing was cancelled because the document changed.'));
   const scope=isGrid?$('#print-scope').value:'visible';
   const snapshot=d.raw;
   if(md()&&target==='preview'){
@@ -401,16 +402,16 @@ async function printPane(target){
     // previously rendered diagram to the print preview.
     const deadline=Date.now()+20000;
     while(true){
-      if(current()!==d||d.raw!==snapshot)throw new Error('文書が変更されたため、印刷を中止しました。');
+      if(current()!==d||d.raw!==snapshot)throw new Error(tr('文書が変更されたため、印刷を中止しました。','Printing was cancelled because the document changed.'));
       const diagrams=[...$('#preview').querySelectorAll('.mermaid-block')];
-      if(diagrams.some(block=>{const error=block.querySelector('.diagram-error');return error&&!error.hidden;}))throw new Error('図を描画できないため印刷を中止しました。Mermaidの内容を確認してください。');
+      if(diagrams.some(block=>{const error=block.querySelector('.diagram-error');return error&&!error.hidden;}))throw new Error(tr('図を描画できないため印刷を中止しました。Mermaidの内容を確認してください。','Printing was cancelled because a diagram could not be rendered. Check the Mermaid source.'));
       if(diagrams.every(block=>block.querySelector('.mermaid-stage svg')))break;
-      if(Date.now()>deadline)throw new Error('図の描画が完了しないため印刷を中止しました。');
+      if(Date.now()>deadline)throw new Error(tr('図の描画が完了しないため印刷を中止しました。','Printing was cancelled because diagram rendering did not finish.'));
       await new Promise(resolve=>setTimeout(resolve,100));
     }
   }
   const {buildPrintContent,setPrintContent}=await import('./print.js');
-  if(current()!==d||d.raw!==snapshot)throw new Error('文書が変更されたため、印刷を中止しました。');
+  if(current()!==d||d.raw!==snapshot)throw new Error(tr('文書が変更されたため、印刷を中止しました。','Printing was cancelled because the document changed.'));
   const content=buildPrintContent({side:target,raw:d.raw,kind,preview:$('#preview'),textPreview,fontSize:settings.fontSize,scope});
   setPrintContent(content);
   // The root remains mounted for the whole browser print preview lifecycle.
@@ -423,26 +424,26 @@ async function promptFields(title,fields){const values={};const ok=await dialog(
 function wrap(before,after=before,placeholder='文字'){const s=selection(),raw=current().raw;let text=raw.slice(s.from,s.to)||placeholder;const existing=rich.formats.find(f=>f.open===before&&s.from>=f.contentFrom&&s.to<=f.contentTo);if(existing){apply(existing.from,existing.to,raw.slice(existing.contentFrom,existing.contentTo));return;}apply(s.from,s.to,before+text+after);lastSelection=current().selection={from:s.from+before.length,to:s.from+before.length+text.length};if(md()&&side==='preview')rich.restoreSelection(lastSelection.from,lastSelection.to);else cm.dispatch({selection:EditorSelection.range(rawToLf(current().raw,lastSelection.from),rawToLf(current().raw,lastSelection.to))});}
 function prefixLines(prefix){const s=selection(),raw=current().raw;const from=raw.lastIndexOf('\n',s.from-1)+1;const next=raw.indexOf('\n',s.to);const to=next<0?raw.length:next;const changed=raw.slice(from,to).split(/(\r?\n)/).map((line,i)=>i%2?line:typeof prefix==='function'?prefix(line,i/2):prefix+line).join('');apply(from,to,changed);}
 function insertBlock(text){const s=selection(),raw=current().raw,eol=preferredEol(raw);const before=s.from&&raw[s.from-1]!=='\n'?eol+eol:'';const after=s.to<raw.length&&raw[s.to]!=='\n'?eol+eol:eol;apply(s.from,s.to,before+text.replace(/\n/g,eol)+after);}
-async function link(){const s=selection();const result=await promptFields('リンクを挿入',[{id:'link-text',label:'表示する文章',value:current().raw.slice(s.from,s.to)},{id:'link-url',label:'URL',value:'https://'}]);if(!result||!result['link-url'])return;apply(s.from,s.to,markdownLink(result['link-text']||result['link-url'],result['link-url']));}
-async function imageDialog(){const s=selection();const ok=await dialog('画像を挿入','<p class="muted">PCの画像を選ぶか、画像のURLを入力してください。</p><button type="button" class="secondary" id="choose-image">PCから画像を選ぶ</button><label class="field">画像URL<input id="image-url" type="url" placeholder="https://…"></label><label class="field">代替テキスト<input id="image-alt"></label>',()=>{$('#choose-image').onclick=()=>{$('#modal').close('cancel');$('#image-input').click();};});if(ok&&$('#image-url').value)apply(s.from,s.to,markdownLink($('#image-alt').value,$('#image-url').value,{image:true}));}
-async function editImage(from,to,node){lastSelection={from,to};const r=await promptFields('画像の参照先と代替テキスト',[{id:'edit-image-alt',label:'代替テキスト',value:node.alt},{id:'edit-image-url',label:'画像URL・相対パス',value:node.url}]);if(r)apply(from,to,markdownLink(r['edit-image-alt'],r['edit-image-url'],{image:true}));}
+async function link(){const s=selection();const result=await promptFields(tr('リンクを挿入','Insert link'),[{id:'link-text',label:tr('表示する文章','Display text'),value:current().raw.slice(s.from,s.to)},{id:'link-url',label:'URL',value:'https://'}]);if(!result||!result['link-url'])return;apply(s.from,s.to,markdownLink(result['link-text']||result['link-url'],result['link-url']));}
+async function imageDialog(){const s=selection();const ok=await dialog(tr('画像を挿入','Insert image'),tr('<p class="muted">PCの画像を選ぶか、画像のURLを入力してください。</p><button type="button" class="secondary" id="choose-image">PCから画像を選ぶ</button><label class="field">画像URL<input id="image-url" type="url" placeholder="https://…"></label><label class="field">代替テキスト<input id="image-alt"></label>','<p class="muted">Choose an image from your computer or enter an image URL.</p><button type="button" class="secondary" id="choose-image">Choose image</button><label class="field">Image URL<input id="image-url" type="url" placeholder="https://…"></label><label class="field">Alternate text<input id="image-alt"></label>'),()=>{$('#choose-image').onclick=()=>{$('#modal').close('cancel');$('#image-input').click();};});if(ok&&$('#image-url').value)apply(s.from,s.to,markdownLink($('#image-alt').value,$('#image-url').value,{image:true}));}
+async function editImage(from,to,node){lastSelection={from,to};const r=await promptFields(tr('画像の参照先と代替テキスト','Image source and alternate text'),[{id:'edit-image-alt',label:tr('代替テキスト','Alternate text'),value:node.alt},{id:'edit-image-url',label:tr('画像URL・相対パス','Image URL or relative path'),value:node.url}]);if(r)apply(from,to,markdownLink(r['edit-image-alt'],r['edit-image-url'],{image:true}));}
 function importImages(files){
-  if(!md())return Promise.reject(new Error('画像の挿入はMarkdown文書で利用できます。'));
+  if(!md())return Promise.reject(new Error(tr('画像の挿入はMarkdown文書で利用できます。','Images can be inserted in Markdown documents.')));
   const d=current(),anchor=d.trackRange(selection());
-  const job=async()=>{try{const refs=[];for(const f of files){if(f.size>32*1024*1024)throw new Error('画像は1枚32MBまでです。');const bytes=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));const base64=btoa(binary);if(isDesktop){await ensureRegistered(d);const r=await host('image.import',{document:d.serialize(),name:f.name,base64});refs.push(`![${f.name.replace(/[\[\]]/g,'')}](<${r.url}>)`);}else refs.push(`![${f.name}](data:${f.type};base64,${base64})`);}
+  const job=async()=>{try{const refs=[];for(const f of files){if(f.size>32*1024*1024)throw new Error(tr('画像は1枚32MBまでです。','Each image must be at most 32 MB.'));const bytes=new Uint8Array(await f.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));const base64=btoa(binary);if(isDesktop){await ensureRegistered(d);const r=await host('image.import',{document:d.serialize(),name:f.name,base64});refs.push(`![${f.name.replace(/[\[\]]/g,'')}](<${r.url}>)`);}else refs.push(`![${f.name}](data:${f.type};base64,${base64})`);}
     while(documents.includes(d)&&anchor.valid&&(d.composing||$('#app').inert||$('#modal').open||paneSession?.isLocked()||paneHub?.childDialogOpen()))await new Promise(resolve=>setTimeout(resolve,50));
-    if(anchor.valid&&documents.includes(d))applyFor(d,anchor.from,anchor.to,refs.join('\n\n'));else notify('画像の挿入は取り消されました。');
+    if(anchor.valid&&documents.includes(d))applyFor(d,anchor.from,anchor.to,refs.join('\n\n'));else notify(tr('画像の挿入は取り消されました。','Image insertion was cancelled.'));
   }finally{anchor.dispose();}};
   d.pendingImports=(d.pendingImports||0)+1;d.importPromise=(d.importPromise||Promise.resolve()).catch(()=>{}).then(job).finally(()=>d.pendingImports--);return d.importPromise;
 }
 function imageUrl(url,id){if(/^(https?:|data:|blob:)/i.test(url))return url;if(!isDesktop)return url.startsWith('mdsplit-asset:')?'':url;return `https://assets.mdsplit.local/${id}/${encodeURIComponent(url)}`;}
-async function diagramCopy(stage,format){const svg=stage.querySelector('svg');if(!svg)throw new Error('図を描画してから操作してください。');const text=new XMLSerializer().serializeToString(svg);if(format==='svg'){await saveBytes('diagram.svg','image/svg+xml',new TextEncoder().encode(text));return;}const image=new Image();const url=URL.createObjectURL(new Blob([text],{type:'image/svg+xml'}));try{await new Promise((ok,no)=>{image.onload=ok;image.onerror=no;image.src=url;});const box=svg.viewBox.baseVal;const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.ceil((box.width||image.width)*2));canvas.height=Math.max(1,Math.ceil((box.height||image.height)*2));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/png');const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(format==='png-file'){await saveBytes('diagram.png','image/png',new Uint8Array(await blob.arrayBuffer()));notify('図をPNGとして保存しました');return;}if(isDesktop)await host('clipboard.image',{base64:data.split(',')[1]});else await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);notify('図をPNGとしてコピーしました');}finally{URL.revokeObjectURL(url);}}
+async function diagramCopy(stage,format){const svg=stage.querySelector('svg');if(!svg)throw new Error(tr('図を描画してから操作してください。','Render the diagram first.'));const text=new XMLSerializer().serializeToString(svg);if(format==='svg'){await saveBytes('diagram.svg','image/svg+xml',new TextEncoder().encode(text));return;}const image=new Image();const url=URL.createObjectURL(new Blob([text],{type:'image/svg+xml'}));try{await new Promise((ok,no)=>{image.onload=ok;image.onerror=no;image.src=url;});const box=svg.viewBox.baseVal;const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.ceil((box.width||image.width)*2));canvas.height=Math.max(1,Math.ceil((box.height||image.height)*2));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/png');const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(format==='png-file'){await saveBytes('diagram.png','image/png',new Uint8Array(await blob.arrayBuffer()));notify(tr('図をPNGとして保存しました','Saved diagram as PNG'));return;}if(isDesktop)await host('clipboard.image',{base64:data.split(',')[1]});else await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);notify(tr('図をPNGとしてコピーしました','Copied diagram as PNG'));}finally{URL.revokeObjectURL(url);}}
 async function saveBytes(name,mime,bytes){if(isDesktop){let binary='';for(const b of bytes)binary+=String.fromCharCode(b);await host('file.export',{name,base64:btoa(binary)});}else download(name,mime,new Blob([bytes],{type:mime}));}
 function download(name,mime,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}
 async function insertCodeBlock(){
   const d=current(),s=selection(),anchor=d.trackRange(s),selected=d.raw.slice(s.from,s.to);let automatic=selected;
   try{
-    const ok=await dialog('コードブロックを挿入',"<label class=\"field\">言語・プリセット<select id=\"code-preset\"></select></label><label class=\"field\">コード<textarea id=\"code-preset-body\" class=\"code-preset-body\" spellcheck=\"false\"></textarea></label><p class=\"muted\">言語を選ぶとサンプルを入れられます。入力済みのコードは維持します。</p>",()=>{
+    const ok=await dialog(tr('コードブロックを挿入','Insert code block'),"<label class=\"field\">言語・プリセット<select id=\"code-preset\"></select></label><label class=\"field\">コード<textarea id=\"code-preset-body\" class=\"code-preset-body\" spellcheck=\"false\"></textarea></label><p class=\"muted\">言語を選ぶとサンプルを入れられます。入力済みのコードは維持します。</p>",()=>{
       for(const preset of codePresets){const option=document.createElement('option');option.value=preset.id;option.textContent=preset.label;$('#code-preset').append(option);}
       $('#code-preset-body').value=selected;
       $('#code-preset').addEventListener('change',()=>{const input=$('#code-preset-body');if(!selected&&input.value===automatic){automatic=codePresets.find(p=>p.id===$('#code-preset').value)?.sample||'';input.value=automatic;}});
@@ -456,20 +457,20 @@ async function insertCodeBlock(){
   }finally{anchor.dispose();}
 }
 
-async function insertTable(){const values=await promptFields('表を挿入',[{id:'table-columns',label:'列数（1〜20）',value:'3',type:'number'},{id:'table-rows',label:'本文の行数（1〜100）',value:'2',type:'number'}]);if(!values)return;const cols=Math.min(20,Math.max(1,Number(values['table-columns'])||3)),rows=Math.min(100,Math.max(1,Number(values['table-rows'])||2));const head='| '+Array.from({length:cols},(_,i)=>'見出し'+(i+1)).join(' | ')+' |';const sep='| '+Array(cols).fill('---').join(' | ')+' |';insertBlock([head,sep,...Array(rows).fill('| '+Array(cols).fill('内容').join(' | ')+' |')].join('\n'));}
+async function insertTable(){const values=await promptFields(tr('表を挿入','Insert table'),[{id:'table-columns',label:tr('列数（1〜20）','Columns (1–20)'),value:'3',type:'number'},{id:'table-rows',label:tr('本文の行数（1〜100）','Body rows (1–100)'),value:'2',type:'number'}]);if(!values)return;const cols=Math.min(20,Math.max(1,Number(values['table-columns'])||3)),rows=Math.min(100,Math.max(1,Number(values['table-rows'])||2));const head='| '+Array.from({length:cols},(_,i)=>'見出し'+(i+1)).join(' | ')+' |';const sep='| '+Array(cols).fill('---').join(' | ')+' |';insertBlock([head,sep,...Array(rows).fill('| '+Array(cols).fill('内容').join(' | ')+' |')].join('\n'));}
 function splitTableRow(line){const cells=[];let start=0,slashes=0;for(let i=0;i<line.length;i++){if(line[i]==='|'&&slashes%2===0){cells.push(line.slice(start,i));start=i+1;}slashes=line[i]==='\\'?slashes+1:0;}cells.push(line.slice(start));return cells;}
-function tableAction(action){const s=selection();const node=parseMarkdown(current().raw).children.find(n=>n.type==='table'&&n.position.start.offset<=s.from&&n.position.end.offset>=s.from);if(!node){notify('表の中にカーソルを置いてください。');return;}const raw=current().raw.slice(node.position.start.offset,node.position.end.offset),eol=preferredEol(raw),lines=raw.split(/\r?\n/);const cells=Array.from($('#preview').querySelectorAll('[data-cell]'));const cell=cells.find(n=>Number(n.dataset.from)<=s.from&&Number(n.dataset.to)>=s.from);const row=Number(cell?.dataset.row||0),col=Number(cell?.dataset.col||0);
+function tableAction(action){const s=selection();const node=parseMarkdown(current().raw).children.find(n=>n.type==='table'&&n.position.start.offset<=s.from&&n.position.end.offset>=s.from);if(!node){notify(tr('表の中にカーソルを置いてください。','Place the cursor inside a table.'));return;}const raw=current().raw.slice(node.position.start.offset,node.position.end.offset),eol=preferredEol(raw),lines=raw.split(/\r?\n/);const cells=Array.from($('#preview').querySelectorAll('[data-cell]'));const cell=cells.find(n=>Number(n.dataset.from)<=s.from&&Number(n.dataset.to)>=s.from);const row=Number(cell?.dataset.row||0),col=Number(cell?.dataset.col||0);
   if(action==='row-after')lines.splice(row===0?2:row+2,0,'| '+Array(node.children[0].children.length).fill(' ').join(' | ')+' |');
-  else if(action==='row-remove'){if(row===0){notify('見出し行は削除できません。');return;}lines.splice(row+1,1);}
+  else if(action==='row-remove'){if(row===0){notify(tr('見出し行は削除できません。','The header row cannot be deleted.'));return;}lines.splice(row+1,1);}
   else if(action==='column-after'){for(let i=0;i<lines.length;i++){const pieces=splitTableRow(lines[i]);const offset=pieces[0].trim()===''?1:0;pieces.splice(offset+col+1,0,i===1?' --- ':' 内容 ');lines[i]=pieces.join('|');}}
   else if(action==='column-remove'){if(node.children[0].children.length===1)return;for(let i=0;i<lines.length;i++){const pieces=splitTableRow(lines[i]);const offset=pieces[0].trim()===''?1:0;pieces.splice(offset+col,1);lines[i]=pieces.join('|');}}
   apply(node.position.start.offset,node.position.end.offset,lines.join(eol));}
-async function tableMenu(){if(!await dialog('表の操作','<select id="table-operation"><option value="row-after">選択行の下に行を追加</option><option value="row-remove">選択行を削除</option><option value="column-after">選択列の右に列を追加</option><option value="column-remove">選択列を削除</option></select>'))return;tableAction($('#table-operation').value);}
+async function tableMenu(){if(!await dialog(tr('表の操作','Table actions'),tr('<select id="table-operation"><option value="row-after">選択行の下に行を追加</option><option value="row-remove">選択行を削除</option><option value="column-after">選択列の右に列を追加</option><option value="column-remove">選択列を削除</option></select>','<select id="table-operation"><option value="row-after">Insert row below selection</option><option value="row-remove">Delete selected row</option><option value="column-after">Insert column to the right</option><option value="column-remove">Delete selected column</option></select>')))return;tableAction($('#table-operation').value);}
 
 function collectImages(d){if(!isMarkdown(d))return [];return collectImageReferences(d.raw,d.id===activeId&&rich.source===d.raw?rich.images:[]);}
 async function saveDocument(d=current(),saveAs=false){
   if(paneSession)return paneSession.save(saveAs);
-  if(d.composing||paneHub?.childDialogOpen()){notify('入力の変換・別ウィンドウの操作を終えてから保存してください。');return false;}
+  if(d.composing||paneHub?.childDialogOpen()){notify(tr('入力の変換・別ウィンドウの操作を終えてから保存してください。','Finish text composition and operations in other windows before saving.'));return false;}
   if(d.saving)return false;
   if(d.importPromise)await d.importPromise;
   if(!isDesktop){const bytes=encodeBrowserText(d.raw,d.encoding,d.hasBom);download(d.name,'application/octet-stream',new Blob([bytes],{type:'application/octet-stream'}));d.saved=d.raw;d.savedEncoding=d.encoding;d.savedHasBom=d.hasBom;d.needsInitialSave=false;render();return true;}
@@ -482,24 +483,24 @@ async function saveDocument(d=current(),saveAs=false){
       const changes=collectImages(d).map(ref=>{const replacement=r.replacements.find(x=>x.oldUrl===ref.url);return replacement?{from:ref.urlFrom,to:ref.urlTo,insert:replacement.newUrl}:null;}).filter(Boolean).sort((a,b)=>b.from-a.from);
       for(const c of changes)d.replace(c.from,c.to,c.insert);
     }
-    const previousKind=fileKind(d);d.path=r.path;d.name=r.name;if(previousKind!==fileKind(d))d.previewViewMode=initialViewMode(settings,fileKind(d));if(d.encoding===submittedEncoding&&d.hasBom===submittedBom){d.encoding=r.encoding||submittedEncoding;d.hasBom=r.hasBom??submittedBom;d.encodingGuessed=r.encodingGuessed??false;d.encodingNotice=r.encodingNotice||null;}d.savedEncoding=r.encoding||submittedEncoding;d.savedHasBom=r.hasBom??submittedBom;d.fingerprint=r.fingerprint;d.saved=r.text;render();saveRecovery();notify(d.dirty?'保存しました。保存後の変更があります。':'保存しました');return true;
+    const previousKind=fileKind(d);d.path=r.path;d.name=r.name;if(previousKind!==fileKind(d))d.previewViewMode=initialViewMode(settings,fileKind(d));if(d.encoding===submittedEncoding&&d.hasBom===submittedBom){d.encoding=r.encoding||submittedEncoding;d.hasBom=r.hasBom??submittedBom;d.encodingGuessed=r.encodingGuessed??false;d.encodingNotice=r.encodingNotice||null;}d.savedEncoding=r.encoding||submittedEncoding;d.savedHasBom=r.hasBom??submittedBom;d.fingerprint=r.fingerprint;d.saved=r.text;render();saveRecovery();notify(d.dirty?tr('保存しました。保存後の変更があります。','Saved. There are newer changes.'):tr('保存しました','Saved'));return true;
   }finally{d.saving=false;}
 }
-async function confirmCloseDocument(d){if(d.composing){notify('入力の変換を確定してから閉じてください。');return false;}if(!d.dirty)return true;const ok=await dialog('変更を保存しますか？','<p id="close-file-name"></p><p class="muted">保存しない場合、今回の変更は破棄されます。</p><div class="close-choices"><button type="button" id="discard" class="secondary">保存せずに閉じる</button></div>',()=>{$('#close-file-name').textContent=d.name;$('#modal .primary').textContent='保存して閉じる';$('#discard').onclick=()=>$('#modal').close('discard');});const choice=$('#modal').returnValue;$('#modal .primary').textContent='適用';if(!ok&&choice!=='discard')return false;if(ok){if(!await saveDocument(d))return false;if(d.dirty){notify('保存後に変更された内容があります。もう一度確認してください。',true);return false;}}return true;}
+async function confirmCloseDocument(d){if(d.composing){notify(tr('入力の変換を確定してから閉じてください。','Finish text composition before closing.'));return false;}if(!d.dirty)return true;const ok=await dialog(tr('変更を保存しますか？','Save changes?'),tr('<p id="close-file-name"></p><p class="muted">保存しない場合、今回の変更は破棄されます。</p><div class="close-choices"><button type="button" id="discard" class="secondary">保存せずに閉じる</button></div>','<p id="close-file-name"></p><p class="muted">If you do not save, your changes will be discarded.</p><div class="close-choices"><button type="button" id="discard" class="secondary">Close without saving</button></div>'),()=>{$('#close-file-name').textContent=d.name;$('#modal .primary').textContent=tr('保存して閉じる','Save and close');$('#discard').onclick=()=>$('#modal').close('discard');});const choice=$('#modal').returnValue;$('#modal .primary').textContent=tr('適用','Apply');if(!ok&&choice!=='discard')return false;if(ok){if(!await saveDocument(d))return false;if(d.dirty){notify(tr('保存後に変更された内容があります。もう一度確認してください。','There are changes made after saving. Please check again.'),true);return false;}}return true;}
 async function closeDocument(id){if(paneSession){await closeWindow();return true;}const d=documents.find(x=>x.id===id);if(!d||!await confirmCloseDocument(d))return false;await recoveryWriter.exclusive(async()=>{if(isDesktop){await ensureRegistered(d);await host('document.close',{id:d.id});}documents=documents.filter(x=>x.id!==id);});paneHub?.closeDocument(id);if(!documents.length)newDocument();else if(id===activeId)switchDocument(documents.at(-1).id);else renderTabs();saveRecovery();return true;}
 // Confirm every document before closing any of them, so a later cancellation
 // never silently drops a tab that was already confirmed for discard.
 async function closeAllDocuments(){
   if(closingWindow||paneSession)return;
-  if($('#modal').open||csvDialogOpen||paneHub?.childDialogOpen()){notify('開いている操作画面を閉じてから操作してください。');return;}
+  if($('#modal').open||csvDialogOpen||paneHub?.childDialogOpen()){notify(tr('開いている操作画面を閉じてから操作してください。','Close the open dialog before continuing.'));return;}
   if(!md()&&!textPreview.finishEdit())return;
-  if(documents.some(d=>d.composing||d.pendingImports)){notify('入力の変換や画像の取り込みが完了してから操作してください。');return;}
+  if(documents.some(d=>d.composing||d.pendingImports)){notify(tr('入力の変換や画像の取り込みが完了してから操作してください。','Finish text composition and image import before continuing.'));return;}
   closingWindow=true;
   const originalActive=activeId,initialDocs=[...documents],state=d=>[d.raw,d.saved,d.encoding,d.savedEncoding,d.hasBom,d.savedHasBom,d.path,d.name],checked=new Map(initialDocs.map(d=>[d,state(d)]));
   let locked=false,removed=false;
   try{
     for(const d of initialDocs)if(d.dirty){switchDocument(d.id);if(!await confirmCloseDocument(d))return;checked.set(d,state(d));}
-    if(documents.length!==initialDocs.length||documents.some((d,i)=>d!==initialDocs[i]||d.pendingImports||d.composing||state(d).some((value,n)=>value!==checked.get(d)[n]))){notify('確認中に文書が変更されました。もう一度操作してください。',true);return;}
+    if(documents.length!==initialDocs.length||documents.some((d,i)=>d!==initialDocs[i]||d.pendingImports||d.composing||state(d).some((value,n)=>value!==checked.get(d)[n]))){notify(tr('確認中に文書が変更されました。もう一度操作してください。','The document changed while confirming. Please try again.'),true);return;}
     $('#app').inert=true;locked=true;publishPeers();clearTimeout(recoveryTimer);
     await recoveryWriter.exclusive(async()=>{
       if(isDesktop)for(const d of initialDocs)await ensureRegistered(d);
@@ -516,11 +517,11 @@ async function closeAllDocuments(){
   }
 }
 let closingWindow=false;
-async function closeWindow(override){if(closingWindow)return;if(paneSession){if(sourceBusy||composing||current()?.composing&&current()?.compositionOwner===window){notify('入力の変換を確定してから閉じてください。');return;}if(isDesktop)await host('window.close');else window.close();return;}if($('#modal').open||csvDialogOpen||paneHub?.childDialogOpen()){notify('開いている操作画面を閉じてから終了してください。');return;}if(!md()&&!textPreview.finishEdit())return;if(documents.some(d=>d.composing)){notify('入力の変換を確定してから閉じてください。');return;}if(documents.some(d=>d.pendingImports)){notify('画像の取り込みが完了してから終了してください。');return;}closingWindow=true;const originalActive=activeId,initialDocs=[...documents];const state=d=>[d.raw,d.saved,d.encoding,d.savedEncoding,d.hasBom,d.savedHasBom,d.path,d.name];const checked=new Map(initialDocs.map(d=>[d,state(d)]));let locked=false,closed=false;try{for(const d of initialDocs)if(d.dirty){switchDocument(d.id);if(!await confirmCloseDocument(d)){if(documents.some(item=>item.id===originalActive))switchDocument(originalActive);return;}checked.set(d,state(d));}if(documents.some(item=>item.id===originalActive))switchDocument(originalActive);if(documents.length!==initialDocs.length||documents.some((d,i)=>d!==initialDocs[i]||d.pendingImports||state(d).some((value,n)=>value!==checked.get(d)[n]))){notify('終了確認中に文書が変更されました。もう一度終了してください。',true);return;}const policy=['clear','all','active'].includes(override)?override:['clear','all','active'].includes(settings.sessionPolicy)?settings.sessionPolicy:'clear';$('#app').inert=true;locked=true;publishPeers();clearTimeout(recoveryTimer);await recoveryWriter.write();await host('session.save',{policy,documentIds:documents.map(d=>d.id),activeId:originalActive,mode});await host('window.close');closed=true;}finally{if(locked&&!closed){$('#app').inert=false;publishPeers();}if(!closed)closingWindow=false;}}
+async function closeWindow(override){if(closingWindow)return;if(paneSession){if(sourceBusy||composing||current()?.composing&&current()?.compositionOwner===window){notify(tr('入力の変換を確定してから閉じてください。','Finish text composition before closing.'));return;}if(isDesktop)await host('window.close');else window.close();return;}if($('#modal').open||csvDialogOpen||paneHub?.childDialogOpen()){notify(tr('開いている操作画面を閉じてから終了してください。','Close the open dialog before exiting.'));return;}if(!md()&&!textPreview.finishEdit())return;if(documents.some(d=>d.composing)){notify(tr('入力の変換を確定してから閉じてください。','Finish text composition before closing.'));return;}if(documents.some(d=>d.pendingImports)){notify(tr('画像の取り込みが完了してから終了してください。','Wait for image import to finish before exiting.'));return;}closingWindow=true;const originalActive=activeId,initialDocs=[...documents];const state=d=>[d.raw,d.saved,d.encoding,d.savedEncoding,d.hasBom,d.savedHasBom,d.path,d.name];const checked=new Map(initialDocs.map(d=>[d,state(d)]));let locked=false,closed=false;try{for(const d of initialDocs)if(d.dirty){switchDocument(d.id);if(!await confirmCloseDocument(d)){if(documents.some(item=>item.id===originalActive))switchDocument(originalActive);return;}checked.set(d,state(d));}if(documents.some(item=>item.id===originalActive))switchDocument(originalActive);if(documents.length!==initialDocs.length||documents.some((d,i)=>d!==initialDocs[i]||d.pendingImports||state(d).some((value,n)=>value!==checked.get(d)[n]))){notify(tr('終了確認中に文書が変更されました。もう一度終了してください。','The document changed while confirming exit. Please try again.'),true);return;}const policy=['clear','all','active'].includes(override)?override:['clear','all','active'].includes(settings.sessionPolicy)?settings.sessionPolicy:'clear';$('#app').inert=true;locked=true;publishPeers();clearTimeout(recoveryTimer);await recoveryWriter.write();await host('session.save',{policy,documentIds:documents.map(d=>d.id),activeId:originalActive,mode});await host('window.close');closed=true;}finally{if(locked&&!closed){$('#app').inert=false;publishPeers();}if(!closed)closingWindow=false;}}
 function acceptFiles(items,options={}){for(const item of items){const old=documents.find(d=>d.path&&d.path.toLowerCase()===item.path?.toLowerCase());if(old)switchDocument(old.id);else newDocument(item,options);}}
 async function openFiles(){$('#file-input').dataset.encoding='';if(isDesktop){const items=await host('file.open');if(items)acceptFiles(items);}else $('#file-input').click();}
 async function encodingDialog(){
-  const d=current();const ok=await dialog('文字コード',`<label class="field">文字コード<select id="chosen-encoding">${encodingChoices.map(c=>'<option value="'+c.id+'">'+c.label+'</option>').join('')}</select></label><label class="checkbox" id="encoding-bom-field"><input type="checkbox" id="encoding-bom">BOMを付けて保存する（UTF-16／32）</label><label class="field">操作<select id="encoding-action"><option value="save">次の保存から、この文字コードを使う</option><option value="reopen">この文字コードで元ファイルを開き直す</option><option value="open">この文字コードで別のファイルを開く</option></select></label><p class="muted" id="encoding-notice"></p>`,()=>{
+  const d=current();const ok=await dialog(tr('文字コード','Encoding'),`<label class="field">文字コード<select id="chosen-encoding">${encodingChoices.map(c=>'<option value="'+c.id+'">'+c.label+'</option>').join('')}</select></label><label class="checkbox" id="encoding-bom-field"><input type="checkbox" id="encoding-bom">BOMを付けて保存する（UTF-16／32）</label><label class="field">操作<select id="encoding-action"><option value="save">次の保存から、この文字コードを使う</option><option value="reopen">この文字コードで元ファイルを開き直す</option><option value="open">この文字コードで別のファイルを開く</option></select></label><p class="muted" id="encoding-notice"></p>`,()=>{
     $('#chosen-encoding').value=d.encoding;$('#encoding-bom').checked=d.hasBom??defaultBom(d.encoding);$('#encoding-notice').textContent=d.encodingNotice||'文字化けした場合は文字コードを選んで開き直せます。保存形式の変更は次に保存したときに反映します。';
     $('#encoding-action').querySelector('[value="reopen"]').disabled=!d.path&&!d.browserFile;
     const updateBom=()=>{$('#encoding-bom-field').hidden=!/^utf(?:16|32)/.test($('#chosen-encoding').value);$('#encoding-bom').disabled=$('#encoding-action').value!=='save';};
@@ -528,17 +529,17 @@ async function encodingDialog(){
   });if(!ok)return;const encoding=$('#chosen-encoding').value,action=$('#encoding-action').value;
   if(action==='open'){if(isDesktop){const items=await host('file.open',{encoding});if(items)acceptFiles(items);}else{const input=$('#file-input');input.dataset.encoding=encoding;input.click();}return;}
   if(action==='reopen'){
-    if(d.dirty&&!await dialog('編集内容を破棄して開き直しますか？','<p class="muted">元ファイルを読み直すと、現在の未保存の変更は破棄されます。</p>'))return;
-    if(d.composing||d.saving){notify('入力の変換や保存の完了をお待ちください。');return;}
+    if(d.dirty&&!await dialog(tr('編集内容を破棄して開き直しますか？','Discard changes and reopen?'),tr('<p class="muted">元ファイルを読み直すと、現在の未保存の変更は破棄されます。</p>','<p class="muted">Reopening the file will discard your unsaved changes.</p>')))return;
+    if(d.composing||d.saving){notify(tr('入力の変換や保存の完了をお待ちください。','Wait for text composition or saving to finish.'));return;}
     const data=d.browserFile&&!d.path?await readBrowserFileWithConsent(d.browserFile,encoding):await host('file.reopen',{id:d.id,encoding});if(!data)return;if(d.browserFile&&!d.path)data.needsInitialSave=false;for(const a of d.anchors)a.valid=false;const fresh=new DocumentModel(data);fresh.id=d.id;Object.assign(d,fresh);switchDocument(d.id);publishPeers();if(d.encodingNotice)notify(d.encodingNotice);
   }else{d.encoding=encoding;d.hasBom=/^utf(?:16|32)/.test(encoding)?$('#encoding-bom').checked:defaultBom(encoding);d.encodingGuessed=false;d.encodingNotice=null;updateStatus();renderTabs();updateTitle();saveRecovery();}
 }
 listen('#encoding','click',guard(encodingDialog));
 async function lineEndingsDialog(){
-  if(!current()||sourceBusy||composing||current().composing||peerInputLocked()){notify('入力の変換を確定してから操作してください。');return;}
+  if(!current()||sourceBusy||composing||current().composing||peerInputLocked()){notify(tr('入力の変換を確定してから操作してください。','Finish text composition before continuing.'));return;}
   if(!md()&&!textPreview.finishEdit())return;
   const d=current(),raw=d.raw,revision=d.revision,counts=countLineEndings(raw);
-  const ok=await dialog('改行コードの一括変換',`<p class="muted">文書全体の改行コードを変更します。CSVの引用符内やコードブロック内の改行も対象です。</p><p id="line-ending-counts"></p><label class="field">対象<select id="line-ending-from"><option value="CRLF">CRLF</option><option value="LF">LF</option><option value="CR">CR</option><option value="all">すべて</option></select></label><label class="field">変更後<select id="line-ending-to"><option value="LF">LF</option><option value="CRLF">CRLF</option><option value="CR">CR</option><option value="remove">改行を削除して行をつなぐ</option></select></label><p id="line-ending-summary" role="status"></p>`,body=>{
+  const ok=await dialog(tr('改行コードの一括変換','Convert line endings'),`<p class="muted">文書全体の改行コードを変更します。CSVの引用符内やコードブロック内の改行も対象です。</p><p id="line-ending-counts"></p><label class="field">対象<select id="line-ending-from"><option value="CRLF">CRLF</option><option value="LF">LF</option><option value="CR">CR</option><option value="all">すべて</option></select></label><label class="field">変更後<select id="line-ending-to"><option value="LF">LF</option><option value="CRLF">CRLF</option><option value="CR">CR</option><option value="remove">改行を削除して行をつなぐ</option></select></label><p id="line-ending-summary" role="status"></p>`,body=>{
     const from=body.querySelector('#line-ending-from'),to=body.querySelector('#line-ending-to'),summary=body.querySelector('#line-ending-summary');
     body.querySelector('#line-ending-counts').textContent=`CRLF: ${counts.CRLF.toLocaleString()}件 / LF: ${counts.LF.toLocaleString()}件 / CR: ${counts.CR.toLocaleString()}件`;
     from.value=counts.CRLF?'CRLF':counts.LF?'LF':'CR';
@@ -546,9 +547,9 @@ async function lineEndingsDialog(){
     from.addEventListener('change',update);to.addEventListener('change',update);update();
   });
   if(!ok)return;
-  if(current()!==d||d.raw!==raw||d.revision!==revision||d.composing||d.pendingImports||peerInputLocked()){notify('確認中に文書が変更されました。もう一度操作してください。',true);return;}
+  if(current()!==d||d.raw!==raw||d.revision!==revision||d.composing||d.pendingImports||peerInputLocked()){notify(tr('確認中に文書が変更されました。もう一度操作してください。','The document changed while confirming. Please try again.'),true);return;}
   const result=replaceLineEndings(raw,$('#line-ending-from').value,$('#line-ending-to').value,d.selection);
-  if(result.text===raw){notify('変更する改行コードはありません。');return;}
+  if(result.text===raw){notify(tr('変更する改行コードはありません。','There are no line endings to change.'));return;}
   for(const anchor of d.anchors)anchor.valid=false;
   apply(0,raw.length,result.text,'command',{selection:result.selection});
   notify(`${result.count.toLocaleString()}件の改行を処理しました。保存するとファイルに反映されます。`);
@@ -557,7 +558,7 @@ listen('#line-endings','click',guard(lineEndingsDialog));
 const approvedBrowserFiles=new WeakSet();
 async function readBrowserFileWithConsent(file,encoding){
   if(file.size>MAX_BROWSER_FILE_BYTES&&!approvedBrowserFiles.has(file)){
-    const ok=await dialog('大きなファイルを開きますか？','<p>大きなファイルを開くと、読み込みに時間がかかり、メモリ不足や動作停止が発生する場合があります。</p><p class="muted">キャンセルするとファイルを開かずに戻ります。</p>');
+    const ok=await dialog(tr('大きなファイルを開きますか？','Open large file?'),tr('<p>大きなファイルを開くと、読み込みに時間がかかり、メモリ不足や動作停止が発生する場合があります。</p><p class="muted">キャンセルするとファイルを開かずに戻ります。</p>','<p>Opening a large file can take time and may cause the application to run out of memory or stop responding.</p><p class="muted">Cancel to return without opening it.</p>'));
     if(!ok)return null;approvedBrowserFiles.add(file);
   }
   return readBrowserFile(file,encoding,{allowLarge:approvedBrowserFiles.has(file)});
@@ -586,7 +587,7 @@ const splitPanel=new DiscordSplitPanel($('#chunks'),{copy:copyText,notify,onRend
 function renderChunks(){if(current())splitPanel.render(current(),settings.limit);}
 listen('#show-chunks','click',()=>{showChunks=!showChunks;$('.chunks-panel').hidden=!showChunks;if(showChunks)renderChunks();else{splitPanel.reset();splitMarkers.clear();splitSourceMarkers.clear();}});
 listen('#close-chunks','click',()=>{showChunks=false;$('.chunks-panel').hidden=true;splitPanel.reset();splitMarkers.clear();splitSourceMarkers.clear();});
-listen('#limit','change',guard(async e=>{let limit=Number(e.target.value);if(e.target.value==='custom'){const r=await promptFields('文字数上限',[{id:'custom-limit',label:'上限（32〜100000文字）',value:String(settings.limit),type:'number'}]);if(!r)return;limit=Number(r['custom-limit']);}await setSettings({limit:Math.max(32,Math.min(100000,limit||2000))});updateStatus();if(showChunks)renderChunks();}));
+listen('#limit','change',guard(async e=>{let limit=Number(e.target.value);if(e.target.value==='custom'){const r=await promptFields(tr('文字数上限','Character limit'),[{id:'custom-limit',label:tr('上限（32〜100000文字）','Limit (32–100000 characters)'),value:String(settings.limit),type:'number'}]);if(!r)return;limit=Number(r['custom-limit']);}await setSettings({limit:Math.max(32,Math.min(100000,limit||2000))});updateStatus();if(showChunks)renderChunks();}));
 listen('#heading','change',e=>{if(e.target.value===''||!md())return;const n=Number(e.target.value);prefixLines(line=>(n?'#'.repeat(n)+' ':'')+line.replace(/^ {0,3}#{1,6}\s+/,''));e.target.value='';});
 listen('#preview','contextmenu',e=>{if(e.target.closest('[data-cell]')){e.preventDefault();guard(tableMenu)();}});
 const commands={
@@ -600,27 +601,27 @@ const commands={
   bullet:()=>applyEdit(toggleList(current().raw,selection(),'bullet')),number:()=>applyEdit(toggleList(current().raw,selection(),'number')),check:()=>applyEdit(toggleList(current().raw,selection(),'check')),quote:()=>prefixLines('> '),subtext:()=>prefixLines('-# '),
   link,image:imageDialog,table:insertTable,code:insertCodeBlock,mermaid:()=>insertBlock('```mermaid\nflowchart TD\n    A[開始] --> B[処理]\n    B --> C[完了]\n```'),details:()=>insertBlock('<details>\n<summary>詳細を見る</summary>\n\n内容を入力\n\n</details>'),rule:()=>insertBlock('---'),
   'print-source':()=>printPane('source'),'print-preview':()=>printPane('preview'),
-  'copy-source':()=>copyText(current().raw),'copy-rich':async()=>{if(mode==='discord')return copyText(current().raw);const r=document.createRange();r.selectNodeContents($('#preview'));const data=clipboardContent(r);if(isDesktop)await host('clipboard.rich',data);else await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([data.html],{type:'text/html'}),'text/plain':new Blob([data.text],{type:'text/plain'})})]);notify('コピーしました');},search:searchDialog,settings:settingsDialog,help
+  'copy-source':()=>copyText(current().raw),'copy-rich':async()=>{if(mode==='discord')return copyText(current().raw);const r=document.createRange();r.selectNodeContents($('#preview'));const data=clipboardContent(r);if(isDesktop)await host('clipboard.rich',data);else await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([data.html],{type:'text/html'}),'text/plain':new Blob([data.text],{type:'text/plain'})})]);notify(tr('コピーしました','Copied'));},search:searchDialog,settings:settingsDialog,help
 };
 function setMode(value){if(!md())return;if(paneSession){paneSession.setMode(value);return;}mode=value;showChunks=false;$('.chunks-panel').hidden=true;splitPanel.reset();splitMarkers.clear();splitSourceMarkers.clear();render();saveRecovery();}
 document.addEventListener('mousedown',e=>{const command=e.target.closest('[data-cmd],[data-file-action]');if(command){if(['search','replace'].includes(command.dataset.cmd))features.rememberSearchSelection();if(!md())textPreview.finishEdit();selection();e.preventDefault();}});
-document.addEventListener('click',e=>{const b=e.target.closest('[data-cmd],[data-file-action]'),cmd=b?.dataset.cmd||b?.dataset.fileAction;if(b&&!b.disabled&&commands[cmd]){if(sourceBusy||composing||current()?.composing){notify('入力の変換を確定してから操作してください。');return;}if(!md()&&markdownCommands.has(cmd))return;guard(commands[cmd])();}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-cmd],[data-file-action]'),cmd=b?.dataset.cmd||b?.dataset.fileAction;if(b&&!b.disabled&&commands[cmd]){if(sourceBusy||composing||current()?.composing){notify(tr('入力の変換を確定してから操作してください。','Finish text composition before continuing.'));return;}if(!md()&&markdownCommands.has(cmd))return;guard(commands[cmd])();}});
 document.addEventListener('contextmenu',e=>{
   const button=e.target.closest('.file-actions [data-cmd="new"]');
   if(!button||button.disabled)return;
   e.preventDefault();
   if($('#modal').open||$('#app').inert)return;
-  if(sourceBusy||composing||current()?.composing){notify('入力の変換を確定してから操作してください。');return;}
+  if(sourceBusy||composing||current()?.composing){notify(tr('入力の変換を確定してから操作してください。','Finish text composition before continuing.'));return;}
   if(detachedSide){paneSession?.focusOwner();return;}
   guard(commands['new-options'])();
 });
 document.addEventListener('keydown',e=>{if(e.isComposing||composing||current()?.composing)return;if(e.target.closest('dialog'))return;if(!(e.ctrlKey||e.metaKey))return;const key=e.key.toLowerCase();if(e.ctrlKey&&e.altKey&&!e.metaKey&&!e.shiftKey&&!e.getModifierState('AltGraph')){const wrapMode={x:'none',s:'column',w:'window'}[key];if(wrapMode){e.preventDefault();guard(async()=>{await setSettings({wrapMode,wrap:wrapMode!=='none'});notify({none:'原文を折り返さない',column:'原文を指定桁で折り返す',window:'原文を右端で折り返す'}[wrapMode]);})();}return;}if(e.altKey)return;if(detachedSide&&['n','o'].includes(key)){e.preventDefault();paneSession?.focusOwner();return;}let command={n:e.shiftKey?'new-options':'new',o:'open',s:e.shiftKey?'saveas':'save',b:'bold',i:'italic',k:'link',f:'search',h:'replace',w:e.shiftKey?'closewindow':'closetab'}[key];if(command){e.preventDefault();if(!md()&&markdownCommands.has(command))return;guard(commands[command])();}else if(key==='z'&&side==='preview'){e.preventDefault();history(e.shiftKey);}else if(key==='y'&&side==='preview'){e.preventDefault();history(true);}else if(key==='tab'&&!detachedSide&&!e.defaultPrevented){e.preventDefault();const at=documents.findIndex(d=>d.id===activeId);switchDocument(documents[(at+(e.shiftKey?documents.length-1:1))%documents.length].id);}});
 listen('.splitter','pointerdown',e=>{e.preventDefault();const divider=e.target;divider.setPointerCapture(e.pointerId);const move=e=>{const box=$('.editor-panes').getBoundingClientRect();settings.ratio=Math.min(.78,Math.max(.22,(e.clientX-box.left)/box.width));document.documentElement.style.setProperty('--split',settings.ratio*100+'%');};const up=()=>{divider.removeEventListener('pointermove',move);divider.removeEventListener('pointerup',up);guard(()=>setSettings({ratio:settings.ratio}))();};divider.addEventListener('pointermove',move);divider.addEventListener('pointerup',up);});
-async function openLink(url){const target=safeBrowserUrl(url);if(!target){notify('HTTP・HTTPSのリンクを指定してください。');return;}await host('shell.open',{url:target});}
+async function openLink(url){const target=safeBrowserUrl(url);if(!target){notify(tr('HTTP・HTTPSのリンクを指定してください。','Enter an HTTP or HTTPS link.'));return;}await host('shell.open',{url:target});}
 onHost(guard(async event=>{
   if(event.type==='tab-transfer-pending'){
     try{
-      const d=documents.find(x=>x.id===event.id);if(!d&&!acceptingTab)return;if(!d)throw new Error('移動先で文書を確認できません。');
+      const d=documents.find(x=>x.id===event.id);if(!d&&!acceptingTab)return;if(!d)throw new Error(tr('移動先で文書を確認できません。','Could not find the document in the destination.'));
       const s=event.state||{};
       if(Array.isArray(s.undoStack)&&Array.isArray(s.redoStack)){d.undoStack=s.undoStack;d.redoStack=s.redoStack;d.historyChars=Number.isFinite(s.historyChars)?s.historyChars:0;}
       if(s.selection&&Number.isSafeInteger(s.selection.from)&&Number.isSafeInteger(s.selection.to))d.selection=s.selection;
@@ -629,29 +630,29 @@ onHost(guard(async event=>{
       if(!acceptingTab)acceptingTab={token:event.token,id:event.id};if(d.id===activeId)render({resetSource:true});await recoveryWriter.write();await host('tab.accepted',{token:event.token});if(acceptingTab?.token===event.token){clearTimeout(acceptingTab.watchdog);acceptingTab=null;flushTabHostEvents();host('tab.finalized',{token:event.token}).catch(()=>{});}
     }catch(error){await cancelAcceptedTab(event.token);throw error;}return;
   }
-  if(event.type==='tab-transfer-aborted'){if(tabTransfer?.token===event.token){clearTimeout(tabTransfer.watchdog);tabTransfer=null;flushTabHostEvents();notify('タブの移動を中止しました。文書は元のウィンドウに残っています。');}return;}
+  if(event.type==='tab-transfer-aborted'){if(tabTransfer?.token===event.token){clearTimeout(tabTransfer.watchdog);tabTransfer=null;flushTabHostEvents();notify(tr('タブの移動を中止しました。文書は元のウィンドウに残っています。','Tab transfer cancelled. The document remains in the original window.'));}return;}
   if(event.type==='tab-transfer-complete'){if(tabTransfer?.token===event.token)await finishSourceTransfer(tabTransfer);return;}
   if(event.type==='tab-transfer-rollback'){await rollbackIncomingTransfer(event.token);return;}
 }));
-async function processHostEvent(event){if((tabTransfer||acceptingTab)&&event.type==='update-close-request'){await host('update.ready',{ready:false,session:event.session});notify('タブの移動が終わるまで更新できません。');return;}if((tabTransfer||acceptingTab)&&(event.type==='close-request'||event.type==='editor-command')){notify('タブの移動が終わるまでお待ちください。');return;}if(event.type==='file-changed'&&(event.document?.id===tabTransfer?.id||event.document?.id===acceptingTab?.id))return;if(event.type==='new-in-directory'){if($('#modal').open||$('#app').inert){await host('file.cancel-directory',{folderToken:event.token});notify('開いている画面を閉じてからもう一度操作してください。',true);return;}await newDocumentWithOptions(event.token);return;}if(event.type==='editor-command'){if(!$('#modal').open&&!sourceBusy&&!composing&&!current()?.composing&&!$('#app').inert){if(detachedSide&&['new','new-options'].includes(event.command)){paneSession?.focusOwner();return;}if(['new','new-options','save','saveas','search','replace'].includes(event.command))await commands[event.command]();}return;}if(detachedSide){if(event.type==='pane-close-request')await closeWindow();return;}if(event.type==='pane-window-closed'){paneHub?.refresh();return;}if(event.type==='pane-window-error'){notify(event.message||'表示ウィンドウを閉じました。編集内容は元の画面に残っています。');paneHub?.refresh();return;}if(await updates.onEvent(event))return;if(event.type==='files-opened'){if(acceptingTab&&event.documents?.some(d=>d.id===acceptingTab.id))acceptingTab.staged=true;acceptFiles(event.documents,{nativeRegistered:true});}if(event.type==='activate-document'&&documents.some(d=>d.id===event.id))switchDocument(event.id);if(event.type==='new-document')newDocument(event.document||{});if(event.type==='close-request')await closeWindow();if(event.type==='settings-changed'){settings={...settings,...event.settings};applySettings();}if(event.type==='encoding-open-existing'){notify('すでに開いています。下部の文字コードから開き直してください。');return;}if(event.type==='large-file-changed'){notify('外部でファイルが大きく変更されました。保存時に内容を確認してください。');return;}if(event.type==='file-changed'){const d=documents.find(d=>d.id===event.document.id);if(!d)return;if(!d.dirty&&!d.composing&&!d.componentEditing){Object.assign(d,{raw:event.document.text,saved:event.document.text,fingerprint:event.document.fingerprint,encoding:event.document.encoding,savedEncoding:event.document.encoding,hasBom:event.document.hasBom??defaultBom(event.document.encoding),savedHasBom:event.document.hasBom??defaultBom(event.document.encoding),encodingGuessed:event.document.encodingGuessed??false,encodingNotice:event.document.encodingNotice||null,format:event.document.format});if(d.id===activeId)render({resetSource:true});try{if(isDesktop)await host('file.accept-change',{id:d.id,fingerprint:event.document.fingerprint});}catch{notify('外部変更の確認に失敗しました。次の保存時に確認してください。',true);}saveRecovery();}else{const notice=$('.notice');notice.hidden=false;notice.textContent='このファイルは別のアプリでも変更されています。保存時に変更を確認してください。';}}}
+async function processHostEvent(event){if((tabTransfer||acceptingTab)&&event.type==='update-close-request'){await host('update.ready',{ready:false,session:event.session});notify(tr('タブの移動が終わるまで更新できません。','Wait for the tab transfer to finish before updating.'));return;}if((tabTransfer||acceptingTab)&&(event.type==='close-request'||event.type==='editor-command')){notify(tr('タブの移動が終わるまでお待ちください。','Wait for the tab transfer to finish.'));return;}if(event.type==='file-changed'&&(event.document?.id===tabTransfer?.id||event.document?.id===acceptingTab?.id))return;if(event.type==='new-in-directory'){if($('#modal').open||$('#app').inert){await host('file.cancel-directory',{folderToken:event.token});notify(tr('開いている画面を閉じてからもう一度操作してください。','Close the open dialog and try again.'),true);return;}await newDocumentWithOptions(event.token);return;}if(event.type==='editor-command'){if(!$('#modal').open&&!sourceBusy&&!composing&&!current()?.composing&&!$('#app').inert){if(detachedSide&&['new','new-options'].includes(event.command)){paneSession?.focusOwner();return;}if(['new','new-options','save','saveas','search','replace'].includes(event.command))await commands[event.command]();}return;}if(detachedSide){if(event.type==='pane-close-request')await closeWindow();return;}if(event.type==='pane-window-closed'){paneHub?.refresh();return;}if(event.type==='pane-window-error'){notify(event.message||'表示ウィンドウを閉じました。編集内容は元の画面に残っています。');paneHub?.refresh();return;}if(await updates.onEvent(event))return;if(event.type==='files-opened'){if(acceptingTab&&event.documents?.some(d=>d.id===acceptingTab.id))acceptingTab.staged=true;acceptFiles(event.documents,{nativeRegistered:true});}if(event.type==='activate-document'&&documents.some(d=>d.id===event.id))switchDocument(event.id);if(event.type==='new-document')newDocument(event.document||{});if(event.type==='close-request')await closeWindow();if(event.type==='settings-changed'){settings={...settings,...event.settings};applySettings();}if(event.type==='encoding-open-existing'){notify(tr('すでに開いています。下部の文字コードから開き直してください。','The file is already open. Reopen it using the encoding control below.'));return;}if(event.type==='large-file-changed'){notify(tr('外部でファイルが大きく変更されました。保存時に内容を確認してください。','The file changed substantially outside the app. Review it when saving.'));return;}if(event.type==='file-changed'){const d=documents.find(d=>d.id===event.document.id);if(!d)return;if(!d.dirty&&!d.composing&&!d.componentEditing){Object.assign(d,{raw:event.document.text,saved:event.document.text,fingerprint:event.document.fingerprint,encoding:event.document.encoding,savedEncoding:event.document.encoding,hasBom:event.document.hasBom??defaultBom(event.document.encoding),savedHasBom:event.document.hasBom??defaultBom(event.document.encoding),encodingGuessed:event.document.encodingGuessed??false,encodingNotice:event.document.encodingNotice||null,format:event.document.format});if(d.id===activeId)render({resetSource:true});try{if(isDesktop)await host('file.accept-change',{id:d.id,fingerprint:event.document.fingerprint});}catch{notify(tr('外部変更の確認に失敗しました。次の保存時に確認してください。','Could not confirm the external change. Check again when saving.'),true);}saveRecovery();}else{const notice=$('.notice');notice.hidden=false;notice.textContent='このファイルは別のアプリでも変更されています。保存時に変更を確認してください。';}}}
 tabHostQueue=createTabHostQueue({locked:()=>tabTransfer||acceptingTab,receiving:()=>acceptingTab,dispatch:processHostEvent,onError:error=>notify(error.message||String(error),true)});
 onHost(guard(event=>tabHostQueue.handle(event)));
 function peerInputLocked(){return !!tabTransfer||!!acceptingTab||!!current()?.componentEditing&&current().componentEditing!==window||!!current()?.composing&&!composing&&!sourceBusy||!!$('#app').inert||!!paneSession?.isLocked()||!!paneHub?.childDialogOpen()||csvDialogOpen;}
 async function csvSidecar(action,id,view){
-  const d=documents.find(d=>d.id===id);if(!d||!['csv','tsv'].includes(previewKind(d)))throw new Error('CSV・TSVの文書を開いてください。');
+  const d=documents.find(d=>d.id===id);if(!d||!['csv','tsv'].includes(previewKind(d)))throw new Error(tr('CSV・TSVの文書を開いてください。','Open a CSV or TSV document.'));
   if(paneSession)return paneSession.csvSidecar(action,view);
   if(isDesktop){
     await ensureRegistered(d);
     const result=await host('csv.view.'+action,{id, ...(action==='save'?{view:normalizeCsvView(view)}:{})});
-    if(action==='save'){if(result)notify('表示設定を保存しました。');return !!result;}
-    if(!result){notify('表示設定ファイルが見つかりません。');return null;}return normalizeCsvView(result);
+    if(action==='save'){if(result)notify(tr('表示設定を保存しました。','Saved display settings.'));return !!result;}
+    if(!result){notify(tr('表示設定ファイルが見つかりません。','Display settings file not found.'));return null;}return normalizeCsvView(result);
   }
   if(action==='save'){download(d.name+'.mdsplit-view.json','application/json',new Blob([JSON.stringify({schema:'md-split.csv-view',version:1,view:normalizeCsvView(view)},null,2)],{type:'application/json'}));return true;}
-  return new Promise((resolve,reject)=>{const input=document.createElement('input');input.type='file';input.accept='.json';input.hidden=true;document.body.append(input);const done=value=>{input.remove();resolve(value);};input.addEventListener('cancel',()=>done(null),{once:true});input.addEventListener('change',async()=>{try{const file=input.files?.[0];if(!file)return done(null);if(file.size>2*1024*1024)throw new Error('表示設定ファイルが大きすぎます。');const data=JSON.parse(await file.text());if(data.schema!=='md-split.csv-view'||data.version!==1||!data.view)throw new Error(APP_TITLE+'の表示設定ファイルではありません。');done(normalizeCsvView(data.view));}catch(e){input.remove();reject(e);}},{once:true});input.click();});
+  return new Promise((resolve,reject)=>{const input=document.createElement('input');input.type='file';input.accept='.json';input.hidden=true;document.body.append(input);const done=value=>{input.remove();resolve(value);};input.addEventListener('cancel',()=>done(null),{once:true});input.addEventListener('change',async()=>{try{const file=input.files?.[0];if(!file)return done(null);if(file.size>2*1024*1024)throw new Error(tr('表示設定ファイルが大きすぎます。','The display settings file is too large.'));const data=JSON.parse(await file.text());if(data.schema!=='md-split.csv-view'||data.version!==1||!data.view)throw new Error(APP_TITLE+'の表示設定ファイルではありません。');done(normalizeCsvView(data.view));}catch(e){input.remove();reject(e);}},{once:true});input.click();});
 }
 function publishPeers(){if(paneSession)paneSession.changed();else paneHub?.refresh();}
 function publishPosition(at){if(refreshing)return;if(paneSession)paneSession.position(at);else paneHub?.position(activeId,at);}
-for(const selector of ['#source','#preview'])$(selector).addEventListener('beforeinput',e=>{if(peerInputLocked()){e.preventDefault();notify('別の表示で入力中です。変換の確定をお待ちください。');}},{capture:true});
+for(const selector of ['#source','#preview'])$(selector).addEventListener('beforeinput',e=>{if(peerInputLocked()){e.preventDefault();notify(tr('別の表示で入力中です。変換の確定をお待ちください。','Text input is in progress in another view. Wait for composition to finish.'));}},{capture:true});
 async function start(){
   if(detachedSide){
     try{
@@ -659,7 +660,7 @@ async function start(){
         refresh(snapshot){settings={...settings,...snapshot.settings,viewMode:detachedSide,outlineVisible:false};mode=snapshot.mode;$('#app').inert=snapshot.locked;lastSelection=current()?.selection||lastSelection;if(current()){if(sourceBusy||composing)scheduleRender();else applySettings();}},
         position(at){if(current())features.active(at);},followScroll(anchor){features.followScroll(anchor);}
       });
-      if(!paneSession)throw new Error('元のウィンドウに接続できません。');
+      if(!paneSession)throw new Error(tr('元のウィンドウに接続できません。','Could not connect to the original window.'));
       settings={...settings,...paneSession.settings,viewMode:detachedSide,outlineVisible:false};mode=paneSession.mode;
       documents=[paneSession.document];activeId=paneSession.document.id;lastSelection=current().selection;side=detachedSide;$('#app').inert=paneSession.locked;
       window.addEventListener('pagehide',()=>{textPreview.finishEdit({force:true});if(current()?.componentEditing===window)current().componentEditing=null;if(current()?.compositionOwner===window){current().composing=false;current().compositionOwner=null;}paneSession?.detach();});
@@ -675,7 +676,7 @@ async function start(){
       focusOwner(){if(isDesktop)return host('window.focus');window.focus();},
       async search(id,replace,selected){switchDocument(id);if(!md()&&effectiveView()==='preview'){current().previewViewMode='split';updateView();}if(isDesktop)await host('window.focus');else window.focus();features.openSearch(replace,selected);}
     });
-    if(initial.recovered)notify(initial.recoveryReason==='update'?'更新前のタブを復元しました。':'前回の未保存内容を復元しました。');updates.startup();
+    if(initial.recovered)notify(initial.recoveryReason==='update'?tr('更新前のタブを復元しました。','Restored tabs from before the update.'):tr('前回の未保存内容を復元しました。','Restored unsaved content from the previous session.'));updates.startup();
   }
   updateView=setupViewControls({settings:viewSettings,setSettings:guard(setViewSettings),isPopup:detachedSide});
   applySettings();

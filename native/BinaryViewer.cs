@@ -11,8 +11,8 @@ internal sealed class BinaryViewer : Form
     private const int ScrollScale = 1_000_000;
     private readonly string path;
     private readonly Label status = new() { Name = "BinaryStatus", AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(12, 8, 12, 8), Text = UiLanguage.T("ファイルを読み込んでいます…", "Loading file…") };
-    private readonly HexTextBox output = new() { Name = "BinaryContent", Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Horizontal, Font = new Font("Consolas", 10), ShortcutsEnabled = true, MaxLength = int.MaxValue, AccessibleName = "バイナリ内容" };
-    private readonly VScrollBar scroll = new() { Name = "BinaryScroll", Dock = DockStyle.Fill, Minimum = 0, Maximum = ScrollScale, LargeChange = 1, SmallChange = 1, Enabled = false, AccessibleName = "ファイル全体をスクロール" };
+    private readonly HexTextBox output = new() { Name = "BinaryContent", Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, WordWrap = false, ScrollBars = ScrollBars.Horizontal, Font = new Font("Consolas", 10), ShortcutsEnabled = true, MaxLength = int.MaxValue, AccessibleName = UiLanguage.T("バイナリ内容", "Binary contents") };
+    private readonly VScrollBar scroll = new() { Name = "BinaryScroll", Dock = DockStyle.Fill, Minimum = 0, Maximum = ScrollScale, LargeChange = 1, SmallChange = 1, Enabled = false, AccessibleName = UiLanguage.T("ファイル全体をスクロール", "Scroll the entire file") };
     private readonly ComboBox searchMode = new() { Name = "BinarySearchMode", DropDownStyle = ComboBoxStyle.DropDownList, Width = 155, AccessibleName = UiLanguage.T("検索方法", "Search mode") };
     private readonly TextBox searchText = new() { Name = "BinarySearchText", Width = 230, MaxLength = 4096, AccessibleName = UiLanguage.T("検索する文字列", "Search text") };
     private readonly Button searchNext = new() { Name = "BinarySearchNext", Text = UiLanguage.T("次を検索", "Find next"), AutoSize = true, Enabled = false };

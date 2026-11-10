@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 import {encodeDelimitedCell} from './csv-parser.js';
 
 // Limit normalization to the characters explicitly named by the user; a
@@ -25,13 +27,13 @@ export function convertCsvText(value,operation){
     case 'hiragana-to-kana': return text.replace(/[\u3041-\u3096]+/g,match=>toHalfKana(toKatakana(match)));
     case 'upper': return text.toUpperCase();
     case 'lower': return text.toLowerCase();
-    default: throw new Error('未対応の文字変換です。');
+    default: throw new Error(tr('未対応の文字変換です。','This text conversion is not supported.'));
   }
 }
 
 export function transposeCsvClipboard(matrix){
   const width=matrix[0]?.length||0;
-  if(!width||matrix.some(row=>row.length!==width))throw new Error('行ごとに列数が異なる内容は縦横変換できません。');
+  if(!width||matrix.some(row=>row.length!==width))throw new Error(tr('行ごとに列数が異なる内容は縦横変換できません。','Cannot transpose rows with different column counts.'));
   return Array.from({length:width},(_,col)=>matrix.map(row=>row[col]));
 }
 

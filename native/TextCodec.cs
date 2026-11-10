@@ -13,7 +13,7 @@ internal sealed class BinaryContentException : IOException
 
 internal static class TextCodec
 {
-    private const string GuessNotice = "文字コードを推定しました。表示が正しくない場合は、文字コードを指定して読み直してください。";
+    private static string GuessNotice => UiLanguage.T("文字コードを推定しました。表示が正しくない場合は、文字コードを指定して読み直してください。", "The encoding was detected automatically. If the text is incorrect, select an encoding and reopen the file.");
 
     static TextCodec() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 

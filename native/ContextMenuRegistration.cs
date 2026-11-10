@@ -11,7 +11,7 @@ internal static class ContextMenuRegistration
     private const string FileKey = Root + @"*\shell\MD.Split.Open";
     private const string BackgroundKey = Root + @"Directory\Background\shell\MD.Split.New";
     private const string FolderKey = Root + @"Directory\shell\MD.Split.New";
-    private static string Executable => Environment.ProcessPath ?? throw new IOException("実行ファイルが見つかりません。");
+    private static string Executable => Environment.ProcessPath ?? throw new IOException(UiLanguage.T("実行ファイルが見つかりません。", "The executable was not found."));
     private static string OpenCommand => '"' + Executable + "\" \"%1\"";
     private static string BackgroundCommand => '"' + Executable + "\" --new-in-directory \"%V\"";
     private static string FolderCommand => '"' + Executable + "\" --new-in-directory \"%1\"";
@@ -49,7 +49,7 @@ internal static class ContextMenuRegistration
             {
                 using var existing = Registry.CurrentUser.OpenSubKey(entry.Key);
                 if (existing is not null && !Owned(entry.Key, entry.Command))
-                    throw new IOException("別のインストールが右クリックメニューを使用しています。先にそちらの設定を解除してください。");
+                    throw new IOException(UiLanguage.T("別のインストールが右クリックメニューを使用しています。先にそちらの設定を解除してください。", "Another installation uses the context menu. Disable its setting first."));
             }
             foreach (var entry in entries)
             {
