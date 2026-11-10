@@ -1,5 +1,6 @@
 import './toolbar-folding.css';
 import {installSessionMenu} from './session-menu.js';
+import {currentUiLanguage} from './i18n.js';
 
 // Each collapsed section leaves a zero-height anchor at its original position.
 // Its compact handle opens that section directly, without adding another row.
@@ -27,9 +28,9 @@ export function installToolbarFolding(root = document) {
   formatbar.id = 'foldable-format';
 
   const entries = [
-    {key:'actions', label:'操作', target:topbar, section:topbar, container:topbar, after:topbar},
-    {key:'tabs', label:'タブ', target:tabbar, section:tabRow, container:tabRow, after:tabRow},
-    {key:'format', label:'書式', target:formatbar, section:formatbar, container:formatbar, after:formatbar},
+    {key:'actions', label:'操作', english:'Controls', target:topbar, section:topbar, container:topbar, after:topbar},
+    {key:'tabs', label:'タブ', english:'Tabs', target:tabbar, section:tabRow, container:tabRow, after:tabRow},
+    {key:'format', label:'書式', english:'Formatting', target:formatbar, section:formatbar, container:formatbar, after:formatbar},
   ];
   const anchors = [];
   let queued = false;
@@ -65,7 +66,7 @@ export function installToolbarFolding(root = document) {
     if (!queued) { queued = true; requestAnimationFrame(layoutHandles); }
   }
 
-  for (const {key,label,target,section,container,after} of entries) {
+  for (const {key,label,english,target,section,container,after} of entries) {
     const anchor = root.createElement('div');
     anchor.className = 'fold-edge';
     anchor.dataset.foldAnchor = key;
@@ -80,14 +81,15 @@ export function installToolbarFolding(root = document) {
     let expanded = key !== 'tabs';
     let manual = false;
     function apply() {
+      const text=currentUiLanguage()==='en'?english:label;
       button.setAttribute('aria-expanded', String(expanded));
-      button.setAttribute('aria-label', `${label}を${expanded ? '折りたたむ' : '展開'}`);
-      button.title = expanded ? `${label}を折りたたむ（元の場所にある引き出しから再表示）` : `${label}を展開`;
+      button.setAttribute('aria-label', currentUiLanguage()==='en'?`${expanded?'Collapse':'Expand'} ${text}`:`${label}を${expanded ? '折りたたむ' : '展開'}`);
+      button.title = currentUiLanguage()==='en'?(expanded?`Collapse ${text} (reopen at its original position)`:`Expand ${text}`):(expanded ? `${label}を折りたたむ（元の場所にある引き出しから再表示）` : `${label}を展開`);
       if (expanded) {
-        button.textContent = `${label} ▴`;
+        button.textContent = `${text} ▴`;
         container.append(button);
       } else {
-        button.textContent = label;
+        button.textContent = text;
         const indicator = root.createElement('span');
         indicator.className = 'fold-indicator';
         indicator.setAttribute('aria-hidden', 'true');
@@ -99,6 +101,7 @@ export function installToolbarFolding(root = document) {
       anchor.hidden = expanded;
       scheduleLayout();
     }
+    root.addEventListener('mdsplit-languagechange', apply);
     button.addEventListener('click', () => { manual = true; expanded = !expanded; apply(); button.focus({preventScroll:true}); });
     apply();
     if (key === 'tabs') {

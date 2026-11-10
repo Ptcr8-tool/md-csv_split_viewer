@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 // A detached pane shares its owner's DocumentModel, including undo and save state.
 // Only windows explicitly opened here can attach; Markdown never supplies this API.
 export function paneSide(url=location.href){
@@ -15,10 +17,10 @@ export function createPaneHub(api){
   const publicApi={
     attach(w,callbacks){
       const p=peers.get(w);
-      if(!p||w.opener!==window||w.location.origin!==location.origin||w.location.pathname!==new URL('index.html',location.href).pathname||paneSide(w.location.href)!==p.side||!alive(p))throw new Error('この表示ウィンドウには接続できません。');
+      if(!p||w.opener!==window||w.location.origin!==location.origin||w.location.pathname!==new URL('index.html',location.href).pathname||paneSide(w.location.href)!==p.side||!alive(p))throw new Error(tr('この表示ウィンドウには接続できません。','Could not connect to this view window.'));
       p.callbacks=callbacks;
       const doc=api.documents().find(d=>d.id===p.id);
-      const requireOpen=()=>{if(w.closed||!peers.has(w)||!alive(p))throw new Error('元の文書は閉じられています。');};
+      const requireOpen=()=>{if(w.closed||!peers.has(w)||!alive(p))throw new Error(tr('元の文書は閉じられています。','The original document has been closed.'));};
       return {
         document:doc,side:p.side,settings:api.settings(p.id),mode:api.mode(),locked:lockedFor(w),
         isLocked(){return lockedFor(w);},
@@ -47,7 +49,7 @@ export function createPaneHub(api){
       prune();const d=api.current();for(const [w,p] of peers)if(p.id===d.id&&p.side===side){w.focus();return;}
       const url=new URL('index.html',location.href);url.search='?pane='+side;
       const w=window.open(url.href,'_blank','popup,width=960,height=800');
-      if(!w){api.notify('表示ウィンドウを開けませんでした。');return;}
+      if(!w){api.notify(tr('表示ウィンドウを開けませんでした。','Could not open the view window.'));return;}
       peers.set(w,{id:d.id,side,callbacks:null});
     },
     refresh,

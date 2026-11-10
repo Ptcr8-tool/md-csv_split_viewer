@@ -1,3 +1,4 @@
+import {currentUiLanguage} from './i18n.js';
 import {csvColumnLabel} from './csv-view.js';
 import './csv-selection-status.css';
 
@@ -24,11 +25,11 @@ export function csvSelectionAddress(selection, rowCount, columnCount, style='let
   const first=address(minRow,minColumn),last=address(maxRow,maxColumn);
   const total=selection.kind==='row'?maxRow-minRow+1:selection.kind==='column'?maxColumn-minColumn+1:(maxRow-minRow+1)*(maxColumn-minColumn+1);
   const sparse=selection.kind!=='all' && count!==total;
-  return first+(first===last?'':`:${last}`)+(sparse?'（複数範囲）':'');
+  return first+(first===last?'':`:${last}`)+(sparse?(currentUiLanguage()==='en'?' (multiple ranges)':'（複数範囲）'):'');
 }
 
 export function createCsvSelectionFooter() {
   const footer=document.createElement('div'); footer.className='csv-address-footer';
-  const output=document.createElement('output'); output.className='csv-address'; output.setAttribute('aria-label','選択セルの位置'); output.setAttribute('aria-live','polite');
+  const output=document.createElement('output'); output.className='csv-address'; output.setAttribute('aria-label',currentUiLanguage()==='en'?'Selected cell position':'選択セルの位置'); output.setAttribute('aria-live','polite');
   footer.append(output); return {footer,output};
 }

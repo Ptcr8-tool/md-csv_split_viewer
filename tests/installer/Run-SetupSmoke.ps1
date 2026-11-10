@@ -264,6 +264,12 @@ try {
     Assert-File $app 'application executable'
     Assert-File $html 'application UI'
     Assert-File $uninstaller 'uninstaller'
+    $languageMarker = Join-Path $installPath 'Data\install-language.txt'
+    Assert-File $languageMarker 'initial installer language'
+    $initialLanguage = [IO.File]::ReadAllText($languageMarker).Trim()
+    if ($initialLanguage -notin @('ja', 'en')) { throw 'Installer language marker was invalid.' }
+    $preservedLanguage = if ($initialLanguage -eq 'ja') { 'en' } else { 'ja' }
+    [IO.File]::WriteAllText($languageMarker, $preservedLanguage, [Text.Encoding]::ASCII)
     Assert-File (Join-Path $installPath 'WebView2Runtime\msedgewebview2.exe') 'offline WebView runtime'
     $readme = Join-Path $installPath 'README.md'
     Assert-File $readme 'offline README'
@@ -450,6 +456,7 @@ try {
     Invoke-CheckedProcess $setupPath @('/S', "/D=$installPath")
     Assert-File $html 'repaired application UI'
     if ([IO.File]::ReadAllText($sentinel) -ne 'preserve during repair') { throw 'Repair did not preserve application data.' }
+    if ([IO.File]::ReadAllText($languageMarker).Trim() -ne $preservedLanguage) { throw 'Repair overwrote the existing language marker.' }
     Write-Output 'PASS: same-version silent repair restored a missing file and preserved data.'
 
     Invoke-CheckedProcess $uninstaller @('/S')

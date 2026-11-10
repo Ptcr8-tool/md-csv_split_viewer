@@ -1,10 +1,12 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 // Mark the same raw-text boundaries next to the rendered Discord document.
 // The RichRenderer's source maps account for hidden Markdown syntax and entities.
 export class DiscordSplitPreview {
   constructor(preview,rich,context){
     this.preview=preview;this.rich=rich;this.context=context;this.frame=0;
     this.overlay=document.createElement('div');this.overlay.className='discord-boundary-overlay';
-    this.overlay.setAttribute('aria-label','Discordの分割位置');preview.parentElement.append(this.overlay);
+    this.overlay.setAttribute('aria-label',tr('Discordの分割位置','Discord split positions'));preview.parentElement.append(this.overlay);
     preview.addEventListener('scroll',()=>this.schedule(),{passive:true});
     window.addEventListener('resize',()=>this.schedule(),{passive:true});
     if(window.ResizeObserver)new ResizeObserver(()=>this.schedule()).observe(preview);
@@ -17,9 +19,9 @@ export class DiscordSplitPreview {
       let node=range?.startContainer,offset=range?.startOffset;
       if(!node&&document.caretPositionFromPoint){const point=document.caretPositionFromPoint(event.clientX,event.clientY);node=point?.offsetNode;offset=point?.offset;}
       const index=panel.dragged;panel.endDrag();
-      if(!node||!preview.contains(node)){panel.notify('文章の上に区切りを移動してください。',true);return;}
+      if(!node||!preview.contains(node)){panel.notify(tr('文章の上に区切りを移動してください。','Move the boundary onto the text.'),true);return;}
       const point=rich.point(node,offset);
-      if(point==null){panel.notify('文章の上に区切りを移動してください。',true);return;}
+      if(point==null){panel.notify(tr('文章の上に区切りを移動してください。','Move the boundary onto the text.'),true);return;}
       panel.move(index,point,doc,limit);
     });
   }
@@ -43,13 +45,14 @@ export class DiscordSplitPreview {
   }
   render(){
     const {enabled,doc,limit,panel}=this.context();this.overlay.replaceChildren();
+    this.overlay.setAttribute('aria-label',tr('Discordの分割位置','Discord split positions'));
     if(!enabled||!doc||!panel.state||panel.state.id!==doc.id||this.preview.hidden)return;
     const box=this.overlay.getBoundingClientRect();if(!box.width||!box.height)return;
     panel.state.breaks.forEach((point,index)=>{
       const rect=this.position(point);if(!rect||rect.bottom<box.top||rect.top>box.bottom)return;
       const button=document.createElement('button');button.type='button';button.className='discord-preview-boundary';button.draggable=true;
       button.textContent=String(index+1);button.style.top=`${Math.max(0,Math.min(box.height-24,rect.top-box.top))}px`;
-      button.title=`区切り ${index+1}：ドラッグして移動`;button.setAttribute('aria-label',`本文の区切り ${index+1} を移動`);
+      button.title=tr(`区切り ${index+1}：ドラッグして移動`,`Boundary ${index+1}: drag to move`);button.setAttribute('aria-label',tr(`本文の区切り ${index+1} を移動`,`Move text boundary ${index+1}`));
       button.addEventListener('dragstart',event=>panel.startDrag(index,event));
       button.addEventListener('dragend',()=>{panel.endDrag();this.preview.classList.remove('discord-boundary-drop');});
       this.overlay.append(button);

@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 import './file-drop-overlay.css';
 
 // File data may be intentionally hidden by the browser until drop. Only use
@@ -8,9 +10,9 @@ function dropDescription(transfer, {markdown, canOpenHere}) {
   const hasImage = types.some(type => type.startsWith('image/'));
   const hasOther = types.some(type => type && !type.startsWith('image/'));
   const hasUnknown = !types.length || types.some(type => !type);
-  const open = canOpenHere ? 'ファイルをドロップして開く' : 'ファイルは元のウィンドウにドロップしてください';
-  const image = markdown ? '画像は現在の Markdown に挿入します' : '画像の挿入は Markdown 文書で利用できます';
-  if (hasImage && !hasOther && !hasUnknown) return {title: markdown ? '画像をドロップして挿入' : image, detail: markdown ? '現在のカーソル位置に挿入します' : ''};
+  const open = canOpenHere ? tr('ファイルをドロップして開く','Drop files to open') : tr('ファイルは元のウィンドウにドロップしてください','Drop files in the original window');
+  const image = markdown ? tr('画像は現在の Markdown に挿入します','Images are inserted into the current Markdown document') : tr('画像の挿入は Markdown 文書で利用できます','Image insertion is available for Markdown documents');
+  if (hasImage && !hasOther && !hasUnknown) return {title: markdown ? tr('画像をドロップして挿入','Drop images to insert') : image, detail: markdown ? tr('現在のカーソル位置に挿入します','Insert at the current cursor position') : ''};
   if (hasOther && !hasImage && !hasUnknown) return {title:open, detail:''};
   return {title:open, detail:image};
 }

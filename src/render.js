@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfm } from 'micromark-extension-gfm';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
@@ -81,7 +83,7 @@ export class RichRenderer {
             const summary=/<summary\b[^>]*>([\s\S]*?)<\/summary\s*>/i.exec(this.source.slice(headerEnd,closeStart));
             const sm=el('summary');let bodyStart=headerEnd;
             if(summary){const sf=headerEnd+summary.index+summary[0].indexOf('>')+1;sm.append(this.leaf(summary[1],sf,sf+summary[1].length));bodyStart=headerEnd+summary.index+summary[0].length;}
-            else {sm.textContent='詳細';sm.contentEditable='false';}
+            else {sm.textContent=tr('詳細','Details');sm.contentEditable='false';}
             d.append(sm);const body=el('div','details-body');this.blocks(this.source.slice(bodyStart,closeStart),bodyStart,body);d.append(body);
             const key=this.docId+':'+from;
             d.open=this.openDetails.has(key)||/^<details\b[^>]*\bopen\b/i.test(raw);
@@ -112,7 +114,7 @@ export class RichRenderer {
         this.headings.push({from,to,level:node.depth,text:label(node)});
         if(this.mode==='discord'&&node.depth>3){n=el('p');n.append(this.leaf(this.source.slice(from,to),from,to,'raw'));}
         else{n=el('h'+node.depth);this.inlineChildren(node.children,base,n);}
-        {const button=el('button','heading-fold');button.type='button';button.contentEditable='false';button.setAttribute('aria-label','見出しを折りたたむ');button.textContent='▾';button.addEventListener('mousedown',e=>e.preventDefault());button.addEventListener('click',e=>{e.preventDefault();this.callbacks.toggleHeading?.(from);});n.prepend(button);}break;
+        {const button=el('button','heading-fold');button.type='button';button.contentEditable='false';button.setAttribute('aria-label',tr('見出しを折りたたむ','Collapse heading'));button.textContent='▾';button.addEventListener('mousedown',e=>e.preventDefault());button.addEventListener('click',e=>{e.preventDefault();this.callbacks.toggleHeading?.(from);});n.prepend(button);}break;
       }
       case 'blockquote': n=el('blockquote');for(const c of node.children)n.append(this.block(c,base));break;
       case 'list': n=el(node.ordered?'ol':'ul');if(node.start!=null)n.start=node.start;for(const c of node.children)n.append(this.block(c,base));break;
@@ -120,7 +122,7 @@ export class RichRenderer {
         n=el('li');
         const prefix=listLine(this.source,from),checked=node.checked??(prefix?.task!=null?/x/i.test(prefix.task):null);
         if(checked!=null&&this.mode!=='discord'){
-          n.className='task-item';const check=el('input');check.type='checkbox';check.checked=checked;check.contentEditable='false';check.setAttribute('aria-label','チェック項目');
+          n.className='task-item';const check=el('input');check.type='checkbox';check.checked=checked;check.contentEditable='false';check.setAttribute('aria-label',tr('チェック項目','Checklist item'));
           check.addEventListener('change',()=>{const raw=this.source.slice(from,to);const at=raw.search(/\[[ xX]\]/);if(at>=0)this.callbacks.patch(from+at+1,from+at+2,check.checked?'x':' ');});n.append(check);
         }else if(checked!=null){n.append(this.leaf(checked?'[x] ':'[ ] ',from+this.source.slice(from,to).indexOf('['),from+this.source.slice(from,to).indexOf(']')+1,'raw'));}
         if(prefix&&!prefix.content.trim()){
@@ -137,7 +139,7 @@ export class RichRenderer {
         if(node.lang==='mermaid'&&this.mode!=='discord')n=this.mermaid(node,from,to,start,end);
         else{
           n=el('div','code-block');n.dataset.language=info.language||node.lang||'';
-          if(info.fenced){const tools=el('div','code-tools');tools.contentEditable='false';const label=el('label');label.textContent='言語 ';const select=el('select');select.setAttribute('aria-label','コードブロックの言語');
+          if(info.fenced){const tools=el('div','code-tools');tools.contentEditable='false';const label=el('label');label.textContent=tr('言語 ','Language ');const select=el('select');select.setAttribute('aria-label',tr('コードブロックの言語','Code block language'));
             for(const preset of codePresets){const option=el('option');option.value=preset.id;option.textContent=preset.label;select.append(option);}
             if(!codePresets.some(p=>p.id===info.language)){const option=el('option');option.value=info.language;option.textContent=info.language;select.append(option);}select.value=info.language;
             select.addEventListener('change',()=>this.callbacks.codeLanguage(info,select.value));label.append(select);tools.append(label);n.append(tools);
@@ -203,7 +205,7 @@ export class RichRenderer {
         const img=el('img');img.alt=node.alt||'';img.title=node.title||node.alt||'';img.loading='lazy';
         if(safeMarkdownUrl(node.url,{image:true}))img.src=this.callbacks.imageUrl(node.url,this.docId);
         img.addEventListener('dblclick',()=>this.callbacks.editImage(from,to,node));
-        img.addEventListener('error',()=>{n.classList.add('image-error');n.title='画像を読み込めません: '+node.url;});n.append(img);return n;
+        img.addEventListener('error',()=>{n.classList.add('image-error');n.title=tr('画像を読み込めません: ','Could not load image: ')+node.url;});n.append(img);return n;
       }
       case 'html':return this.leaf(raw,from,to,'raw');
       default:if(node.children){n=el('span');this.inlineChildren(node.children,base,n);return n;}return this.leaf(node.value||raw,from,to);
@@ -212,14 +214,14 @@ export class RichRenderer {
   mermaid(node,from,to,start,end) {
     const n=el('figure','mermaid-block');n.contentEditable='false';n.dataset.atom='true';n.dataset.from=from;n.dataset.to=to;
     const tools=el('div','component-tools');const label=el('span');label.textContent='MERMAID';tools.append(label);
-    const stage=el('div','mermaid-stage');stage.textContent='図を描画しています…';
-    const edit=el('textarea','diagram-code');edit.hidden=true;edit.setAttribute('aria-label','Mermaidコード');edit.value=this.source.slice(start,end);
+    const stage=el('div','mermaid-stage');stage.textContent=tr('図を描画しています…','Rendering diagram…');
+    const edit=el('textarea','diagram-code');edit.hidden=true;edit.setAttribute('aria-label',tr('Mermaidコード','Mermaid code'));edit.value=this.source.slice(start,end);
     const button=(name,action)=>{const b=el('button');b.type='button';b.textContent=name;b.addEventListener('click',action);tools.append(b);return b;};
-    button('コード編集',()=>{edit.hidden=!edit.hidden;if(!edit.hidden)edit.focus();});
-    button('コードをコピー',()=>this.callbacks.copyText(this.source.slice(Number(n.dataset.from),Number(n.dataset.to))));
-    button('PNGコピー',()=>this.callbacks.copyDiagram(stage,'png'));
-    button('PNG保存',()=>this.callbacks.copyDiagram(stage,'png-file'));
-    button('SVG保存',()=>this.callbacks.copyDiagram(stage,'svg'));
+    button(tr('コード編集','Edit code'),()=>{edit.hidden=!edit.hidden;if(!edit.hidden)edit.focus();});
+    button(tr('コードをコピー','Copy code'),()=>this.callbacks.copyText(this.source.slice(Number(n.dataset.from),Number(n.dataset.to))));
+    button(tr('PNGコピー','Copy PNG'),()=>this.callbacks.copyDiagram(stage,'png'));
+    button(tr('PNG保存','Save PNG'),()=>this.callbacks.copyDiagram(stage,'png-file'));
+    button(tr('SVG保存','Save SVG'),()=>this.callbacks.copyDiagram(stage,'svg'));
     const error=el('div','diagram-error');error.hidden=true;
     edit.addEventListener('input',()=>{
       const oldEnd=Number(edit.dataset.end||end),body=this.source.slice(start,oldEnd);
@@ -239,7 +241,7 @@ export class RichRenderer {
       const result=await mermaid.render(id,code);
       if(stage._ticket!==ticket)return;
       stage.innerHTML=DOMPurify.sanitize(result.svg,{USE_PROFILES:{svg:true,svgFilters:true},FORBID_TAGS:['script','foreignObject']});error.hidden=true;
-    }catch(e){if(stage._ticket!==ticket)return;error.textContent='図を更新できません。コードを確認してください。';error.title=String(e.message||e);error.hidden=false;if(!stage.querySelector('svg'))stage.textContent='Mermaidコードから図を描画できませんでした。';}
+    }catch(e){if(stage._ticket!==ticket)return;error.textContent=tr('図を更新できません。コードを確認してください。','Could not update the diagram. Check the code.');error.title=String(e.message||e);error.hidden=false;if(!stage.querySelector('svg'))stage.textContent=tr('Mermaidコードから図を描画できませんでした。','Could not render the Mermaid diagram.');}
   }
   rebase(from,to,insert) {
     const delta=insert.length-(to-from);

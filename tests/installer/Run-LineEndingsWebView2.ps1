@@ -29,7 +29,7 @@ try {
     }
     $data = Join-Path $application 'Data'
     [void][IO.Directory]::CreateDirectory($data)
-    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear"}', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"language":"ja","welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear"}', [Text.UTF8Encoding]::new($false))
     $file = Join-Path $testRoot 'mixed.txt'
     $original = "one`r`ntwo`nthree`rfour"
     $converted = "one`ntwo`nthree`rfour"

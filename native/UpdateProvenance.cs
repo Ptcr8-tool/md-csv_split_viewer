@@ -16,7 +16,7 @@ internal static class UpdateProvenance
     public static async Task Verify(string installer,string bundle,UpdateManifest manifest,CancellationToken token)
     {
         using var resource=typeof(UpdateProvenance).Assembly.GetManifestResourceStream("MdSplit.UpdateVerifierPins.json")
-            ??throw new IOException("更新の検証ツールがありません。公式セットアップで修復してください。");
+            ??throw new IOException(UiLanguage.T("更新の検証ツールがありません。公式セットアップで修復してください。", "The update verification tool is missing. Repair using the official installer."));
         using var reader=new StreamReader(resource);var pins=await reader.ReadToEndAsync(token);
         await VerifyWithPins(installer,bundle,manifest,Path.Combine(AppContext.BaseDirectory,"update-verifier"),pins,token);
     }
@@ -34,7 +34,7 @@ internal static class UpdateProvenance
         try
         {
             using var pins=JsonDocument.Parse(pinsJson);var root=pins.RootElement;
-            if(root.GetProperty("repository").GetString()!=BuildIdentity.Repository||root.GetProperty("repository_id").ToString()!=RepositoryId||root.GetProperty("workflow").GetString()!=Workflow)throw new IOException("更新の検証情報が正しくありません。");
+            if(root.GetProperty("repository").GetString()!=BuildIdentity.Repository||root.GetProperty("repository_id").ToString()!=RepositoryId||root.GetProperty("workflow").GetString()!=Workflow)throw new IOException(UiLanguage.T("更新の検証情報が正しくありません。", "The update verification information is invalid."));
             var gh=Path.GetFullPath(Path.Combine(verifierDirectory,"gh.exe"));var trust=Path.GetFullPath(Path.Combine(verifierDirectory,"trusted_root.jsonl"));
             await CheckTool(gh,root.GetProperty("gh_sha256").GetString(),100L*1024*1024,token);
             await CheckTool(trust,root.GetProperty("trusted_root_sha256").GetString(),2*1024*1024,token);
@@ -47,26 +47,26 @@ internal static class UpdateProvenance
                 var environment=new Dictionary<string,string>();foreach(var key in new[]{"SYSTEMROOT","WINDIR","TEMP","TMP","LOCALAPPDATA"})if(Environment.GetEnvironmentVariable(key) is string value)environment[key]=value;
                 start.Environment.Clear();foreach(var pair in environment)start.Environment[pair.Key]=pair.Value;
                 start.Environment["GH_CONFIG_DIR"]=privateConfig.FullName;start.Environment["GH_NO_UPDATE_NOTIFIER"]="1";start.Environment["GH_NO_EXTENSION_UPDATE_NOTIFIER"]="1";start.Environment["GH_PROMPT_DISABLED"]="1";start.Environment["GH_HOST"]="github.com";
-                using var process=Process.Start(start)??throw new IOException("更新の検証を開始できませんでした。");
+                using var process=Process.Start(start)??throw new IOException(UiLanguage.T("更新の検証を開始できませんでした。", "Could not start update verification."));
                 using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);timeout.CancelAfter(TimeSpan.FromSeconds(90));
                 var output=process.StandardOutput.ReadToEndAsync(timeout.Token);var errors=process.StandardError.ReadToEndAsync(timeout.Token);
                 try{await process.WaitForExitAsync(timeout.Token);await Task.WhenAll(output,errors);}
                 catch(OperationCanceledException){try{process.Kill(true);}catch(InvalidOperationException){}throw;}
-                if(process.ExitCode!=0||output.Result.Length>MaxBundleSize)throw new IOException("更新の署名または配布元を確認できません。");
-                if(!VerifiedResultMatches(output.Result,manifest.Sha256))throw new IOException("更新の証明に含まれる配布元またはファイルが一致しません。");
+                if(process.ExitCode!=0||output.Result.Length>MaxBundleSize)throw new IOException(UiLanguage.T("更新の署名または配布元を確認できません。", "Could not verify the update signature or source."));
+                if(!VerifiedResultMatches(output.Result,manifest.Sha256))throw new IOException(UiLanguage.T("更新の証明に含まれる配布元またはファイルが一致しません。", "The update attestation does not match the source or file."));
             }
             finally{try{privateConfig.Delete(true);}catch(IOException e){Storage.Log(e);}catch(UnauthorizedAccessException e){Storage.Log(e);}}
         }
         catch(Exception e)when(e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException or System.ComponentModel.Win32Exception)
-        {throw new IOException("更新の署名検証を完了できませんでした。",e);}
+        {throw new IOException(UiLanguage.T("更新の署名検証を完了できませんでした。", "Could not complete update signature verification."),e);}
     }
 
     private static async Task CheckTool(string path,string? expected,long max,CancellationToken token)
     {
         var file=new FileInfo(path);
-        if(!file.Exists||file.Length<1||file.Length>max||(file.Attributes&FileAttributes.ReparsePoint)!=0||expected is null||!System.Text.RegularExpressions.Regex.IsMatch(expected,@"\A[0-9a-f]{64}\z"))throw new IOException("更新の検証ツールを確認できません。");
+        if(!file.Exists||file.Length<1||file.Length>max||(file.Attributes&FileAttributes.ReparsePoint)!=0||expected is null||!System.Text.RegularExpressions.Regex.IsMatch(expected,@"\A[0-9a-f]{64}\z"))throw new IOException(UiLanguage.T("更新の検証ツールを確認できません。", "Could not verify the update verification tool."));
         await using var input=File.OpenRead(path);var hash=Convert.ToHexString(await SHA256.HashDataAsync(input,token));
-        if(!hash.Equals(expected,StringComparison.OrdinalIgnoreCase))throw new IOException("更新の検証ツールが変更されています。");
+        if(!hash.Equals(expected,StringComparison.OrdinalIgnoreCase))throw new IOException(UiLanguage.T("更新の検証ツールが変更されています。", "The update verification tool has been modified."));
     }
 
     internal static bool VerifiedResultMatches(string json,string expectedHash)

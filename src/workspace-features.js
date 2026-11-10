@@ -6,10 +6,24 @@ import {linkedEditor,activeSourceLine} from './linked-editor.js';
 import {linkAt,outlineFromHeadings} from './navigation.js';
 import {host,isDesktop} from './bridge.js';
 import {searchText,regexSamples} from './search.js';
-import {regexReference} from './regex-reference.js';
+import {getRegexReference} from './regex-reference.js';
 import {PreviewActiveLine} from './active-line.js';
 import {htmlOutline,HTML_OUTLINE_MANUAL_THRESHOLD} from './html-outline.js';
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 const $=s=>document.querySelector(s);
+const englishSamples={
+  '連続する改行を1つに':['Collapse consecutive line breaks','Reduce two or more line breaks to one, preserving the first CRLF, LF, or CR.'],
+  '数字':['Numbers','Consecutive ASCII digits'], '空行':['Blank lines','Remove blank lines'],
+  '行末の空白':['Trailing whitespace','Spaces and tabs at the end of lines'],
+  'Tabをスペースに':['Tabs to spaces','Replace each tab with four spaces'],
+  '全角スペース':['Full-width spaces','Replace full-width spaces with spaces'],
+  '行頭に追加':['Add to line beginnings','Add a quote marker to each line'],
+  '見出し':['Headings','Capture heading text as group 1'],
+  'グループの入れ替え':['Swap groups','Convert name=value to value:name'],
+  '改行':['Line endings','Normalize CRLF, LF and CR to LF'],
+  'URL':['URLs','HTTP and HTTPS URLs']
+};
 export class WorkspaceFeatures{
   constructor(api){
     this.api=api;this.headings=[];this.owner='source';this.suppressUntil=0;
@@ -42,18 +56,18 @@ export class WorkspaceFeatures{
       if(state.raw!==d.raw){
         this.headings=[];const effects=[];foldedRanges(cm.state).between(0,cm.state.doc.length,(from,to)=>effects.push(unfoldEffect.of({from,to})));if(effects.length)cm.dispatch({effects});
         $('#outline-panel').hidden=api.settings().outlineVisible===false;$('#outline-toggle').classList.toggle('selected',api.settings().outlineVisible!==false);$('#outline-toggle').setAttribute('aria-pressed',String(api.settings().outlineVisible!==false));
-        const list=$('#outline-tree');list.replaceChildren();const message=document.createElement('p');message.className='muted';message.textContent='大きなHTMLの見出し作成には時間やメモリが必要になる場合があります。';const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=state.raw===null?'見出しを表示':'見出しを更新';button.onclick=()=>{const raw=d.raw;button.disabled=true;message.textContent='見出しを作成しています。';setTimeout(()=>{if(api.current()!==d||d.raw!==raw)return;try{state.headings=htmlOutline(raw);state.raw=raw;this.render();}catch(error){message.textContent='見出しを作成できませんでした。原文はそのまま編集できます。';button.disabled=false;}},0);};list.append(message,button);this.active(d.selection.from);return;
+        const list=$('#outline-tree');list.replaceChildren();const message=document.createElement('p');message.className='muted';message.textContent=tr('大きなHTMLの見出し作成には時間やメモリが必要になる場合があります。','Creating an outline for large HTML may take time and memory.');const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=state.raw===null?tr('見出しを表示','Show headings'):tr('見出しを更新','Update headings');button.onclick=()=>{const raw=d.raw;button.disabled=true;message.textContent=tr('見出しを作成しています。','Creating outline.');setTimeout(()=>{if(api.current()!==d||d.raw!==raw)return;try{state.headings=htmlOutline(raw);state.raw=raw;this.render();}catch(error){message.textContent=tr('見出しを作成できませんでした。原文はそのまま編集できます。','Could not create the outline. You can still edit the source.');button.disabled=false;}},0);};list.append(message,button);this.active(d.selection.from);return;
       }
     }else if(html)this.htmlOutlineState=null;
     const anchors=this.closedAnchors();const outline=html?(this.htmlOutlineState?.doc===d&&this.htmlOutlineState.raw===d.raw?this.htmlOutlineState.headings:htmlOutline(d.raw)):outlineFromHeadings(api.rich.headings,d.raw);this.headings=outline.map(h=>({...h,lfFrom:cm.state.doc.lineAt(rawToLf(d.raw,h.from)).from,closed:anchors.some(a=>a.from===h.from)}));
     const effects=[];foldedRanges(cm.state).between(0,cm.state.doc.length,(from,to)=>effects.push(unfoldEffect.of({from,to})));
     for(const h of this.headings)if(h.closed&&h.foldTo>h.to)effects.push(foldEffect.of({from:rawToLf(d.raw,h.to),to:rawToLf(d.raw,h.foldTo)}));
     if(effects.length)cm.dispatch({effects});
-    for(const node of $('#preview').querySelectorAll('[data-block]')){const from=Number(node.dataset.from);node.hidden=this.headings.some(h=>h.closed&&from>h.from&&from<h.end);const heading=this.headings.find(h=>h.from===from),b=node.querySelector(':scope > .heading-fold');if(heading&&b){b.textContent=heading.closed?'▸':'▾';b.setAttribute('aria-expanded',String(!heading.closed));b.setAttribute('aria-label',heading.closed?'見出しを開く':'見出しを折りたたむ');b.disabled=heading.foldTo<=heading.to;node.classList.toggle('section-collapsed',heading.closed);}}
+    for(const node of $('#preview').querySelectorAll('[data-block]')){const from=Number(node.dataset.from);node.hidden=this.headings.some(h=>h.closed&&from>h.from&&from<h.end);const heading=this.headings.find(h=>h.from===from),b=node.querySelector(':scope > .heading-fold');if(heading&&b){b.textContent=heading.closed?'▸':'▾';b.setAttribute('aria-expanded',String(!heading.closed));b.setAttribute('aria-label',heading.closed?tr('見出しを開く','Expand heading'):tr('見出しを折りたたむ','Collapse heading'));b.disabled=heading.foldTo<=heading.to;node.classList.toggle('section-collapsed',heading.closed);}}
     $('#outline-panel').hidden=api.settings().outlineVisible===false;$('#outline-toggle').classList.toggle('selected',api.settings().outlineVisible!==false);$('#outline-toggle').setAttribute('aria-pressed',String(api.settings().outlineVisible!==false));
     $('#sync-toggle').classList.toggle('selected',api.settings().sync);$('#sync-toggle').setAttribute('aria-pressed',String(api.settings().sync));
-    const list=$('#outline-tree');list.replaceChildren();if(!this.headings.length){const n=document.createElement('p');n.className='muted';n.textContent=html?'HTMLに h1〜h6 を追加すると、ここに一覧が表示されます。':'見出し（#）を追加すると、ここに一覧が表示されます。';list.append(n);}
-    const closedEnds=[];for(const h of this.headings){while(closedEnds.length&&h.from>=closedEnds.at(-1))closedEnds.pop();const row=document.createElement('div');row.className='outline-row';row.style.paddingLeft=(h.level-1)*13+'px';row.dataset.from=h.from;row.hidden=closedEnds.length>0;if(h.closed)closedEnds.push(h.end);const fold=document.createElement('button');fold.className='outline-fold';fold.type='button';fold.textContent=h.closed?'▸':'▾';fold.disabled=h.foldTo<=h.to;fold.setAttribute('aria-label',(h.closed?'開く: ':'折りたたむ: ')+h.text);fold.setAttribute('aria-expanded',String(!h.closed));fold.onclick=()=>this.toggleHeading(h.from);const jump=document.createElement('button');jump.className='outline-jump';jump.type='button';jump.textContent=h.text||'（空の見出し）';jump.title='見出し'+h.level+': '+h.text;jump.onclick=()=>this.jump(h.from);row.append(fold,jump);list.append(row);}
+    const list=$('#outline-tree');list.replaceChildren();if(!this.headings.length){const n=document.createElement('p');n.className='muted';n.textContent=html?tr('HTMLに h1〜h6 を追加すると、ここに一覧が表示されます。','Add h1–h6 headings to the HTML to display them here.'):tr('見出し（#）を追加すると、ここに一覧が表示されます。','Add headings (#) to display them here.');list.append(n);}
+    const closedEnds=[];for(const h of this.headings){while(closedEnds.length&&h.from>=closedEnds.at(-1))closedEnds.pop();const row=document.createElement('div');row.className='outline-row';row.style.paddingLeft=(h.level-1)*13+'px';row.dataset.from=h.from;row.hidden=closedEnds.length>0;if(h.closed)closedEnds.push(h.end);const fold=document.createElement('button');fold.className='outline-fold';fold.type='button';fold.textContent=h.closed?'▸':'▾';fold.disabled=h.foldTo<=h.to;fold.setAttribute('aria-label',(h.closed?tr('開く: ','Expand: '):tr('折りたたむ: ','Collapse: '))+h.text);fold.setAttribute('aria-expanded',String(!h.closed));fold.onclick=()=>this.toggleHeading(h.from);const jump=document.createElement('button');jump.className='outline-jump';jump.type='button';jump.textContent=h.text||tr('（空の見出し）','(Empty heading)');jump.title=tr('見出し','Heading ')+h.level+': '+h.text;jump.onclick=()=>this.jump(h.from);row.append(fold,jump);list.append(row);}
     this.active(d.selection.from);
   }
   toggleHeading(from){const h=this.headings.find(h=>h.from===from);if(!h||h.foldTo<=h.to)return;const anchors=this.closedAnchors(),old=anchors.find(a=>a.from===from);if(old){old.dispose();this.api.current().foldAnchors=anchors.filter(a=>a!==old);}else anchors.push(this.api.current().trackRange({from,to:from}));this.suppressUntil=performance.now()+150;this.api.render();}
@@ -118,32 +132,32 @@ export class WorkspaceFeatures{
     const snapshot=forwarded?{document:this.api.current(),text:String(forwarded.text||''),richSelection:!!forwarded.richSelection}:(this.pendingSearchSelection||this.captureSearchSelection());this.pendingSearchSelection=null;
     $('#search-panel').hidden=false;$('#replace-row').hidden=!replace;
     if(snapshot.document===this.api.current()&&snapshot.text){
-      if(/[\r\n]/.test(snapshot.text))$('#search-message').textContent='複数行の選択は検索欄に転記できません。1行を選択してください。';
+      if(/[\r\n]/.test(snapshot.text))$('#search-message').textContent=tr('複数行の選択は検索欄に転記できません。1行を選択してください。','A multiline selection cannot be copied to the search field. Select a single line.');
       else{
         $('#find-text').value=snapshot.text;$('#find-regex').checked=false;
-        $('#search-message').textContent=snapshot.richSelection?'選択した表示文字を転記しました。原文に書式記号が含まれる場合は一致しないことがあります。':'選択した文字を転記しました（正規表現オフ）。';
+        $('#search-message').textContent=snapshot.richSelection?tr('選択した表示文字を転記しました。原文に書式記号が含まれる場合は一致しないことがあります。','The selected displayed text was copied. It may not match the source if formatting marks are present.'):tr('選択した文字を転記しました（正規表現オフ）。','Selected text copied (regular expressions off).');
       }
     }
     $('#find-text').focus();$('#find-text').select();
   }
   async search(action){
-    const d=this.api.current(),revision=d.revision,selection=d.selection,backward=action==='prev',find=action==='next'||backward;$('#search-message').textContent='検索中…';
+    const d=this.api.current(),revision=d.revision,selection=d.selection,backward=action==='prev',find=action==='next'||backward;$('#search-message').textContent=tr('検索中…','Searching…');
     const request={text:d.raw,pattern:$('#find-text').value,replacement:$('#replace-text').value,regex:$('#find-regex').checked,ignoreCase:!$('#find-case').checked,action:find?'find':action,direction:backward?-1:1,from:backward?selection.from:action==='replace'?selection.from:selection.to,to:selection.to};
-    try{const result=await searchText(request,d);if(d!==this.api.current()||d.revision!==revision||d.raw!==request.text){$('#search-message').textContent='文章が変わりました。もう一度検索してください。';return;}if(!result.count){$('#search-message').textContent='見つかりませんでした';return;}if(result.text!==undefined)this.api.apply(0,d.raw.length,result.text);
-      this.reveal(result.from,result.to);d.selection={from:result.from,to:result.to};this.api.selectSource(d.selection);this.suppressUntil=performance.now()+150;this.scrollPreview(result.from);this.active(result.from);$('#search-message').textContent=result.count.toLocaleString()+(find?'件一致':'件置換');
+    try{const result=await searchText(request,d);if(d!==this.api.current()||d.revision!==revision||d.raw!==request.text){$('#search-message').textContent=tr('文章が変わりました。もう一度検索してください。','The document changed. Search again.');return;}if(!result.count){$('#search-message').textContent=tr('見つかりませんでした','No matches found');return;}if(result.text!==undefined)this.api.apply(0,d.raw.length,result.text);
+      this.reveal(result.from,result.to);d.selection={from:result.from,to:result.to};this.api.selectSource(d.selection);this.suppressUntil=performance.now()+150;this.scrollPreview(result.from);this.active(result.from);$('#search-message').textContent=result.count.toLocaleString()+(find?tr('件一致',' matches'):tr('件置換',' replacements'));
     }catch(e){$('#search-message').textContent=e.message;}
   }
   async regexInfoDialog(title,body,setup){
     const modal=$('#modal'),ok=modal.querySelector('.dialog-actions [value="ok"]'),cancel=modal.querySelector('.dialog-actions [value="cancel"]');
     const oldText=ok.textContent,wasHidden=cancel.hidden;modal.classList.add('regex-dialog');
-    try{await this.api.dialog(title,body,container=>{ok.textContent='閉じる';cancel.hidden=true;setup(container);});}
+    try{await this.api.dialog(title,body,container=>{ok.textContent=tr('閉じる','Close');cancel.hidden=true;setup(container);});}
     finally{modal.classList.remove('regex-dialog');ok.textContent=oldText;cancel.hidden=wasHidden;}
   }
   async regexReference(){
-    await this.regexInfoDialog('正規表現の表記一覧','<p class="regex-note">「正規表現」をオンにして、検索欄には式だけを入力します。検索は複数行モードです。Windows版は.NET、ブラウザー版はJavaScriptを使用するため、一部の動作が異なります。</p><nav id="regex-reference-nav" class="regex-reference-nav" aria-label="表記の分類"></nav><div id="regex-reference"></div><p class="regex-note">置換欄は上記の表記に対応しています。公式資料にある置換記号のすべてを使えるわけではありません。正規表現がオフのときは記号をそのまま置換します。</p><p class="regex-note">検索式の詳しい仕様：<a href="https://learn.microsoft.com/ja-jp/dotnet/standard/base-types/regular-expression-language-quick-reference" target="_blank" rel="noopener noreferrer">Windows版（Microsoft）</a> / <a href="https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Regular_expressions" target="_blank" rel="noopener noreferrer">ブラウザー版（MDN）</a></p>',container=>{
+    await this.regexInfoDialog(tr('正規表現の表記一覧','Regular expression reference'),tr('<p class="regex-note">「正規表現」をオンにして、検索欄には式だけを入力します。検索は複数行モードです。Windows版は.NET、ブラウザー版はJavaScriptを使用するため、一部の動作が異なります。</p><nav id="regex-reference-nav" class="regex-reference-nav" aria-label="表記の分類"></nav><div id="regex-reference"></div><p class="regex-note">置換欄は上記の表記に対応しています。公式資料にある置換記号のすべてを使えるわけではありません。正規表現がオフのときは記号をそのまま置換します。</p><p class="regex-note">検索式の詳しい仕様：<a href="https://learn.microsoft.com/ja-jp/dotnet/standard/base-types/regular-expression-language-quick-reference" target="_blank" rel="noopener noreferrer">Windows版（Microsoft）</a> / <a href="https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Regular_expressions" target="_blank" rel="noopener noreferrer">ブラウザー版（MDN）</a></p>','<p class="regex-note">Enable regular expressions and enter the expression in the search field. Multiline mode is enabled. Windows uses .NET and the browser uses JavaScript, so some behavior differs.</p><nav id="regex-reference-nav" class="regex-reference-nav" aria-label="Expression categories"></nav><div id="regex-reference"></div><p class="regex-note">The replacement field supports the notation above, not every replacement token in the official documentation. With regular expressions off, replacement text is used literally.</p><p class="regex-note">Full search syntax: <a href="https://learn.microsoft.com/en-us/dotnet/standard/base-types/regular-expression-language-quick-reference" target="_blank" rel="noopener noreferrer">Windows (Microsoft)</a> / <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Regular_expressions" target="_blank" rel="noopener noreferrer">Browser (MDN)</a></p>'),container=>{
       const list=container.querySelector('#regex-reference'),nav=container.querySelector('#regex-reference-nav');
-      const labels=['文字と記号','繰り返し','位置と条件','グループ','Windows版','置換欄'];
-      for(const [index,group] of regexReference.entries()){
+      const labels=currentUiLanguage()==='en'?['Characters','Repetition','Positions','Groups','Windows','Replacement']:['文字と記号','繰り返し','位置と条件','グループ','Windows版','置換欄'];
+      for(const [index,group] of getRegexReference().entries()){
         const section=document.createElement('section');section.className='regex-reference-group';
         const heading=document.createElement('h3');heading.textContent=group.title;
         const jump=document.createElement('button');jump.type='button';jump.className='secondary';jump.textContent=labels[index]||group.title;jump.onclick=()=>section.scrollIntoView({block:'start',behavior:'smooth'});nav.append(jump);
@@ -154,15 +168,15 @@ export class WorkspaceFeatures{
     });
   }
   async samples(){
-    await this.regexInfoDialog('正規表現のサンプル','<p class="regex-note">選ぶと検索欄・置換欄に入力します。置換を実行するまでは文章を変更しません。</p><div id="regex-samples"></div>',container=>{
+    await this.regexInfoDialog(tr('正規表現のサンプル','Regular expression examples'),tr('<p class="regex-note">選ぶと検索欄・置換欄に入力します。置換を実行するまでは文章を変更しません。</p><div id="regex-samples"></div>','<p class="regex-note">Choose an example to fill the find and replace fields. The document remains unchanged until you replace.</p><div id="regex-samples"></div>'),container=>{
       const list=container.querySelector('#regex-samples');
       for(const sample of regexSamples){
         const b=document.createElement('button');b.type='button';b.className='regex-sample secondary';
-        const label=document.createElement('strong'),description=document.createElement('small');label.textContent=sample.label;description.textContent=sample.description;b.append(label,description);
-        for(const [caption,value] of [['検索',sample.pattern],['置換',sample.replacement]]){const row=document.createElement('span');row.className='regex-sample-value';const title=document.createElement('span'),code=document.createElement('code');title.textContent=caption;code.textContent=!value?'（空欄：削除）':caption==='置換'&&/^ +$/.test(value)?`（半角スペース ${value.length} 個）`:value;row.append(title,code);b.append(row);}
+        const label=document.createElement('strong'),description=document.createElement('small');const translated=currentUiLanguage()==='en'?englishSamples[sample.label]:null;label.textContent=translated?.[0]||sample.label;description.textContent=translated?.[1]||sample.description;b.append(label,description);
+        for(const [caption,value] of [['検索',sample.pattern],['置換',sample.replacement]]){const row=document.createElement('span');row.className='regex-sample-value';const title=document.createElement('span'),code=document.createElement('code');title.textContent=caption==='検索'?tr('検索','Find'):tr('置換','Replace');code.textContent=!value?tr('（空欄：削除）','(empty: delete)'):caption==='置換'&&/^ +$/.test(value)?(currentUiLanguage()==='en'?`(${value.length} spaces)`:`（半角スペース ${value.length} 個）`):value;row.append(title,code);b.append(row);}
         b.onclick=()=>{$('#find-text').value=sample.pattern;$('#replace-text').value=sample.replacement;$('#find-regex').checked=true;$('#replace-row').hidden=false;$('#modal').close('cancel');};list.append(b);
       }
     });
   }
-  async recent(){if(!isDesktop){this.api.notify('最近開いたファイルはWindows版で利用できます。');return;}const entries=await host('recent.list');await this.api.dialog('最近開いたファイル','<div id="recent-files"></div><p class="muted">ファイル名を選ぶと開きます。見つからないファイルは移動・削除された可能性があります。</p><button type="button" id="clear-recent" class="secondary">履歴を消去</button>',()=>{if(!entries.length){$('#recent-files').textContent='まだ履歴はありません。';}for(const entry of entries){const b=document.createElement('button');b.type='button';b.className='recent-file secondary';b.disabled=!entry.exists;const name=document.createElement('strong');name.textContent=entry.name;const path=document.createElement('small');path.textContent=entry.path+(entry.exists?'':'（見つかりません）');b.append(name,path);b.onclick=this.api.guard(async()=>{await host('recent.open',{id:entry.id});$('#modal').close('cancel');});$('#recent-files').append(b);}$('#clear-recent').onclick=this.api.guard(async()=>{await host('recent.clear');$('#recent-files').textContent='履歴を消去しました。ファイルは削除していません。';});});}
+  async recent(){if(!isDesktop){this.api.notify(tr('最近開いたファイルはWindows版で利用できます。','Recent files are available in the Windows app.'));return;}const entries=await host('recent.list');await this.api.dialog(tr('最近開いたファイル','Recent files'),tr('<div id="recent-files"></div><p class="muted">ファイル名を選ぶと開きます。見つからないファイルは移動・削除された可能性があります。</p><button type="button" id="clear-recent" class="secondary">履歴を消去</button>','<div id="recent-files"></div><p class="muted">Select a file to open it. Missing files may have been moved or deleted.</p><button type="button" id="clear-recent" class="secondary">Clear history</button>'),()=>{if(!entries.length){$('#recent-files').textContent=tr('まだ履歴はありません。','No recent files yet.');}for(const entry of entries){const b=document.createElement('button');b.type='button';b.className='recent-file secondary';b.disabled=!entry.exists;const name=document.createElement('strong');name.textContent=entry.name;const path=document.createElement('small');path.textContent=entry.path+(entry.exists?'':tr('（見つかりません）',' (not found)'));b.append(name,path);b.onclick=this.api.guard(async()=>{await host('recent.open',{id:entry.id});$('#modal').close('cancel');});$('#recent-files').append(b);}$('#clear-recent').onclick=this.api.guard(async()=>{await host('recent.clear');$('#recent-files').textContent=tr('履歴を消去しました。ファイルは削除していません。','History cleared. Files were not deleted.');});});}
 }

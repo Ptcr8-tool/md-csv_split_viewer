@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 import {encodeDelimitedCell} from './csv-parser.js';
 
 // A rectangular range is required: filling the gaps in a sparse selection
@@ -14,7 +16,7 @@ export function csvSelectionBounds(selection, rows, columns) {
   if(selection.kind==='column'){top=0;bottom=rows-1;}
   if(selection.kind==='row'){left=0;right=columns-1;}
   const expected=selection.kind==='row'?bottom-top+1:selection.kind==='column'?right-left+1:(bottom-top+1)*(right-left+1);
-  if (count!==expected) throw new Error('離れた範囲は一度にコピー・貼り付けできません。連続した範囲を選択してください。');
+  if (count!==expected) throw new Error(tr('離れた範囲は一度にコピー・貼り付けできません。連続した範囲を選択してください。','Cannot copy or paste noncontiguous ranges at once. Select a continuous range.'));
   return {top,left,bottom,right};
 }
 
@@ -36,7 +38,7 @@ export function csvCopyText(parsed, bounds) {
 // Excel-style TSV: quotes are special only at a field's beginning and only
 // when followed by a separator. Otherwise ordinary pasted quotes are literal.
 export function parseClipboardGrid(text) {
-  if(typeof text!=='string') throw new TypeError('クリップボードの内容を読み取れません。');
+  if(typeof text!=='string') throw new TypeError(tr('クリップボードの内容を読み取れません。','Could not read the clipboard.'));
   // An ordinary single-line string in quotation marks is usually prose from
   // a text editor, not TSV; preserve the quotes unless escaping is present.
   if(!/[\t\r\n]/.test(text)&&text.length>2&&text[0]==='"'&&text.at(-1)==='"'&&!text.slice(1,-1).includes('""'))return [[text]];

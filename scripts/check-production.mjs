@@ -9,7 +9,7 @@ const server=createServer(async(req,res)=>{try{const pathname=decodeURIComponent
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 let browser;
 try{
-  browser=await chromium.launch({args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1400,height:900}});const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR:',e.message);});page.on('console',m=>{if(m.type()==='error')console.error('CONSOLE:',m.text());});
+  browser=await chromium.launch({args:['--no-sandbox']});const page=await browser.newPage({locale:'ja-JP',viewport:{width:1400,height:900}});const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR:',e.message);});page.on('console',m=>{if(m.type()==='error')console.error('CONSOLE:',m.text());});
   const origin=`http://127.0.0.1:${server.address().port}`;
   assert.equal((await fetch(origin+'/')).status,403);
   await page.goto(origin+'/index.html');await page.waitForSelector('.cm-content');

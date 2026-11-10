@@ -33,7 +33,7 @@ try {
     }
     $data = Join-Path $application 'Data'
     [void][IO.Directory]::CreateDirectory($data)
-    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"welcomeShown":true,"updateCheckDays":-1}', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $data 'settings.json'), '{"language":"ja","welcomeShown":true,"updateCheckDays":-1}', [Text.UTF8Encoding]::new($false))
     $md = Join-Path $testRoot 'fixture.md'
     [IO.File]::WriteAllText($md, "# Print fixture`n`nText for the print preview.", [Text.UTF8Encoding]::new($false))
     $process = Start-Process -FilePath (Join-Path $application 'MD-Split.exe') -ArgumentList ('"' + $md + '"') -PassThru

@@ -18,7 +18,7 @@ internal static class UiContent
         var folder = Path.GetFullPath(Path.Combine(applicationDirectory, "wwwroot"));
         var entry = Path.Combine(folder, EntryFileName);
         if (!File.Exists(entry))
-            throw new FileNotFoundException("画面ファイルが見つかりません。セットアップを再実行して修復するか、再インストールしてください。\n" + entry, entry);
+            throw new FileNotFoundException(UiLanguage.T("画面ファイルが見つかりません。セットアップを再実行して修復するか、再インストールしてください。\n", "The interface files are missing. Run setup to repair or reinstall the application.\n") + entry, entry);
         return folder;
     }
 

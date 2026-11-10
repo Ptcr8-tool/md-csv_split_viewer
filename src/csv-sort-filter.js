@@ -1,7 +1,9 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 // Reorder complete records while retaining the original field spelling and the
 // separator assigned to each output position (including mixed line endings).
 export function sortDelimitedRows(raw, parsed, column, {header=true, descending=false}={}) {
-  if (!Number.isInteger(column) || column < 0 || column >= parsed.columnCount) throw new Error('並べ替える列を選択してください。');
+  if (!Number.isInteger(column) || column < 0 || column >= parsed.columnCount) throw new Error(tr('並べ替える列を選択してください。','Select a column to sort.'));
   const start = header ? 1 : 0;
   const rows = parsed.rows.map((values, index) => ({values,index}));
   const collator = new Intl.Collator('ja', {numeric:true, sensitivity:'base'});
@@ -35,9 +37,9 @@ export function filteredCsvRows(parsed, filter, header=true) {
 // furthest column involved so that cells do not silently change meaning.
 export function moveDelimitedColumns(raw,parsed,indices,direction){
   const cols=[...new Set(indices)].sort((a,b)=>a-b);
-  if(!cols.length || cols.some((n,i)=>!Number.isInteger(n)||n<0||n>=parsed.columnCount||(i&&n!==cols[i-1]+1)))throw new Error('連続する列を選択してください。');
+  if(!cols.length || cols.some((n,i)=>!Number.isInteger(n)||n<0||n>=parsed.columnCount||(i&&n!==cols[i-1]+1)))throw new Error(tr('連続する列を選択してください。','Select adjacent columns.'));
   const first=cols[0],last=cols.at(-1),left=direction==='left';
-  if((left&&first===0)||(!left&&last===parsed.columnCount-1))throw new Error('これ以上移動できません。');
+  if((left&&first===0)||(!left&&last===parsed.columnCount-1))throw new Error(tr('これ以上移動できません。','Cannot move any further.'));
   const boundary=left?last:first, edge=left?first-1:last+1, highest=Math.max(boundary,edge);
   let out=raw.slice(0,parsed.rowRanges[0]?.from??raw.length);
   for(let i=0;i<parsed.rowCount;i++){

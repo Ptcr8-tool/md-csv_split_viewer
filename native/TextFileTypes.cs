@@ -84,7 +84,7 @@ internal static class TextFileTypes
     {
         var spec = SaveDialogFor(originalName);
         var filters = spec.Filter.Split('|');
-        if (filterIndex < 1 || filterIndex * 2 > filters.Length) throw new IOException("保存形式を選び直してください。");
+        if (filterIndex < 1 || filterIndex * 2 > filters.Length) throw new IOException(UiLanguage.T("保存形式を選び直してください。", "Select the save format again."));
         var pattern = filters[filterIndex * 2 - 1].Split(';')[0];
         if (pattern == "*.*") return selectedPath;
         var selectedExtension = pattern[2..];

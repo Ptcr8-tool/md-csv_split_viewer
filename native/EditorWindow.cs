@@ -86,7 +86,7 @@ internal sealed class EditorWindow : Form
     public void Emit(object message) { if (!ready) { queued.Enqueue(message); return; } if (!IsDisposed) web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, Storage.Json)); }
     private void Track(DocumentData doc)
     {
-        if (!Guid.TryParse(doc.Id, out _)) throw new IOException("文書IDが正しくありません。");
+        if (!Guid.TryParse(doc.Id, out _)) throw new IOException(UiLanguage.T("文書IDが正しくありません。", "The document ID is invalid."));
         Documents[doc.Id] = doc;
         // The first background poll will establish the timestamp without blocking
         // the editor when the document is on a slow or unavailable drive.
@@ -97,7 +97,7 @@ internal sealed class EditorWindow : Form
         try
         {
             var contentFolder = UiContent.GetFolder(AppContext.BaseDirectory);
-            var runtime=Path.Combine(AppContext.BaseDirectory,"WebView2Runtime");if(!File.Exists(Path.Combine(runtime,"msedgewebview2.exe")))throw new IOException("同梱の表示環境が見つかりません。セットアップの「修復」を実行してください。");
+            var runtime=Path.Combine(AppContext.BaseDirectory,"WebView2Runtime");if(!File.Exists(Path.Combine(runtime,"msedgewebview2.exe")))throw new IOException(UiLanguage.T("同梱の表示環境が見つかりません。セットアップの「修復」を実行してください。", "The included display runtime was not found. Run Repair from the installer."));
             if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WebEnvironmentStart);
             var environment = await CoreWebView2Environment.CreateAsync(runtime, Path.Combine(Storage.Root, "WebView2"),new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments="--disable-background-networking --disable-component-update", IsCustomCrashReportingEnabled=true });
             if (startupTraceEnabled) StartupTrace.Mark(StartupStage.WebEnvironmentReady);
@@ -113,10 +113,10 @@ internal sealed class EditorWindow : Form
         catch (WebView2RuntimeNotFoundException)
         {
             if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.WebInitializationFailed); _ = Task.Run(StartupTrace.FlushAsync); }
-            MessageBox.Show(this,"同梱のWebView2 Runtimeを起動できません。セットアップの「修復」を実行してください。",AppInfo.Title,MessageBoxButtons.OK,MessageBoxIcon.Warning);
+            MessageBox.Show(this,UiLanguage.T("同梱のWebView2 Runtimeを起動できません。セットアップの「修復」を実行してください。", "Could not start the included WebView2 Runtime. Run Repair from the installer."),AppInfo.Title,MessageBoxButtons.OK,MessageBoxIcon.Warning);
             allowClose = true; Close();
         }
-        catch (Exception ex) { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.WebInitializationFailed); _ = Task.Run(StartupTrace.FlushAsync); } Storage.Log(ex); MessageBox.Show(this, "起動できませんでした。\n" + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); allowClose = true; Close(); }
+        catch (Exception ex) { if (startupTraceEnabled) { StartupTrace.Mark(StartupStage.WebInitializationFailed); _ = Task.Run(StartupTrace.FlushAsync); } Storage.Log(ex); MessageBox.Show(this, UiLanguage.T("起動できませんでした。\n", "Could not start.\n") + ex.Message, AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error); allowClose = true; Close(); }
     }
     private static void PrepareWebView(CoreWebView2 core, string contentFolder)
     {
@@ -169,9 +169,9 @@ internal sealed class EditorWindow : Form
             if (e.IsSuccess || e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
             if (popup is null && startupTraceEnabled) { StartupTrace.Mark(StartupStage.NavigationFailed); _ = Task.Run(StartupTrace.FlushAsync); }
             Storage.Log(new IOException($"UI navigation failed: {core.Source}; error={e.WebErrorStatus}; contentFolder={contentFolder}"));
-            if (popup is not null) { popup.ForceClose(); NotifyPane(new { type = "pane-window-error", pane = popup.Pane, message = "別ウィンドウを読み込めませんでした。" }); }
+            if (popup is not null) { popup.ForceClose(); NotifyPane(new { type = "pane-window-error", pane = popup.Pane, message = UiLanguage.T("別ウィンドウを読み込めませんでした。", "Could not load the separate window.") }); }
             else if (!ready && !allowClose)
-                MessageBox.Show(this, "画面を読み込めませんでした。\nエラー: " + e.WebErrorStatus + "\n\n詳しい原因をエラーログへ記録しました。", AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, UiLanguage.T("画面を読み込めませんでした。\nエラー: ", "Could not load the view.\nError: ") + e.WebErrorStatus + UiLanguage.T("\n\n詳しい原因をエラーログへ記録しました。", "\n\nDetails were recorded in the error log."), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Error);
         };
         core.NewWindowRequested += async (_, e) =>
         {
@@ -206,7 +206,7 @@ internal sealed class EditorWindow : Form
                     Storage.Log(ex);
                     child?.Dispose();
                     if (child is not null) paneWindows.Remove(child);
-                    NotifyPane(new { type = "pane-window-error", pane, message = "別ウィンドウを開けませんでした。" });
+                    NotifyPane(new { type = "pane-window-error", pane, message = UiLanguage.T("別ウィンドウを開けませんでした。", "Could not open the separate window.") });
                 }
             }
             else if (e.IsUserInitiated && !e.Uri.StartsWith(AppOrigin, StringComparison.OrdinalIgnoreCase) && SafeLinks.IsBrowserUrl(e.Uri))
@@ -230,14 +230,14 @@ internal sealed class EditorWindow : Form
                 if (popup is not null && method == "window.title") { popup.Text = root.GetProperty("args").GetProperty("title").GetString(); result = true; }
                 else if (popup is not null && method == "window.close") { popup.BeginInvoke(popup.ForceClose); result = true; }
                 else if (method == "print.show") { core.ShowPrintUI(); result = true; }
-                else if (popup is not null && method is "bootstrap" or "recovery.write" or "update.ready" or "startup.ready" or "startup.firstInput") throw new IOException("別ウィンドウは元の編集ウィンドウを通して操作してください。");
+                else if (popup is not null && method is "bootstrap" or "recovery.write" or "update.ready" or "startup.ready" or "startup.firstInput") throw new IOException(UiLanguage.T("別ウィンドウは元の編集ウィンドウを通して操作してください。", "Control the separate window through the original editor window."));
                 else if (method == "file.drop")
                 {
                     // Accept native-backed File objects rather than paths supplied in JSON.
                     // File objects created by script have no native path and cannot open arbitrary files.
                     var files = e.AdditionalObjects.OfType<CoreWebView2File>().ToArray();
                     if (files.Length == 0 || files.Length != e.AdditionalObjects.Count || files.Any(file => string.IsNullOrWhiteSpace(file.Path)))
-                        throw new IOException("ドロップしたファイルの場所を取得できません。開くボタンから選択してください。");
+                        throw new IOException(UiLanguage.T("ドロップしたファイルの場所を取得できません。開くボタンから選択してください。", "Could not locate the dropped file. Use the Open button to select it."));
                     context.RouteFiles(files.Select(file => file.Path), this);
                     result = true;
                 }
@@ -247,7 +247,7 @@ internal sealed class EditorWindow : Form
             catch (Exception ex)
             {
                 Storage.Log(ex);
-                var message = ex is EncoderFallbackException ? "選択した文字コードでは保存できない文字が含まれています。下部の文字コードをUTF-8へ変更して保存してください。" : ex is DecoderFallbackException ? "この文字コードでは読み込めません。別の文字コードを指定してください。" : ex.Message;
+                var message = ex is EncoderFallbackException ? UiLanguage.T("選択した文字コードでは保存できない文字が含まれています。下部の文字コードをUTF-8へ変更して保存してください。", "Some characters cannot be saved in the selected encoding. Change the encoding to UTF-8 and save again.") : ex is DecoderFallbackException ? UiLanguage.T("この文字コードでは読み込めません。別の文字コードを指定してください。", "The file cannot be read with this encoding. Choose another encoding.") : ex.Message;
                 if (id is not null && !IsDisposed && popup is not { IsDisposed: true }) core.PostWebMessageAsJson(JsonSerializer.Serialize(new { replyTo = id, error = message }, Storage.Json));
             }
         };
@@ -257,11 +257,11 @@ internal sealed class EditorWindow : Form
             if (popup is not null)
             {
                 if (!popup.IsDisposed) popup.ForceClose();
-                NotifyPane(new { type = "pane-window-error", pane = popup.Pane, message = "別ウィンドウの表示が終了しました。元の編集内容は保持されています。" });
+                NotifyPane(new { type = "pane-window-error", pane = popup.Pane, message = UiLanguage.T("別ウィンドウの表示が終了しました。元の編集内容は保持されています。", "The separate window closed. Your original edits have been retained.") });
                 return;
             }
             preserveRecovery = true; ready = false; ClosePaneWindows();
-            MessageBox.Show(this, "表示プロセスが終了しました。アプリを開き直すと復元データを読み込めます。", AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, UiLanguage.T("表示プロセスが終了しました。アプリを開き直すと復元データを読み込めます。", "The display process stopped. Reopen the app to load recovery data."), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
         };
     }
     private void ClosePaneWindows()
@@ -282,7 +282,7 @@ internal sealed class EditorWindow : Form
         public PanePopup(string pane, Icon? icon)
         {
             Pane = pane;
-            Text = pane == "source" ? $"Markdown原文 — {AppInfo.Title}" : $"展開表示 — {AppInfo.Title}";
+            Text = pane == "source" ? UiLanguage.T($"Markdown原文 — {AppInfo.Title}", $"Markdown source — {AppInfo.Title}") : UiLanguage.T($"展開表示 — {AppInfo.Title}", $"Preview — {AppInfo.Title}");
             Width = 850; Height = 820; MinimumSize = new Size(480, 360);
             StartPosition = FormStartPosition.CenterParent; AutoScaleMode = AutoScaleMode.Dpi;
             if (icon is not null) Icon = (Icon)icon.Clone();
@@ -322,7 +322,7 @@ internal sealed class EditorWindow : Form
             case "window.title": Text = args.GetProperty("title").GetString(); return true;
             case "window.focus": BringForward(); return true;
             case "tab.prepare":
-                var transferDocument=args.GetProperty("document").Deserialize<DocumentData>(Storage.Json)??throw new IOException("文書が見つかりません。");
+                var transferDocument=args.GetProperty("document").Deserialize<DocumentData>(Storage.Json)??throw new IOException(UiLanguage.T("文書が見つかりません。", "Document not found."));
                 return context.Transfers.Prepare(this,args.GetProperty("token").GetString(),transferDocument,args.TryGetProperty("state",out var transferState)?transferState:null);
             case "tab.accept": return context.Transfers.Accept(this,args.GetProperty("token").GetString());
             case "tab.detach": return context.Transfers.Detach(this,args.GetProperty("token").GetString());
@@ -344,7 +344,7 @@ internal sealed class EditorWindow : Form
                 var changedFingerprint = args.GetProperty("fingerprint").GetString();
                 var currentDoc = DocumentAuthority.Require(Documents, changedId);
                 if (!pendingExternal.TryGetValue(changedId!, out var pending) || pending.Changed.Fingerprint != changedFingerprint || currentDoc.Fingerprint != pending.PreviousFingerprint || !string.Equals(currentDoc.Path, pending.Changed.Path, StringComparison.OrdinalIgnoreCase))
-                    throw new IOException("ファイルの変更状態が更新されました。開き直してください。");
+                    throw new IOException(UiLanguage.T("ファイルの変更状態が更新されました。開き直してください。", "The file modification state changed. Reopen the file."));
                 Track(pending.Changed); pendingExternal.Remove(changedId!); return true;
             case "file.new":
                 var proposedName = args.TryGetProperty("name", out var newName) ? newName.GetString() : null;
@@ -352,7 +352,7 @@ internal sealed class EditorWindow : Form
                 if (args.TryGetProperty("folderToken", out var folderTokenValue))
                 {
                     var folderToken = folderTokenValue.GetString();
-                    if (folderToken is null || !requestedDirectories.Remove(folderToken, out var folder)) throw new IOException("作成先を確認できません。もう一度フォルダーから操作してください。");
+                    if (folderToken is null || !requestedDirectories.Remove(folderToken, out var folder)) throw new IOException(UiLanguage.T("作成先を確認できません。もう一度フォルダーから操作してください。", "Could not confirm the destination. Retry from the folder."));
                     return CreateFileInDirectory(folder, proposedName, proposedEncoding);
                 }
                 context.NewFile(this, proposedName, proposedEncoding); return true;
@@ -362,7 +362,7 @@ internal sealed class EditorWindow : Form
                 return true;
             case "file.open":
                 var openEncoding = args.TryGetProperty("encoding", out var requestedEncoding) ? requestedEncoding.GetString() : null;
-                using (var dialog = new OpenFileDialog { Filter = TextFileTypes.OpenFilter, Multiselect = true, RestoreDirectory = true, Title = "テキスト・ソースファイルを開く" })
+                using (var dialog = new OpenFileDialog { Filter = UiLanguage.FileFilter(TextFileTypes.OpenFilter), Multiselect = true, RestoreDirectory = true, Title = UiLanguage.T("テキスト・ソースファイルを開く", "Open text or source files") })
                     if(dialog.ShowDialog(this) == DialogResult.OK) context.RouteFiles(dialog.FileNames, this, openEncoding);
                 return null;
             case "recent.list": return context.Recent.List();
@@ -373,7 +373,7 @@ internal sealed class EditorWindow : Form
                 if(args.TryGetProperty("docId",out var searchDocument)&&args.TryGetProperty("cacheToken",out var searchToken))
                 {
                     var docId=searchDocument.GetString()??"";var token=searchToken.GetString()??"";
-                    if(!Guid.TryParse(docId,out _)||!Guid.TryParse(token,out _))throw new IOException("検索対象が正しくありません。");
+                    if(!Guid.TryParse(docId,out _)||!Guid.TryParse(token,out _))throw new IOException(UiLanguage.T("検索対象が正しくありません。", "Invalid search target."));
                     if(args.TryGetProperty("text",out _))searchTextCache.Put(docId,token,request.Text);
                     else { var cached=searchTextCache.Get(docId,token);if(cached is null)return new{cacheMiss=true};request.Text=cached; }
                 }
@@ -385,22 +385,22 @@ internal sealed class EditorWindow : Form
             case "update.ready": await context.ReadyForUpdate(this,args.GetProperty("ready").GetBoolean(),args.TryGetProperty("session",out var updateSession)?updateSession.GetString():null);return true;
             case "file.save": return await SaveDocument(args);
             case "csv.view.save":
-                if (!Documents.TryGetValue(args.GetProperty("id").GetString()!, out var csvSaveDoc) || csvSaveDoc.Path is null) throw new IOException("先にCSV・TSVを保存してください。");
+                if (!Documents.TryGetValue(args.GetProperty("id").GetString()!, out var csvSaveDoc) || csvSaveDoc.Path is null) throw new IOException(UiLanguage.T("先にCSV・TSVを保存してください。", "Save the CSV or TSV file first."));
                 var csvViewPath = CsvViewStore.SidecarPath(csvSaveDoc.Path);
                 var csvView = CsvViewStore.ValidateView(args.GetProperty("view"));
-                if (File.Exists(csvViewPath) && MessageBox.Show(this, $"{Path.GetFileName(csvViewPath)}\n\n表示設定を上書きしますか？", "CSVの表示設定", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return null;
+                if (File.Exists(csvViewPath) && MessageBox.Show(this, Path.GetFileName(csvViewPath) + UiLanguage.T("\n\n表示設定を上書きしますか？", "\n\nOverwrite the view settings?"), UiLanguage.T("CSVの表示設定", "CSV view settings"), MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return null;
                 await CsvViewStore.Save(csvSaveDoc.Path, csvView);
                 return new { fileName = Path.GetFileName(csvViewPath) };
             case "csv.view.load":
-                if (!Documents.TryGetValue(args.GetProperty("id").GetString()!, out var csvLoadDoc) || csvLoadDoc.Path is null) throw new IOException("先にCSV・TSVを保存してください。");
+                if (!Documents.TryGetValue(args.GetProperty("id").GetString()!, out var csvLoadDoc) || csvLoadDoc.Path is null) throw new IOException(UiLanguage.T("先にCSV・TSVを保存してください。", "Save the CSV or TSV file first."));
                 return CsvViewStore.Load(csvLoadDoc.Path);
             case "file.reopen":
-                if(!Documents.TryGetValue(args.GetProperty("id").GetString()!,out var existing)||existing.Path is null)throw new IOException("元ファイルが見つかりません。");
+                if(!Documents.TryGetValue(args.GetProperty("id").GetString()!,out var existing)||existing.Path is null)throw new IOException(UiLanguage.T("元ファイルが見つかりません。", "The original file was not found."));
                 if(!context.ConfirmLargeFile(existing.Path,this))return null;
                 var reopened=Storage.ReadFile(existing.Path,existing.Id,args.GetProperty("encoding").GetString());Track(reopened);pendingExternal.Remove(existing.Id);return reopened;
             case "settings.set": var s = args.Deserialize<AppSettings>(Storage.Json) ?? new(); await context.UpdateSettings(s); return s;
             case "session.save":
-                var sessionIds = args.GetProperty("documentIds").Deserialize<List<string>>(Storage.Json) ?? throw new IOException("タブ一覧が正しくありません。");
+                var sessionIds = args.GetProperty("documentIds").Deserialize<List<string>>(Storage.Json) ?? throw new IOException(UiLanguage.T("タブ一覧が正しくありません。", "The tab list is invalid."));
                 pendingSession = SessionStore.Capture(args.GetProperty("policy").GetString(), sessionIds,
                     args.TryGetProperty("activeId", out var sessionActive) ? sessionActive.GetString() : null,
                     args.TryGetProperty("mode", out var sessionMode) ? sessionMode.GetString() : null, Documents);
@@ -408,7 +408,7 @@ internal sealed class EditorWindow : Form
             case "recovery.write":
                 var recovery = args.Deserialize<RecoveryData>(Storage.Json) ?? new();
                 var recoveryOrder = args.TryGetProperty("documentIds", out var idsElement)
-                    ? idsElement.Deserialize<List<string>>(Storage.Json) ?? throw new IOException("復元データが正しくありません。")
+                    ? idsElement.Deserialize<List<string>>(Storage.Json) ?? throw new IOException(UiLanguage.T("復元データが正しくありません。", "The recovery data is invalid."))
                     : recovery.Documents.Select(d => d.Id).ToList();
                 await recoveryGate.WaitAsync();
                 try
@@ -428,13 +428,13 @@ internal sealed class EditorWindow : Form
                 finally { recoveryGate.Release(); }
                 return true;
             case "image.import":
-                var imageInput = args.GetProperty("document").Deserialize<DocumentData>(Storage.Json) ?? throw new IOException("文書が見つかりません。");
+                var imageInput = args.GetProperty("document").Deserialize<DocumentData>(Storage.Json) ?? throw new IOException(UiLanguage.T("文書が見つかりません。", "Document not found."));
                 var imageDoc = DocumentAuthority.Merge(Documents, imageInput);
-                if (!TextFileTypes.IsMarkdown(imageDoc.Path ?? imageDoc.Name)) throw new IOException("画像の挿入はMarkdown文書で利用できます。");
+                if (!TextFileTypes.IsMarkdown(imageDoc.Path ?? imageDoc.Name)) throw new IOException(UiLanguage.T("画像の挿入はMarkdown文書で利用できます。", "Images can be inserted into Markdown documents."));
                 Track(imageDoc);
                 var originalName = Path.GetFileName(args.GetProperty("name").GetString() ?? "image.png");
                 var ext = Path.GetExtension(originalName).ToLowerInvariant(); if (!new[] { ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg" }.Contains(ext)) ext = ".png";
-                var bytes = Convert.FromBase64String(args.GetProperty("base64").GetString()!); if(bytes.Length > 32*1024*1024) throw new IOException("画像は1枚32MBまでです。");
+                var bytes = Convert.FromBase64String(args.GetProperty("base64").GetString()!); if(bytes.Length > 32*1024*1024) throw new IOException(UiLanguage.T("画像は1枚32MBまでです。", "Images may not exceed 32 MB."));
                 var filename = "image-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6] + ext;
                 var directory = imageDoc.Path is null ? Storage.StagingDirectory(imageDoc.Id) : Storage.AssetsDirectory(imageDoc.Path);
                 await Storage.AtomicBytes(Path.Combine(directory, filename), bytes);
@@ -449,10 +449,10 @@ internal sealed class EditorWindow : Form
                 using (var stream = new MemoryStream(Convert.FromBase64String(args.GetProperty("base64").GetString()!)))
                 using (var bitmap = new Bitmap(stream)) Clipboard.SetImage(new Bitmap(bitmap)); return true;
             case "file.export":
-                using (var dialog = new SaveFileDialog { FileName = Path.GetFileName(args.GetProperty("name").GetString()), InitialDirectory = Storage.DefaultSaveDirectory(), Title = "ファイルを保存" })
+                using (var dialog = new SaveFileDialog { FileName = Path.GetFileName(args.GetProperty("name").GetString()), InitialDirectory = Storage.DefaultSaveDirectory(), Title = UiLanguage.T("ファイルを保存", "Save file") })
                     if (dialog.ShowDialog(this) == DialogResult.OK) { await Storage.AtomicBytes(dialog.FileName!, Convert.FromBase64String(args.GetProperty("base64").GetString()!)); return true; }
                 return false;
-            case "shell.open": var url = args.GetProperty("url").GetString()!; if(!SafeLinks.IsBrowserUrl(url))throw new IOException("このリンクは開けません。"); Process.Start(new ProcessStartInfo(url){UseShellExecute=true}); return true;
+            case "shell.open": var url = args.GetProperty("url").GetString()!; if(!SafeLinks.IsBrowserUrl(url))throw new IOException(UiLanguage.T("このリンクは開けません。", "This link cannot be opened.")); Process.Start(new ProcessStartInfo(url){UseShellExecute=true}); return true;
             case "association.register": Storage.RegisterAssociation(); Process.Start(new ProcessStartInfo(Storage.CurrentDefaultAppsSettingsUri()){UseShellExecute=true}); return true;
             case "context-menu.status": return ContextMenuRegistration.Status();
             case "context-menu.set": return ContextMenuRegistration.Set(args.GetProperty("enabled").GetBoolean());
@@ -471,15 +471,15 @@ internal sealed class EditorWindow : Form
                 }
                 catch { try { if (File.Exists(cleanSessionFile)) File.Delete(cleanSessionFile); } catch (Exception ex) { Storage.Log(ex); } allowClose = false; throw; }
                 BeginInvoke(Close); return true;
-            default: throw new IOException("この操作は利用できません。");
+            default: throw new IOException(UiLanguage.T("この操作は利用できません。", "This operation is unavailable."));
         }
     }
     private bool CreateFileInDirectory(string directory, string? name, string? encoding)
     {
-        if (!Directory.Exists(directory)) throw new IOException("新規作成するフォルダーが見つかりません。");
+        if (!Directory.Exists(directory)) throw new IOException(UiLanguage.T("新規作成するフォルダーが見つかりません。", "The folder for the new file was not found."));
         var document = TextFileTypes.NewDocument(name, encoding);
         var spec = TextFileTypes.SaveDialogFor(document.Name);
-        using var dialog = new SaveFileDialog { FileName = spec.FileName, InitialDirectory = directory, DefaultExt = spec.DefaultExtension, Filter = spec.Filter, FilterIndex = spec.FilterIndex, AddExtension = true, RestoreDirectory = true, Title = "新規ファイルを保存", OverwritePrompt = false };
+        using var dialog = new SaveFileDialog { FileName = spec.FileName, InitialDirectory = directory, DefaultExt = spec.DefaultExtension, Filter = UiLanguage.FileFilter(spec.Filter), FilterIndex = spec.FilterIndex, AddExtension = true, RestoreDirectory = true, Title = UiLanguage.T("新規ファイルを保存", "Save new file"), OverwritePrompt = false };
         if (dialog.ShowDialog(this) != DialogResult.OK) return false;
         var destination = Path.GetFullPath(TextFileTypes.ResolveSavePath(document.Name, dialog.FileName, dialog.FilterIndex));
         // CreateNew never truncates an existing file, even if it appeared while the dialog was open.
@@ -493,22 +493,22 @@ internal sealed class EditorWindow : Form
     }
     private async Task<object?> SaveDocument(JsonElement args)
     {
-        var input = args.GetProperty("document").Deserialize<DocumentData>(Storage.Json) ?? throw new IOException("文書が見つかりません。");
+        var input = args.GetProperty("document").Deserialize<DocumentData>(Storage.Json) ?? throw new IOException(UiLanguage.T("文書が見つかりません。", "Document not found."));
         var doc = DocumentAuthority.Merge(Documents, input);
         var saveAs = args.GetProperty("saveAs").GetBoolean(); var destination = doc.Path;
         if (saveAs || destination is null)
         {
             var saveSpec = TextFileTypes.SaveDialogFor(doc.Name);
-            using var dialog = new SaveFileDialog { FileName = saveSpec.FileName, InitialDirectory = Storage.DefaultSaveDirectory(), DefaultExt = saveSpec.DefaultExtension, Filter = saveSpec.Filter, FilterIndex = saveSpec.FilterIndex, AddExtension = true, RestoreDirectory = true, Title = "名前を付けて保存", OverwritePrompt = false };
+            using var dialog = new SaveFileDialog { FileName = saveSpec.FileName, InitialDirectory = Storage.DefaultSaveDirectory(), DefaultExt = saveSpec.DefaultExtension, Filter = UiLanguage.FileFilter(saveSpec.Filter), FilterIndex = saveSpec.FilterIndex, AddExtension = true, RestoreDirectory = true, Title = UiLanguage.T("名前を付けて保存", "Save as"), OverwritePrompt = false };
             if(dialog.ShowDialog(this) != DialogResult.OK)return null;
             destination = TextFileTypes.ResolveSavePath(doc.Name, dialog.FileName, dialog.FilterIndex);
-            if (File.Exists(destination) && MessageBox.Show(this, "このファイルは既にあります。上書きしますか？\n\n" + destination, "名前を付けて保存", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return null;
+            if (File.Exists(destination) && MessageBox.Show(this, UiLanguage.T("このファイルは既にあります。上書きしますか？\n\n", "This file already exists. Overwrite it?\n\n") + destination, UiLanguage.T("名前を付けて保存", "Save as"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return null;
         }
         destination = Path.GetFullPath(destination);
         if(string.Equals(destination, doc.Path, StringComparison.OrdinalIgnoreCase) && File.Exists(destination) && doc.Fingerprint is not null)
         {
             var currentHash = Storage.Hash(await File.ReadAllBytesAsync(destination));
-            if(currentHash != doc.Fingerprint && MessageBox.Show(this,"このファイルは別のアプリでも変更されています。現在の編集内容で上書きしますか？\n\n「いいえ」で保存を中止できます。", "ファイルの変更を確認",MessageBoxButtons.YesNo,MessageBoxIcon.Warning) != DialogResult.Yes) return null;
+            if(currentHash != doc.Fingerprint && MessageBox.Show(this,UiLanguage.T("このファイルは別のアプリでも変更されています。現在の編集内容で上書きしますか？\n\n「いいえ」で保存を中止できます。", "This file was changed by another application. Overwrite it with your current edits?\n\nSelect No to cancel."), UiLanguage.T("ファイルの変更を確認", "Confirm file changes"),MessageBoxButtons.YesNo,MessageBoxIcon.Warning) != DialogResult.Yes) return null;
         }
         var replacements = new List<object>(); var text = doc.Text;
         var destinationChanged=!string.Equals(destination,doc.Path,StringComparison.OrdinalIgnoreCase);

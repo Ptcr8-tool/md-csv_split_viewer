@@ -11,6 +11,7 @@
   <ItemGroup><Compile Include="../../native/PipeMessagePolicy.cs" Link="PipeMessagePolicy.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../../native/ContextMenuRegistration.cs" Link="ContextMenuRegistration.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../../native/BinaryPreview.cs" Link="BinaryPreview.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../../native/UiLanguage.cs" Link="UiLanguage.cs" /></ItemGroup>
 </Project>
 
 

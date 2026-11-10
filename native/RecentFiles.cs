@@ -14,6 +14,6 @@ internal sealed class RecentFiles(string file)
     public IReadOnlyList<RecentEntry> List(){lock(gate)return Read();}
     public void Touch(string path){lock(gate){path=System.IO.Path.GetFullPath(path);var entries=Read();entries.RemoveAll(e=>string.Equals(path,e.Path,StringComparison.OrdinalIgnoreCase));var id=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path.ToUpperInvariant())))[..24];entries.Insert(0,new(id,path,DateTimeOffset.UtcNow));Write(entries.Take(20));}}
     private void Write(IEnumerable<RecentEntry> entries){Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);var temporary=file+".tmp";try{File.WriteAllText(temporary,JsonSerializer.Serialize(entries,Storage.Json));File.Move(temporary,file,true);}finally{if(File.Exists(temporary))File.Delete(temporary);}}
-    public string Resolve(string id){lock(gate)return Read().FirstOrDefault(e=>e.Id==id)?.Path??throw new IOException("履歴が見つかりません。もう一度開いてください。");}
+    public string Resolve(string id){lock(gate)return Read().FirstOrDefault(e=>e.Id==id)?.Path??throw new IOException(UiLanguage.T("履歴が見つかりません。もう一度開いてください。", "The recent item was not found. Open the file again."));}
     public void Clear(){lock(gate)Write([]);}
 }

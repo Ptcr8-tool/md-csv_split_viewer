@@ -1,3 +1,5 @@
+import {currentUiLanguage} from './i18n.js';
+const tr=(ja,en)=>currentUiLanguage()==='en'?en:ja;
 import createDOMPurify from 'dompurify';
 import {addHtmlOutlineAnchors} from './html-outline.js';
 
@@ -12,7 +14,7 @@ const cssWithoutResources=value=>{
 };
 const htmlCsp="default-src 'none'; script-src 'none'; connect-src 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; worker-src 'none'; font-src 'none'; media-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
 export function buildHtmlPreview(raw,{fontSize=14}={}){
-  if(typeof raw!=='string')throw new TypeError('HTMLの原文は文字列で指定してください。');
+  if(typeof raw!=='string')throw new TypeError(tr('HTMLの原文は文字列で指定してください。','HTML source must be a string.'));
   // Template contents are inert, so raw resource attributes are never inserted
   // into the application document or a browsing context before sanitization.
   const template=document.createElement('template');template.innerHTML=raw;

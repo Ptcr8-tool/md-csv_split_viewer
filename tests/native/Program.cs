@@ -55,7 +55,7 @@ try
     Assert(PaneWindowPolicy.TryGetPane(UiContent.EntryUrl + "?pane=source", out var sourcePane) && sourcePane == "source" && PaneWindowPolicy.TryGetPane(UiContent.EntryUrl + "?pane=preview", out var previewPane) && previewPane == "preview", "native pane windows accept only the two app views");
     foreach (var candidate in new[] { "https://example.com/index.html?pane=source", "https://app.mdsplit.local.example/index.html?pane=source", "http://app.mdsplit.local/index.html?pane=source", UiContent.EntryUrl + "?pane=source&url=https://example.com", UiContent.EntryUrl + "?pane=source#fragment", UiContent.EntryUrl + "?pane=other", "file:///index.html?pane=source", UiContent.EntryUrl })
         Assert(!PaneWindowPolicy.TryGetPane(candidate, out _), "native pane request rejects unsafe or unrecognized URL: " + candidate);
-    var missing = false; try { UiContent.GetFolder(root); } catch(FileNotFoundException ex) { missing = ex.Message.Contains("修復") && !ex.Message.Contains("ZIP"); }
+    var missing = false; try { UiContent.GetFolder(root); } catch(FileNotFoundException ex) { missing = (ex.Message.Contains("修復") || ex.Message.Contains("repair")) && !ex.Message.Contains("ZIP"); }
     Assert(missing, "missing UI file fails before creating a web view");
     var web = Path.Combine(root, "アプリ 空白", "wwwroot"); Directory.CreateDirectory(web); await File.WriteAllTextAsync(Path.Combine(web,"index.html"), "<!doctype html><title>MD Split</title>");
     Assert(UiContent.GetFolder(Path.GetDirectoryName(web)!) == web, "UI content folder supports spaces and Japanese paths");

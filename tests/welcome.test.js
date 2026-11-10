@@ -2,6 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {welcomeDocument} from '../src/welcome.js';
 import {DocumentModel} from '../src/document.js';
 import {parseMarkdown} from '../src/render.js';
+import {setUiLanguage} from '../src/i18n.js';
 
 const guide=welcomeDocument();
 const tree=parseMarkdown(guide.text);
@@ -10,6 +11,18 @@ const visit=node=>{nodes.push(node);for(const child of node.children||[])visit(c
 visit(tree);
 
 describe('editable welcome guide',()=>{
+  it('opens a fresh English guide when English is selected, without changing an existing guide',()=>{
+    const original=welcomeDocument();
+    try {
+      setUiLanguage('en');
+      const english=welcomeDocument();
+      expect(english.name).toContain('Guide.md');
+      expect(english.text).toContain('Getting started with MD-CSV Split Editor');
+      expect(english.text).toContain('data:image/png;base64,');
+      expect(english.savedText).toBe(english.text);
+      expect(original).toEqual(guide);
+    } finally { setUiLanguage('ja'); }
+  });
   it('opens as an independent untitled document and preserves the original guide after edits',()=>{
     const edited=new DocumentModel(welcomeDocument());
     expect(edited.path).toBeNull();

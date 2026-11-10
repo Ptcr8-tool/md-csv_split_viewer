@@ -5,7 +5,7 @@ internal static class DocumentAuthority
 {
     internal static DocumentData RegisterUnsaved(IDictionary<string, DocumentData> documents, string? id, string? name)
     {
-        if (!Guid.TryParse(id, out _)) throw new IOException("文書IDが正しくありません。");
+        if (!Guid.TryParse(id, out _)) throw new IOException(UiLanguage.T("文書IDが正しくありません。", "The document ID is invalid."));
         if (documents.TryGetValue(id!, out var existing)) return existing;
         var doc = TextFileTypes.NewDocument(name);
         doc.Id = id!;
@@ -16,7 +16,7 @@ internal static class DocumentAuthority
     internal static DocumentData Require(IDictionary<string, DocumentData> documents, string? id)
     {
         if (id is null || !Guid.TryParse(id, out _) || !documents.TryGetValue(id, out var doc))
-            throw new IOException("文書が見つかりません。再度開いてください。");
+            throw new IOException(UiLanguage.T("文書が見つかりません。再度開いてください。", "The document was not found. Open it again."));
         return doc;
     }
 
