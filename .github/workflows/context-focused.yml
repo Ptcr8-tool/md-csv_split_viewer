@@ -28,3 +28,39 @@ jobs:
           $root = Join-Path $env:RUNNER_TEMP ('md-shell-' + [Guid]::NewGuid().ToString('N'))
           [void][IO.Directory]::CreateDirectory($root)
           & ./tests/installer/Run-ContextMenuVisibilityProbe.ps1 -Application $exe -TestRoot $root -ProbeSource ./tests/installer/ShellBackgroundProbe.cs
+
+  installed:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run publish:win
+      - run: choco install nsis --yes --no-progress
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: release/runtime-cache/runtime.cab
+          key: webview2-fixed-${{ runner.os }}-${{ hashFiles('installer/runtime.json') }}
+      - name: Package complete offline setup
+        shell: pwsh
+        run: |
+          $env:MAKENSIS = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          python scripts/package-installer.py
+      - name: Verify installation and context menu
+        shell: pwsh
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
+          & ./tests/installer/Run-SetupSmoke.ps1 -Setup $setups[0].FullName

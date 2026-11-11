@@ -70,6 +70,25 @@ function Wait-ShellTitle([string] $Folder, [string] $Expected) {
     } while ([DateTime]::UtcNow -lt $until)
     throw 'The Windows Shell did not include the registered background command.'
 }
+function Get-ProcessUiSnapshot([int] $ProcessId) {
+    $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ProcessId)
+    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+    $seen = @()
+    foreach ($window in $windows) {
+        try {
+            $seen += 'Window: ' + $window.Current.Name
+            $items=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+            foreach ($item in $items) {
+                try {
+                    if (-not $item.Current.IsOffscreen -and $item.Current.Name) {
+                        $seen += $item.Current.ControlType.ProgrammaticName + ' [' + $item.Current.AutomationId + ']: ' + $item.Current.Name
+                    }
+                } catch [System.Windows.Automation.ElementNotAvailableException] { }
+            }
+        } catch [System.Windows.Automation.ElementNotAvailableException] { }
+    }
+    return (($seen | Select-Object -First 100) -join '; ')
+}
 
 $createdProcess = $null
 $mappedDrive = $null
@@ -114,12 +133,20 @@ try {
         $value = $filename.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
         $baseName = 'shell-context-test-' + $index + '.md'
         $value.SetValue($baseName)
-        $filename.SetFocus()
-        [Windows.Forms.SendKeys]::SendWait('{ENTER}')
+        if ($value.Current.Value -ne $baseName) { throw 'Save dialog did not accept the synthetic file name.' }
+        $beforeSaveUi = Get-ProcessUiSnapshot $createdProcess.Id
+        $japaneseSave = [string][char]0x4fdd + [char]0x5b58
+        $save = Wait-ProcessElement $createdProcess.Id @('Save', $japaneseSave, ($japaneseSave + '(&S)'), ($japaneseSave + '(S)')) ([System.Windows.Automation.ControlType]::Button)
+        $save.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
         $expected = Join-Path $folder $baseName
+        Write-Output ('Checking Shell-created file ' + $index + ': ' + $expected)
         $until = [DateTime]::UtcNow.AddSeconds(30)
         do { if (Test-Path -LiteralPath $expected -PathType Leaf) { break }; Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt $until)
-        if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) { throw 'The new file was not created in the folder whose background was invoked.' }
+        if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
+            $nearby = @(Get-ChildItem -LiteralPath $resolvedRoot -Recurse -File -Filter ('shell-context-test-' + $index + '*') -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+            $afterSaveUi = Get-ProcessUiSnapshot $createdProcess.Id
+            throw ('New file was not created at the selected background path: ' + $expected + '. Matching files under fixture: ' + ($nearby -join ', ') + '. UI before save: ' + $beforeSaveUi + '. UI after save: ' + $afterSaveUi)
+        }
     }
     Write-Output 'PASS: Windows Shell exposes the desktop verb and invokes the folder-background verb for Unicode folders and a drive root, cold and already running.'
 } finally {
