@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace MdSplit;
 internal static class BuildIdentity
 {
-    public const string Version="1.1.0";
+    public const string Version="1.1.1";
     public const string Repository="Ptcr8-tool/md-csv_split_viewer";
     public static string SetupName(string version)=>$"MD-Split-{version}-Setup.exe";
 }

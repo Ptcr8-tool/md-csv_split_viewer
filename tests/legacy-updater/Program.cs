@@ -3,15 +3,16 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-// Run inside an installation made from the hash-pinned v1.0.3 setup. Load the
+// Run inside an installation made from a hash-pinned published setup. Load the
 // actual shipped updater and its embedded verifier pins; only the release API
 // and asset transport are replaced with an in-memory, local fixture.
-if (args.Length != 5) throw new ArgumentException("Expected installer, proof, version, scratch directory and version override.");
+if (args.Length != 6) throw new ArgumentException("Expected installer, proof, version, scratch directory, version override and installed version.");
 var setup = Path.GetFullPath(args[0]);
 var proof = Path.GetFullPath(args[1]);
 var version = args[2];
 var scratch = Path.GetFullPath(args[3]);
 var overrideVersion = args[4] == "-" ? null : args[4];
+var oldVersion = args[5];
 var setupName = $"MD-Split-{version}-Setup.exe";
 var proofName = setupName + ".sigstore.json";
 var prefix = $"https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v{version}/";
@@ -27,8 +28,8 @@ var release = JsonSerializer.Serialize(new {
 });
 var oldApp = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "MD-Split.dll"));
 var identity = oldApp.GetType("MdSplit.BuildIdentity", throwOnError: true)!;
-if ((string?)identity.GetField("Version", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetRawConstantValue() != "1.0.3")
-    throw new InvalidOperationException("The installed updater is not v1.0.3.");
+if ((string?)identity.GetField("Version", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetRawConstantValue() != oldVersion)
+    throw new InvalidOperationException($"The installed updater is not v{oldVersion}.");
 var type = oldApp.GetType("MdSplit.UpdateService", throwOnError: true)!;
 using var handler = new FixtureHandler(release, setup, proof, setupName, proofName);
 var ctor = type.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Single();
@@ -37,11 +38,11 @@ var check = (Task)type.GetMethod("Check")!.Invoke(service, new object?[] { 0, tr
 await check;
 var result = check.GetType().GetProperty("Result")!.GetValue(check);
 if (!JsonSerializer.SerializeToElement(result).GetProperty("available").GetBoolean())
-    throw new InvalidOperationException("The v1.0.3 updater did not offer the fixture release.");
+    throw new InvalidOperationException($"The v{oldVersion} updater did not offer the fixture release.");
 await (Task)type.GetMethod("Download")!.Invoke(service, new object?[] { version, (Action<double>)(_ => { }) })!;
 var verified = (Task<string>)type.GetMethod("VerifiedInstaller")!.Invoke(service, null)!;
 if (Hash(await verified) != setupHash) throw new InvalidOperationException("The verified installer changed.");
-Console.WriteLine("PASS: the installed v1.0.3 updater accepted the release metadata, downloaded the fixture and verified its real GitHub provenance with its own bundled pins.");
+Console.WriteLine($"PASS: the installed v{oldVersion} updater accepted the release metadata, downloaded the fixture and verified its real GitHub provenance with its own bundled pins.");
 
 internal sealed class FixtureHandler(string release, string setup, string proof, string setupName, string proofName) : HttpMessageHandler
 {

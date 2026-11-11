@@ -1,0 +1,44 @@
+# One-time release bootstrap. Only a reviewed change to this file on main creates the
+# lightweight tag and starts the separately tested, tag-scoped release job.
+name: Start v1.1.1 release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bootstrap-v1.1.1.yml']
+
+permissions: {}
+jobs:
+  dispatch:
+    if: github.repository == 'Ptcr8-tool/md-csv_split_viewer' && github.repository_id == '1440570920' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag reviewed source and dispatch tagged build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('./package.json').version")" = '1.1.1'
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$GITHUB_SHA"
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == "v1.1.1") | .id')
+          test -z "$existing"
+          response=$(mktemp)
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.1.1" >"$response" 2>&1; then
+            # A failed dispatch can be retried without moving the tag.
+            test "$(jq -r '.object.type' "$response")" = 'commit'
+            test "$(jq -r '.object.sha' "$response")" = "$GITHUB_SHA"
+          elif ! grep -q 'HTTP 404' "$response"; then
+            echo 'Could not confirm tag absence.' >&2
+            exit 1
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/v1.1.1 -f "sha=$GITHUB_SHA" --silent
+          fi
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.1.1" --jq '.object.sha')" = "$GITHUB_SHA"
+          gh workflow run windows-release.yml --repo "$GITHUB_REPOSITORY" --ref v1.1.1
