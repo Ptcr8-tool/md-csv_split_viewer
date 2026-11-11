@@ -19,7 +19,9 @@ export async function checkTheme(page,theme){
       palette:document.documentElement.dataset.palette||'black',
       surfaces:['#app','.topbar','.source-pane','.preview-pane','.cm-gutters','.formatbar','.statusbar','.toggle-group .selected'].map(s=>({selector:s,color:background(document.querySelector(s))})),
       markers:measure('.cm-content .md-markup'),
-      text:measure('.cm-content .cm-line,.cm-content span,.cm-gutterElement,.pane-heading .pane-note,#preview p,#preview li,#preview blockquote,#preview code,.target-label,.tab-name,.statusbar>span')
+      // End-of-line widgets are aria-hidden decorations with user-selected opacity;
+      // keep the 4.5:1 requirement for actual text and Markdown delimiters.
+      text:measure('.cm-content .cm-line,.cm-content span:not(.cm-eol-marker),.cm-gutterElement,.pane-heading .pane-note,#preview p,#preview li,#preview blockquote,#preview code,.target-label,.tab-name,.statusbar>span')
     };
   });
   assert.equal(result.theme,theme);
