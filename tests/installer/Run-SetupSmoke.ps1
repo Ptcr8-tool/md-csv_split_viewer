@@ -251,7 +251,7 @@ function Assert-ShellIcon([string] $Extension, [string] $ExpectedIcon, [string] 
     try { $probeKey.SetValue('', ('MD.Split.File.' + $Extension.TrimStart('.').ToLowerInvariant())) } finally { $probeKey.Dispose() }
     try {
         [MdSplitSmokeShellIcon]::VerifyIcon($probeExt, $ExpectedIcon, $DifferentIcon)
-        [MdSplitSmokeShellIcon]::VerifyType($probeExt, ($Extension.TrimStart('.').ToUpperInvariant() + ' File (MD-CSV Split Editor)'))
+        [MdSplitSmokeShellIcon]::VerifyType($probeExt, ($Extension.TrimStart('.').ToUpperInvariant() + ' File'))
     } finally {
         [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($probePath, $false)
     }
@@ -300,7 +300,15 @@ try {
         $typedKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($typedPath, $true)
         try { $typedKey.SetValue('', 'MD-CSV Split Editor ' + $extension.ToUpperInvariant() + ' Document') } finally { $typedKey.Dispose() }
     }
+    # Also migrate the last released extension-first labels and legacy ProgID.
+    $typedKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.File.csv', $true)
+    try { $typedKey.SetValue('', 'CSV File (MD-CSV Split Editor)') } finally { $typedKey.Dispose() }
+    $legacyKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.Markdown', $true)
+    try { $legacyKey.SetValue('', 'Document (MD-CSV Split Editor)') } finally { $legacyKey.Dispose() }
     Invoke-CheckedProcess $app @('--register-quiet')
+    $legacyKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.Markdown')
+    try { $legacyTypeName = [string]$legacyKey.GetValue('') } finally { $legacyKey.Dispose() }
+    if ($legacyTypeName -ne 'Document') { throw 'Legacy type label was not updated.' }
     foreach ($extension in $associationExtensions) {
         $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
         $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
@@ -310,7 +318,7 @@ try {
         if ($value.PSObject.Properties[$extension].Value -ne $newProgId) { throw "Default-app capability missing for $extension." }
         $typeKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $newProgId)
         try { $typeName = [string]$typeKey.GetValue('') } finally { $typeKey.Dispose() }
-        if ($typeName -ne ($extension.TrimStart('.').ToUpperInvariant() + ' File (MD-CSV Split Editor)')) { throw "File type label did not put the extension first for $extension." }
+        if ($typeName -ne ($extension.TrimStart('.').ToUpperInvariant() + ' File')) { throw "File type label did not match the extension-only description for $extension." }
         $iconPath = Join-Path $installPath ('doc-icons-v2\' + $extension.TrimStart('.').ToLowerInvariant() + '.ico')
         Assert-File $iconPath "document icon for $extension"
         $iconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $newProgId + '\DefaultIcon')

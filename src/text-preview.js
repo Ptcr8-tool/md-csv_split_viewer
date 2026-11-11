@@ -61,9 +61,17 @@ export class TextPreview{
       const cell=event.target.closest?.('[data-cell-row][data-cell-column]');
       if(!cell)return;
       const row=Number(cell.dataset.cellRow),column=Number(cell.dataset.cellColumn);
+      const arrow={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[event.key];
+      if(arrow&&!event.isComposing&&!event.ctrlKey&&!event.altKey&&!event.metaKey){
+        event.preventDefault();event.stopPropagation();
+        this.moveByArrow(row,column,arrow[0],arrow[1],event.shiftKey);return;
+      }
       if(event.key==='F2'){event.preventDefault();this.startEdit(row,column);return;}
       if(event.key==='Enter'&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();event.stopPropagation();this.moveAfterEnter(row,column,false);return;}
       const selection=this.selection;
+      if(selection?.kind==='cell'&&selection.entries.size>1&&(event.key==='Delete'||event.key==='Backspace')&&!event.ctrlKey&&!event.altKey&&!event.metaKey){
+        event.preventDefault();event.stopPropagation();this.clearSelectedCells(row,column);return;
+      }
       if(selection?.kind!=='cell'||selection.entries.size!==1||!selection.entries.has(`${row}:${column}`))return;
       const altGraph=event.getModifierState?.('AltGraph');
       if(event.metaKey||((event.ctrlKey||event.altKey)&&!altGraph))return;
@@ -390,6 +398,38 @@ export class TextPreview{
     this._layoutShape=shape;this.renderTable();
     if(this.parsed){this.selectRange('cell',bounds.top,bounds.left);this.scroller?.querySelector(`[data-cell-row="${bounds.top}"][data-cell-column="${bounds.left}"]`)?.focus({preventScroll:true});}
   }
+  clearSelectedCells(activeRow,activeColumn){
+    const selection=this.selection,parsed=this.parsed,id=this.cache?.docId,before=this.raw;
+    if(selection?.kind!=='cell'||!selection.entries.size||!parsed)return;
+    if(typeof this.api.patch!=='function'||this.api.canEdit?.(id)===false){
+      if(this.status)this.status.textContent=tr('この表は現在編集できません。','This table cannot be edited right now.');
+      return;
+    }
+    const hiddenRows=new Set([...this.view.hiddenRows,...(this._filterHiddenRows||[])]),hiddenColumns=new Set(this.view.hiddenColumns),edits=[];
+    for(const entry of selection.entries){
+      const [row,column]=String(entry).split(':').map(Number);
+      if(!Number.isInteger(row)||!Number.isInteger(column)||row<0||column<0||hiddenRows.has(row)||hiddenColumns.has(column))continue;
+      const range=parsed.cellRanges[row]?.[column],value=parsed.rows[row]?.[column];
+      // Missing ragged cells and already empty values need no source edit.
+      if(!range||value===undefined||value==='')continue;
+      const lastSingleCell=row===parsed.rowCount-1&&parsed.rows[row].length===1&&parsed.rowRanges[row].to===before.length;
+      edits.push({from:range.from,to:range.to,insert:encodeDelimitedCell('',parsed.delimiter,range.quoted||lastSingleCell)});
+    }
+    if(!edits.length)return;
+    edits.sort((a,b)=>a.from-b.from);
+    const pieces=[];let position=0;
+    for(const edit of edits){pieces.push(before.slice(position,edit.from),edit.insert);position=edit.to;}
+    pieces.push(before.slice(position));const next=pieces.join('');
+    const scrollTop=this.scroller?.scrollTop||0,scrollLeft=this.scroller?.scrollLeft||0;
+    this.raw=next;
+    try{if(this.api.patch({docId:id,...csvChangedRange(before,next),kind:'command'})===false)throw new Error();}
+    catch{this.raw=before;if(this.status)this.status.textContent=tr('セルの消去を反映できませんでした。原文は変更していません。','Could not clear the cells. The source is unchanged.');return;}
+    this.renderTable();
+    if(this.scroller){
+      this.scroller.scrollTop=scrollTop;this.scroller.scrollLeft=scrollLeft;
+      (this.scroller.querySelector(`[data-cell-row="${activeRow}"][data-cell-column="${activeColumn}"]`)||this.scroller).focus({preventScroll:true});
+    }
+  }
   selectRange(kind,a,b,event={}){
     this.selection=nextCsvSelection(this.selection,kind,a,b,event);const {entries}=this.selection;this.updateSelectionStatus();
     if(entries.size){const row=kind==='column'?Math.max(0,csvRowAtPosition(this.parsed.rowRanges,this._activePosition)):a,col=kind==='cell'?b:kind==='column'?a:0;const at=this.parsed.cellRanges[row]?.[col]?.from??this.parsed.rowRanges[row]?.from;if(at!==undefined){this.setActivePosition(at);this.api.position?.(this.cache?.docId,at);}}
@@ -483,6 +523,36 @@ export class TextPreview{
     };
     button.addEventListener('click',show);
     if(!this.csvSettings.warningShown){this.csvSettings.warningShown=true;show();}
+  }
+  moveByArrow(row,column,deltaRow,deltaColumn,extend=false){
+    if(!this.parsed||!this.scroller)return;
+    const selection=this.selection;
+    // A pointer-selected range keeps focus on its anchor. Shift+arrow continues
+    // from the opposite edge; after a keyboard extension focus is already at
+    // that edge. Sparse Ctrl selections fall back to the focused cell.
+    if(extend&&selection?.kind==='cell'&&selection.entries.size>1&&selection.anchor?.[0]===row&&selection.anchor?.[1]===column){
+      try{
+        const bounds=csvSelectionBounds(selection,this.parsed.rowCount,this.parsed.columnCount);
+        if(bounds){row=row===bounds.top?bounds.bottom:bounds.top;column=column===bounds.left?bounds.right:bounds.left;}
+      }catch{}
+    }
+    let nextRow=row+deltaRow,nextColumn=column+deltaColumn;
+    while(nextRow>=0&&nextRow<this.parsed.rowCount&&nextColumn>=0&&nextColumn<this.parsed.columnCount&&
+      (this.view.hiddenRows.includes(nextRow)||this._filterHiddenRows?.has(nextRow)||this.view.hiddenColumns.includes(nextColumn))){
+      nextRow+=deltaRow;nextColumn+=deltaColumn;
+    }
+    if(nextRow<0||nextRow>=this.parsed.rowCount||nextColumn<0||nextColumn>=this.parsed.columnCount)return;
+    let target=this.scroller.querySelector(`[data-cell-row="${nextRow}"][data-cell-column="${nextColumn}"]`);
+    if(!target&&this._scrollLayout?.large){
+      const rows=this._scrollLayout.scrollingRows||[],columns=Array.from({length:this.parsed.columnCount},(_,i)=>i).filter(i=>!this.view.hiddenColumns.includes(i)&&i>=this.view.freezeColumns);
+      const rowAt=rows.indexOf(nextRow),columnAt=columns.indexOf(nextColumn);
+      if(rowAt>=0)this.csvSettings.rowPage=Math.floor(rowAt/CSV_PAGE_ROWS);
+      if(columnAt>=0)this.csvSettings.columnPage=Math.floor(columnAt/CSV_PAGE_COLUMNS);
+      this.renderTable();target=this.scroller?.querySelector(`[data-cell-row="${nextRow}"][data-cell-column="${nextColumn}"]`);
+    }
+    if(!target)return;
+    this.selectRange('cell',nextRow,nextColumn,{shiftKey:extend});
+    target.focus({preventScroll:true});target.scrollIntoView({block:'nearest',inline:'nearest'});
   }
   moveAfterEnter(row,column,edit){
     if(!this.parsed)return;

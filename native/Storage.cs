@@ -295,7 +295,7 @@ internal static class Storage
         // may refer to it, and must continue opening their files after upgrade.
         using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + progId))
         {
-            key.SetValue("", "Document (MD-CSV Split Editor)");
+            key.SetValue("", "Document");
             using var icon = key.CreateSubKey("DefaultIcon"); icon.SetValue("", IconValue(commonIcon));
             using var command = key.CreateSubKey(@"shell\open\command"); command.SetValue("", "\"" + exe + "\" \"%1\"");
         }
@@ -330,7 +330,7 @@ internal static class Storage
             if (!File.Exists(typedIcon)) typedIcon = commonIcon;
             using (var typed = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + typedProgId))
             {
-                typed.SetValue("", ext[1..].ToUpperInvariant() + " File (MD-CSV Split Editor)");
+                typed.SetValue("", ext[1..].ToUpperInvariant() + " File");
                 using var icon = typed.CreateSubKey("DefaultIcon"); icon.SetValue("", IconValue(typedIcon));
                 using var command = typed.CreateSubKey(@"shell\open\command"); command.SetValue("", "\"" + exe + "\" \"%1\"");
             }
