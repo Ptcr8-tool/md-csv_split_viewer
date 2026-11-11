@@ -46,7 +46,7 @@ const $=s=>document.querySelector(s);
 $('#app').innerHTML=applicationShell();
 installToolbarFolding();
 
-let settings={language:normalizeLanguage(null,navigator.language),openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:false,showFullWidthSpaces:false,showTabs:false,showSpaces:false};
+let settings={language:normalizeLanguage(null,navigator.language),openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:true,showFullWidthSpaces:true,showTabs:true,showSpaces:false};
 let textPreview={visible:false,editing:null,parsed:null,clear(){},finishEdit(){return true;},render(){return false;}};
 let textPreviewLoad=null;
 let pendingPreviewScroll=null;
@@ -260,7 +260,7 @@ function updateToolbar(){
   for(const c of ['underline','spoiler','subtext'])$(`[data-cmd="${c}"]`).hidden=mode!=='discord';
   for(const c of ['table','check','mermaid','details','rule'])$(`[data-cmd="${c}"]`).disabled=!markdownFile||mode==='discord';
   $('#heading').querySelectorAll('option').forEach(o=>o.disabled=mode==='discord'&&Number(o.value)>3);
-  $('#render-label').textContent=mode==='discord'?'DISCORD':'DOCUMENT';$('#preview-note').textContent=mode==='discord'?'Discord向けの表示':'そのまま編集できます';$('.discord-controls').hidden=!splitAvailable();if(!markdownFile){$('#render-label').textContent=pk?'PREVIEW':'TEXT';$('#preview-note').textContent=pk==='html'?'読み取り専用プレビュー':pk?'セルをダブルクリックして編集':'';}
+  $('#render-label').textContent=mode==='discord'?'DISCORD':'DOCUMENT';$('#preview-note').textContent=mode==='discord'?'Discord向けの表示':'そのまま編集できます';$('.discord-controls').hidden=!splitAvailable();if(!markdownFile){$('#render-label').textContent=pk?'PREVIEW':'TEXT';$('#preview-note').textContent=pk==='html'?'読み取り専用プレビュー':pk?tr('セルを選んで入力、またはダブルクリックして編集','Select a cell and type, or double-click to edit'):'';}
   $('[data-cmd="undo"]').disabled=!current()?.undoStack.length;$('[data-cmd="redo"]').disabled=!current()?.redoStack.length;
   const paper=settings.colorTheme?.startsWith('parchment');
   $('.brightness-controls').setAttribute('aria-disabled',String(!!paper));

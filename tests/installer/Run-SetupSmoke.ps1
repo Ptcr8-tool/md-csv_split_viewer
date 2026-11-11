@@ -60,6 +60,7 @@ $initialBatchClassDefault = BatchClassDefaultSnapshot
 $globalVerbs = @(
     'Software\Classes\*\shell\MD.Split.Open',
     'Software\Classes\Directory\Background\shell\MD.Split.New',
+    'Software\Classes\DesktopBackground\shell\MD.Split.New',
     'Software\Classes\Directory\shell\MD.Split.New'
 )
 foreach ($verb in $globalVerbs) {
@@ -189,6 +190,18 @@ public static class MdSplitSmokeShellIcon {
             sum+=Math.Abs((int)first[i]-second[i])+Math.Abs((int)first[i+1]-second[i+1])+Math.Abs((int)first[i+2]-second[i+2]);
         return sum;
     }
+    public static void VerifyType(string extension, string expectedType) {
+        int hr = CoInitializeEx(IntPtr.Zero, 0);
+        if (hr < 0 && hr != unchecked((int)0x80010106)) Marshal.ThrowExceptionForHR(hr);
+        try {
+            SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+            var info = new SHFILEINFO();
+            // TYPENAME | USEFILEATTRIBUTES queries the Explorer-visible type.
+            var result = SHGetFileInfo("synthetic" + extension, 0x80, ref info, (uint)Marshal.SizeOf(typeof(SHFILEINFO)), 0x410);
+            if (result == IntPtr.Zero || info.szTypeName != expectedType)
+                throw new InvalidOperationException("Unexpected shell type name: " + info.szTypeName + "; expected " + expectedType);
+        } finally { if (hr >= 0) CoUninitialize(); }
+    }
     public static void VerifyIcon(string extension, string expectedFile, string differentFile) {
         int hr = CoInitializeEx(IntPtr.Zero, 0);
         // RPC_E_CHANGED_MODE means this thread was already initialized using
@@ -239,6 +252,7 @@ function Assert-ShellIcon([string] $Extension, [string] $ExpectedIcon, [string] 
     try { $probeKey.SetValue('', ('MD.Split.File.' + $Extension.TrimStart('.').ToLowerInvariant())) } finally { $probeKey.Dispose() }
     try {
         [MdSplitSmokeShellIcon]::VerifyIcon($probeExt, $ExpectedIcon, $DifferentIcon)
+        [MdSplitSmokeShellIcon]::VerifyType($probeExt, ($Extension.TrimStart('.').ToUpperInvariant() + ' File'))
     } finally {
         [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($probePath, $false)
     }
@@ -264,6 +278,20 @@ try {
     Assert-File $app 'application executable'
     Assert-File $html 'application UI'
     Assert-File $uninstaller 'uninstaller'
+
+    # A fresh install defaults to enabled: check every installed verb before
+    # using any explicit enable command. The Shell itself must expose and run
+    # the background entry, not merely have an apparently correct registry.
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -eq $key) { throw 'Fresh install did not enable every context-menu command by default.' }
+        $key.Dispose()
+    }
+    $contextChoice = Join-Path $installPath 'Data\context-menu-choice.txt'
+    Assert-File $contextChoice 'context-menu preference'
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Fresh install did not record enabled context menus.' }
+    & (Join-Path $PSScriptRoot 'Run-ContextMenuProbe.ps1') -Application $app -TestRoot $testRoot -ProbeSource (Join-Path $PSScriptRoot 'ShellBackgroundProbe.cs')
+    Write-Output 'PASS: fresh installation enables its context menus and the actual folder-background command works.'
     $languageMarker = Join-Path $installPath 'Data\install-language.txt'
     Assert-File $languageMarker 'initial installer language'
     $initialLanguage = [IO.File]::ReadAllText($languageMarker).Trim()
@@ -280,6 +308,22 @@ try {
     if (-not [string]::Equals($location, $installPath, [StringComparison]::OrdinalIgnoreCase)) { throw 'The registered install location does not match the test directory.' }
     if (-not (Test-Path -LiteralPath $progIdKey)) { throw 'The application association was not registered.' }
     $associations = Join-Path $capabilities 'FileAssociations'
+    # Simulate the prior typed descriptions and run the same registration used
+    # on upgrade. The existing ProgIDs and protected UserChoice remain intact.
+    foreach ($extension in @('.txt', '.md', '.csv')) {
+        $typedPath = 'Software\Classes\MD.Split.File.' + $extension.TrimStart('.')
+        $typedKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($typedPath, $true)
+        try { $typedKey.SetValue('', 'MD-CSV Split Editor ' + $extension.ToUpperInvariant() + ' Document') } finally { $typedKey.Dispose() }
+    }
+    # Also migrate the last released extension-first labels and legacy ProgID.
+    $typedKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.File.csv', $true)
+    try { $typedKey.SetValue('', 'CSV File (MD-CSV Split Editor)') } finally { $typedKey.Dispose() }
+    $legacyKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.Markdown', $true)
+    try { $legacyKey.SetValue('', 'Document (MD-CSV Split Editor)') } finally { $legacyKey.Dispose() }
+    Invoke-CheckedProcess $app @('--register-quiet')
+    $legacyKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\MD.Split.Markdown')
+    try { $legacyTypeName = [string]$legacyKey.GetValue('') } finally { $legacyKey.Dispose() }
+    if ($legacyTypeName -ne 'Document') { throw 'Legacy type label was not updated.' }
     foreach ($extension in $associationExtensions) {
         $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
         $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
@@ -287,6 +331,9 @@ try {
         if (Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) { throw "Legacy Open With candidate remains for $extension." }
         $value = Get-ItemProperty -LiteralPath $associations -Name $extension -ErrorAction Stop
         if ($value.PSObject.Properties[$extension].Value -ne $newProgId) { throw "Default-app capability missing for $extension." }
+        $typeKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $newProgId)
+        try { $typeName = [string]$typeKey.GetValue('') } finally { $typeKey.Dispose() }
+        if ($typeName -ne ($extension.TrimStart('.').ToUpperInvariant() + ' File')) { throw "File type label did not match the extension-only description for $extension." }
         $iconPath = Join-Path $installPath ('doc-icons-v2\' + $extension.TrimStart('.').ToLowerInvariant() + '.ico')
         Assert-File $iconPath "document icon for $extension"
         $iconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $newProgId + '\DefaultIcon')
@@ -346,6 +393,23 @@ try {
         Assert-ShellIcon $probeExtension (Join-Path $installPath ('doc-icons-v2\' + $probeExtension.TrimStart('.') + '.ico')) (Join-Path $installPath ('doc-icons-v2\' + $different + '.ico'))
     }
     Write-Output 'PASS: Windows Shell icon pixels match each expected document icon and differ from a negative control.'
+
+    # Simulate global verbs registered by the preceding release. They are
+    # owned by this app but contain the older un-normalized path placeholders.
+    $oldBackground = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\Background\shell\MD.Split.New\command', $true)
+    $oldFolder = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\shell\MD.Split.New\command', $true)
+    try {
+        $oldBackground.SetValue('', ('"' + $app + '" --new-in-directory "%V"'))
+        $oldFolder.SetValue('', ('"' + $app + '" --new-in-directory "%1"'))
+    } finally { $oldBackground.Dispose(); $oldFolder.Dispose() }
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    $newBackground = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\Background\shell\MD.Split.New\command')
+    $newFolder = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\shell\MD.Split.New\command')
+    try {
+        if ($newBackground.GetValue('') -ne ('"' + $app + '" --new-in-directory "%V\."')) { throw 'Older owned background command was not migrated.' }
+        if ($newFolder.GetValue('') -ne ('"' + $app + '" --new-in-directory "%1\."')) { throw 'Older owned folder command was not migrated.' }
+    } finally { $newBackground.Dispose(); $newFolder.Dispose() }
+    Write-Output 'PASS: previous global context-menu commands migrate without losing ownership.'
     # Seed an old supported-extension verb owned by this installation, to
     # verify that enabling the global action migrates only our old entries.
     $legacy = 'Software\Classes\SystemFileAssociations\.txt\shell\MD.Split.Open'
@@ -357,8 +421,9 @@ try {
     Invoke-CheckedProcess $app @('--context-menu-enable')
     $expectedCommands = @(
         ('"' + $app + '" "%1"'),
-        ('"' + $app + '" --new-in-directory "%V"'),
-        ('"' + $app + '" --new-in-directory "%1"')
+        ('"' + $app + '" --new-in-directory "%V\."'),
+        ('"' + $app + '" --new-in-desktop'),
+        ('"' + $app + '" --new-in-directory "%1\."')
     )
     for ($i=0; $i -lt $globalVerbs.Count; $i++) {
         $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($globalVerbs[$i] + '\command')
@@ -459,6 +524,38 @@ try {
     if ([IO.File]::ReadAllText($languageMarker).Trim() -ne $preservedLanguage) { throw 'Repair overwrote the existing language marker.' }
     Write-Output 'PASS: same-version silent repair restored a missing file and preserved data.'
 
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -eq $key) { throw 'Repair unexpectedly disabled an explicitly enabled context menu.' }
+        $key.Dispose()
+    }
+    Invoke-CheckedProcess $app @('--context-menu-disable')
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '0') { throw 'Context-menu disable was not saved.' }
+    Invoke-CheckedProcess $setupPath @('/S', "/D=$installPath")
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -ne $key) { $key.Dispose(); throw 'Repair re-enabled a context menu the user disabled.' }
+    }
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '0') { throw 'Repair did not preserve context-menu opt-out.' }
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Context-menu re-enable was not saved.' }
+    Write-Output 'PASS: repair preserves both enabled and explicitly disabled context-menu preferences.'
+
+
+    # Removing system registrations is not a user request to disable the
+    # context-menu preference. Preserve an existing explicit enabled choice.
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Expected the explicit enabled choice before unregister.' }
+    Invoke-CheckedProcess $app @('--unregister-quiet')
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Unregister overwrote the user context-menu preference.' }
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -ne $key) { $key.Dispose(); throw 'Unregister did not remove an owned context-menu command.' }
+    }
+    # Restore owned registrations so the actual NSIS uninstall below tests
+    # the normal complete removal path, including UserChoice preservation.
+    Invoke-CheckedProcess $app @('--register-quiet')
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    Write-Output 'PASS: unregister removes owned context menus without changing the saved user preference.'
     Invoke-CheckedProcess $uninstaller @('/S')
     # NSIS uninstallers may continue in a temporary child process.
     $deadline = [DateTime]::UtcNow.AddMinutes(3)

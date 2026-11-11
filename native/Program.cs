@@ -153,15 +153,17 @@ internal sealed class EditorContext : ApplicationContext
     private void RouteNewDirectory(string[] args, EditorWindow? origin)
     {
         var index = Array.IndexOf(args, "--new-in-directory");
-        if (index < 0) return;
-        if (index + 1 >= args.Length || !Path.IsPathFullyQualified(args[index + 1]) || !Directory.Exists(args[index + 1]))
+        var desktop = args.Contains("--new-in-desktop");
+        if (index < 0 && !desktop) return;
+        var directory = desktop ? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) : index + 1 < args.Length ? args[index + 1] : "";
+        if (!Path.IsPathFullyQualified(directory) || !Directory.Exists(directory))
         {
             MessageBox.Show(origin, UiLanguage.T("新規作成するフォルダーが見つかりません。", "The folder for the new file was not found."), AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         var target = origin ?? lastActive ?? Windows.FirstOrDefault();
         if (target is null) return;
-        target.RequestNewInDirectory(Path.GetFullPath(args[index + 1]));
+        target.RequestNewInDirectory(Path.GetFullPath(directory));
         target.BringForward();
     }
     public void RouteFiles(IEnumerable<string> paths, EditorWindow? origin, string? forceEncoding = null)
@@ -288,7 +290,7 @@ internal sealed class EditorContext : ApplicationContext
                 var line = await PipeMessagePolicy.ReadLine(reader, readTimeout.Token); if (line is null) continue;
                 var args = PipeMessagePolicy.Decode(line);
                 var target = lastActive ?? Windows.FirstOrDefault(); if (target is null || target.IsDisposed) continue;
-                target.BeginInvoke(() => { if (args.Contains("--new-in-directory")) { RouteNewDirectory(args, target); return; } var files = args.Where(a => !a.StartsWith("--") && File.Exists(a)).ToArray(); if (files.Length > 0) RouteFiles(files, lastActive); else target.BringForward(); });
+                target.BeginInvoke(() => { if (args.Contains("--new-in-directory") || args.Contains("--new-in-desktop")) { RouteNewDirectory(args, target); return; } var files = args.Where(a => !a.StartsWith("--") && File.Exists(a)).ToArray(); if (files.Length > 0) RouteFiles(files, lastActive); else target.BringForward(); });
             }
             catch (OperationCanceledException) { if(cancellation.IsCancellationRequested) break; }
             catch (Exception ex) { Storage.Log(ex); await Task.Delay(250); }

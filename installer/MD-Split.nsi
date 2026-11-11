@@ -11,7 +11,7 @@
 ${StrStr}
 ${UnStrStr}
 !ifndef VERSION
-!define VERSION "1.1.0"
+!define VERSION "1.1.1"
 !endif
 !ifndef PAYLOAD
 !define PAYLOAD "..\release\MD-Split"
@@ -306,7 +306,7 @@ Section "$(Core)" SecCore
   ${EndIf}
 SectionEnd
 
-Section /o "$(Context)" SecContextMenu
+Section "$(Context)" SecContextMenu
   ExecWait '"$INSTDIR\MD-Split.exe" --context-menu-enable' $0
   ${If} $0 != 0
     DetailPrint "$(ContextError)"
@@ -362,6 +362,16 @@ Section "$(Cache)" SecCache
 SectionEnd
 
 Section -FinalizeOptions
+  ; An unchecked option explicitly disables only this installation's verbs.
+  ; The app records that choice so later repairs and upgrades retain it.
+  SectionGetFlags ${SecContextMenu} $0
+  IntOp $0 $0 & ${SF_SELECTED}
+  ${If} $0 == 0
+    ExecWait '"$INSTDIR\MD-Split.exe" --context-menu-disable' $0
+    ${If} $0 != 0
+      DetailPrint "$(ContextError)"
+    ${EndIf}
+  ${EndIf}
   SectionGetFlags ${SecStart} $0
   IntOp $0 $0 & ${SF_SELECTED}
   ${If} $0 == 0
@@ -417,6 +427,17 @@ Function .onInit
   language_ready:
   SetShellVarContext current
   SetRegView 64
+  ; Fresh and older installs default to enabled. Only a choice explicitly
+  ; recorded by this installation can turn the option off for a repair.
+  ClearErrors
+  FileOpen $0 "$INSTDIR\Data\context-menu-choice.txt" r
+  ${IfNot} ${Errors}
+    FileRead $0 $1
+    FileClose $0
+    ${If} $1 == "0"
+      !insertmacro UnselectSection ${SecContextMenu}
+    ${EndIf}
+  ${EndIf}
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "$(Requires64)"
     Abort

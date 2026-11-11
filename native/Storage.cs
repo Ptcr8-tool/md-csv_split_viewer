@@ -295,7 +295,7 @@ internal static class Storage
         // may refer to it, and must continue opening their files after upgrade.
         using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + progId))
         {
-            key.SetValue("", "MD-CSV Split Editor Document");
+            key.SetValue("", "Document");
             using var icon = key.CreateSubKey("DefaultIcon"); icon.SetValue("", IconValue(commonIcon));
             using var command = key.CreateSubKey(@"shell\open\command"); command.SetValue("", "\"" + exe + "\" \"%1\"");
         }
@@ -330,7 +330,7 @@ internal static class Storage
             if (!File.Exists(typedIcon)) typedIcon = commonIcon;
             using (var typed = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + typedProgId))
             {
-                typed.SetValue("", "MD-CSV Split Editor " + ext.ToUpperInvariant() + " Document");
+                typed.SetValue("", ext[1..].ToUpperInvariant() + " File");
                 using var icon = typed.CreateSubKey("DefaultIcon"); icon.SetValue("", IconValue(typedIcon));
                 using var command = typed.CreateSubKey(@"shell\open\command"); command.SetValue("", "\"" + exe + "\" \"%1\"");
             }
@@ -458,10 +458,10 @@ internal sealed class AppSettings
     public string Theme { get; set; } = "dark";
     public string ColorTheme { get; set; } = "black";
     public bool SoftBreaks { get; set; } = true;
-    public bool ShowLineBreaks { get; set; }
+    public bool ShowLineBreaks { get; set; } = true;
     public bool DistinguishLineBreaks { get; set; } = true;
-    public bool ShowFullWidthSpaces { get; set; }
-    public bool ShowTabs { get; set; }
+    public bool ShowFullWidthSpaces { get; set; } = true;
+    public bool ShowTabs { get; set; } = true;
     public bool ShowSpaces { get; set; }
     public int FontSize { get; set; } = 15;
     public bool Wrap { get; set; } = true;

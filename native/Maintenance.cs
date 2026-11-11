@@ -30,7 +30,7 @@ internal static class Maintenance
     }
     public static void Unregister()
     {
-        ContextMenuRegistration.Set(false);
+        ContextMenuRegistration.Set(false, rememberChoice: false);
         var exe=Path.Combine(AppContext.BaseDirectory,"MD-Split.exe");string? command;using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Classes\MD.Split.Markdown\shell\open\command"))command=key?.GetValue(null) as string;
         if(command is null||!command.StartsWith('"'+exe+'"',StringComparison.OrdinalIgnoreCase))return;
         Storage.UnregisterApplicationTypes(exe);

@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string] $OldSetup,
     [Parameter(Mandatory = $true)][string] $NewSetup,
-    [ValidateSet('1.0.2', '1.0.3')][string] $OldVersion = '1.0.2'
+    [ValidateSet('1.0.2', '1.0.3', '1.1.0')][string] $OldVersion = '1.0.2'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,6 +18,7 @@ $new = (Resolve-Path -LiteralPath $NewSetup).Path
 $expectedOldSha = @{
     '1.0.2' = 'd48c52d9292e479fca431674a68af1b9f80978694bc8b32ac8aaed19a2609a8d'
     '1.0.3' = '172cf4a064cbdd3016241403d64762ad6ea3a420560c85ad5df639873a5aa24a'
+    '1.1.0' = '882eb35b0d7bf89d59c45eeac7cccc0e5a31199d9015b6acd6617ddc3c90da30'
 }[$OldVersion]
 if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash -ine $expectedOldSha) { throw "The v$OldVersion setup does not match the published release SHA-256." }
 $versionText = [Diagnostics.FileVersionInfo]::GetVersionInfo($new).ProductVersion
