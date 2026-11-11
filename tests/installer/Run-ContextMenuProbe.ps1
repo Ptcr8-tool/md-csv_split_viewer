@@ -118,13 +118,23 @@ try {
         try { $title = [string]$verb.GetValue('MUIVerb') } finally { $verb.Dispose() }
         Wait-ShellTitle $folder $title
         [ShellBackgroundProbe]::InvokeTitle($folder, $title)
-        $until = [DateTime]::UtcNow.AddSeconds(90)
-        do {
-            $candidate = Get-Process -Name 'MD-Split' -ErrorAction SilentlyContinue | Where-Object { try { [string]::Equals($_.Path, $resolvedExe, [StringComparison]::OrdinalIgnoreCase) } catch { $false } } | Select-Object -First 1
-            if ($null -ne $candidate) { $createdProcess = $candidate; break }
-            Start-Sleep -Milliseconds 250
-        } while ([DateTime]::UtcNow -lt $until)
-        if ($null -eq $createdProcess) { throw 'The background command did not start the editor.' }
+        if ($index -eq 0) {
+            $until = [DateTime]::UtcNow.AddSeconds(90)
+            do {
+                $candidate = Get-Process -Name 'MD-Split' -ErrorAction SilentlyContinue | Where-Object { try { [string]::Equals($_.Path, $resolvedExe, [StringComparison]::OrdinalIgnoreCase) } catch { $false } } | Select-Object -First 1
+                if ($null -ne $candidate) { $createdProcess = $candidate; break }
+                Start-Sleep -Milliseconds 250
+            } while ([DateTime]::UtcNow -lt $until)
+            if ($null -eq $createdProcess) { throw 'The background command did not start the editor.' }
+            Write-Output ('Monitoring the original editor process: ' + $createdProcess.Id)
+        } elseif ($null -eq $createdProcess -or $createdProcess.HasExited) {
+            throw 'The original editor process exited before the next background command.'
+        } else {
+            # The shell starts a short-lived forwarding process for each
+            # invocation. Keep monitoring the original process: choosing the
+            # first process by name again races with that forwarding process.
+            Write-Output ('Monitoring existing editor process: ' + $createdProcess.Id)
+        }
         $create = Wait-ProcessElement $createdProcess.Id @($nameCreate,$japaneseCreate) ([System.Windows.Automation.ControlType]::Button)
         $pattern = $create.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
         $pattern.Invoke()
