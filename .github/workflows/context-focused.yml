@@ -19,12 +19,12 @@ jobs:
           dotnet-version: '10.0.x'
       - run: npm ci
       - run: npm run publish:win
-      - name: Verify shell menu and commands
+      - name: Verify shell menu visibility
         shell: powershell
         run: |
           $exe = Join-Path $PWD 'release/MD-Split/MD-Split.exe'
-          $reg = Start-Process -FilePath $exe -ArgumentList '--context-menu-enable' -Wait -PassThru
+          $reg = Start-Process -FilePath $exe -ArgumentList '--context-menu-enable' -WindowStyle Hidden -Wait -PassThru
           if ($reg.ExitCode -ne 0) { throw "Registration failed" }
           $root = Join-Path $env:RUNNER_TEMP ('md-shell-' + [Guid]::NewGuid().ToString('N'))
           [void][IO.Directory]::CreateDirectory($root)
-          & ./tests/installer/Run-ContextMenuProbe.ps1 -Application $exe -TestRoot $root -ProbeSource ./tests/installer/ShellBackgroundProbe.cs
+          & ./tests/installer/Run-ContextMenuVisibilityProbe.ps1 -Application $exe -TestRoot $root -ProbeSource ./tests/installer/ShellBackgroundProbe.cs

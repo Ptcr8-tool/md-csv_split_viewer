@@ -16,6 +16,8 @@ Add-Type -Path $ProbeSource
 $resolvedExe = (Resolve-Path -LiteralPath $Application).Path
 $resolvedRoot = (Resolve-Path -LiteralPath $TestRoot).Path
 if (-not $resolvedRoot.StartsWith((Resolve-Path -LiteralPath $env:RUNNER_TEMP).Path, [StringComparison]::OrdinalIgnoreCase)) { throw 'TestRoot is outside runner temp.' }
+$runtime = Join-Path (Split-Path -Parent $resolvedExe) 'WebView2Runtime\msedgewebview2.exe'
+if (-not (Test-Path -LiteralPath $runtime -PathType Leaf)) { throw 'The complete fixed WebView2 runtime is required for this UI test.' }
 $settingsPath = Join-Path (Join-Path (Split-Path -Parent $resolvedExe) 'Data') 'settings.json'
 $settingsPresent = Test-Path -LiteralPath $settingsPath -PathType Leaf
 $settingsOriginal = if ($settingsPresent) { [IO.File]::ReadAllBytes($settingsPath) } else { $null }
@@ -27,22 +29,37 @@ if (-not $title) { throw 'Background verb title is empty.' }
 function Find-ProcessElement([int] $ProcessId, [string[]] $Names, [System.Windows.Automation.ControlType] $Type, [string] $AutomationId = '') {
     $pidCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ProcessId)
     $typeCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $Type)
-    $condition = New-Object System.Windows.Automation.AndCondition($pidCondition, $typeCondition)
-    $found = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
-    foreach ($item in $found) {
-        try {
-            if ($item.Current.IsOffscreen -or -not $item.Current.IsEnabled) { continue }
-            if ($AutomationId -and $item.Current.AutomationId -ne $AutomationId) { continue }
-            if ($Names.Count -gt 0 -and $Names -notcontains $item.Current.Name) { continue }
-            return $item
-        } catch [System.Windows.Automation.ElementNotAvailableException] { }
+    # WebView2 content belongs to a child process. Restrict top-level windows
+    # by the editor PID, but do not require descendants to have that PID.
+    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pidCondition)
+    foreach ($window in $windows) {
+        try { $found = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $typeCondition) }
+        catch [System.Windows.Automation.ElementNotAvailableException] { continue }
+        foreach ($item in $found) {
+            try {
+                if ($item.Current.IsOffscreen -or -not $item.Current.IsEnabled) { continue }
+                if ($AutomationId -and $item.Current.AutomationId -ne $AutomationId) { continue }
+                if ($Names.Count -gt 0 -and $Names -notcontains $item.Current.Name) { continue }
+                return $item
+            } catch [System.Windows.Automation.ElementNotAvailableException] { }
+        }
     }
     return $null
 }
 function Wait-ProcessElement([int] $ProcessId, [string[]] $Names, [System.Windows.Automation.ControlType] $Type, [string] $AutomationId = '') {
     $until = [DateTime]::UtcNow.AddSeconds(90)
     do { $item=Find-ProcessElement $ProcessId $Names $Type $AutomationId; if ($null -ne $item) { return $item }; Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt $until)
-    throw ('The expected application control was not found: ' + ($Names -join '|') + ' ' + $AutomationId)
+    $pidCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ProcessId)
+    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pidCondition)
+    $seen = @()
+    foreach ($window in $windows) {
+        try {
+            $seen += 'Window: ' + $window.Current.Name
+            $items=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+            foreach ($item in $items) { try { if ($item.Current.Name) { $seen += $item.Current.ControlType.ProgrammaticName + ': ' + $item.Current.Name } } catch [System.Windows.Automation.ElementNotAvailableException] {} }
+        } catch [System.Windows.Automation.ElementNotAvailableException] {}
+    }
+    throw ('The expected application control was not found: ' + ($Names -join '|') + ' ' + $AutomationId + '. Visible UI: ' + (($seen | Select-Object -First 50) -join '; '))
 }
 function Wait-ShellTitle([string] $Folder, [string] $Expected) {
     $until = [DateTime]::UtcNow.AddSeconds(20)

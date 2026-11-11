@@ -393,6 +393,23 @@ try {
         Assert-ShellIcon $probeExtension (Join-Path $installPath ('doc-icons-v2\' + $probeExtension.TrimStart('.') + '.ico')) (Join-Path $installPath ('doc-icons-v2\' + $different + '.ico'))
     }
     Write-Output 'PASS: Windows Shell icon pixels match each expected document icon and differ from a negative control.'
+
+    # Simulate global verbs registered by the preceding release. They are
+    # owned by this app but contain the older un-normalized path placeholders.
+    $oldBackground = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\Background\shell\MD.Split.New\command', $true)
+    $oldFolder = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\shell\MD.Split.New\command', $true)
+    try {
+        $oldBackground.SetValue('', ('"' + $app + '" --new-in-directory "%V"'))
+        $oldFolder.SetValue('', ('"' + $app + '" --new-in-directory "%1"'))
+    } finally { $oldBackground.Dispose(); $oldFolder.Dispose() }
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    $newBackground = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\Background\shell\MD.Split.New\command')
+    $newFolder = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\Directory\shell\MD.Split.New\command')
+    try {
+        if ($newBackground.GetValue('') -ne ('"' + $app + '" --new-in-directory "%V\."')) { throw 'Older owned background command was not migrated.' }
+        if ($newFolder.GetValue('') -ne ('"' + $app + '" --new-in-directory "%1\."')) { throw 'Older owned folder command was not migrated.' }
+    } finally { $newBackground.Dispose(); $newFolder.Dispose() }
+    Write-Output 'PASS: previous global context-menu commands migrate without losing ownership.'
     # Seed an old supported-extension verb owned by this installation, to
     # verify that enabling the global action migrates only our old entries.
     $legacy = 'Software\Classes\SystemFileAssociations\.txt\shell\MD.Split.Open'
