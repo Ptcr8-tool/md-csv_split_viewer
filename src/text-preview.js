@@ -153,7 +153,7 @@ export class TextPreview{
       }
       this._layoutShape={rows:result.rowCount,columns:result.columnCount};this.parsed=result;this._parsedRaw=this.raw;
       const editable=typeof this.api.patch==='function';
-      this.status.textContent=tr(`${result.rowCount.toLocaleString()}行 · 最大${result.columnCount.toLocaleString()}列${editable?' · ダブルクリックで編集 · Ctrl+Cでコピー · Ctrl+Vで貼り付け':'（読み取り専用）'}`,`${result.rowCount.toLocaleString()} rows · up to ${result.columnCount.toLocaleString()} columns${editable?' · Double-click to edit · Ctrl+C to copy · Ctrl+V to paste':' (read only)'}`);
+      this.status.textContent=tr(`${result.rowCount.toLocaleString()}行 · 最大${result.columnCount.toLocaleString()}列${editable?' · セルを選んで入力・ダブルクリックで編集 · Ctrl+Cでコピー · Ctrl+Vで貼り付け':'（読み取り専用）'}`,`${result.rowCount.toLocaleString()} rows · up to ${result.columnCount.toLocaleString()} columns${editable?' · Select a cell and type or double-click to edit · Ctrl+C to copy · Ctrl+V to paste':' (read only)'}`);
       if(!result.rows.length){this.pagination.replaceChildren();this.pagination.hidden=true;this.scroller.append(make('p','text-preview-empty',tr('内容がありません。','No content.')));this.updateSelectionStatus();return;}
       const large=this.csvSettings.allowLarge&&(result.rowCount>1000||result.columnCount>100||result.rowCount*result.columnCount>20000);
       this._filterHiddenRows=filteredCsvRows(result,this.csvSettings.filter,this.csvSettings.header);
