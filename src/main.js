@@ -260,7 +260,7 @@ function updateToolbar(){
   for(const c of ['underline','spoiler','subtext'])$(`[data-cmd="${c}"]`).hidden=mode!=='discord';
   for(const c of ['table','check','mermaid','details','rule'])$(`[data-cmd="${c}"]`).disabled=!markdownFile||mode==='discord';
   $('#heading').querySelectorAll('option').forEach(o=>o.disabled=mode==='discord'&&Number(o.value)>3);
-  $('#render-label').textContent=mode==='discord'?'DISCORD':'DOCUMENT';$('#preview-note').textContent=mode==='discord'?'Discord向けの表示':'そのまま編集できます';$('.discord-controls').hidden=!splitAvailable();if(!markdownFile){$('#render-label').textContent=pk?'PREVIEW':'TEXT';$('#preview-note').textContent=pk==='html'?'読み取り専用プレビュー':pk?'セルをダブルクリックして編集':'';}
+  $('#render-label').textContent=mode==='discord'?'DISCORD':'DOCUMENT';$('#preview-note').textContent=mode==='discord'?'Discord向けの表示':'そのまま編集できます';$('.discord-controls').hidden=!splitAvailable();if(!markdownFile){$('#render-label').textContent=pk?'PREVIEW':'TEXT';$('#preview-note').textContent=pk==='html'?'読み取り専用プレビュー':pk?tr('セルを選んで入力、またはダブルクリックして編集','Select a cell and type, or double-click to edit'):'';}
   $('[data-cmd="undo"]').disabled=!current()?.undoStack.length;$('[data-cmd="redo"]').disabled=!current()?.redoStack.length;
   const paper=settings.colorTheme?.startsWith('parchment');
   $('.brightness-controls').setAttribute('aria-disabled',String(!!paper));
