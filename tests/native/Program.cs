@@ -14,7 +14,9 @@ try
     var preferencesRead = JsonSerializer.Deserialize<AppSettings>(await File.ReadAllTextAsync(preferenceFile),Storage.Json)!;
     Assert(preferencesRead.ColorTheme==preferences.ColorTheme&&preferencesRead.Theme=="light"&&!preferencesRead.SoftBreaks&&preferencesRead.ShowLineBreaks&&preferencesRead.ShowFullWidthSpaces&&preferencesRead.ShowTabs&&preferencesRead.ShowSpaces,"theme and whitespace preferences survive native save and reload");
     var legacy = JsonSerializer.Deserialize<AppSettings>("{\"theme\":\"system\",\"fontSize\":17}",Storage.Json)!;
-    Assert(legacy.Theme=="system"&&legacy.ColorTheme=="black"&&legacy.SoftBreaks&&!legacy.ShowTabs&&legacy.FontSize==17,"old settings retain their values and receive new defaults");
+    Assert(legacy.Theme=="system"&&legacy.ColorTheme=="black"&&legacy.SoftBreaks&&legacy.ShowLineBreaks&&legacy.ShowFullWidthSpaces&&legacy.ShowTabs&&!legacy.ShowSpaces&&legacy.FontSize==17,"old settings retain their values and receive new whitespace defaults");
+    var chosenMarks = JsonSerializer.Deserialize<AppSettings>("{\"showLineBreaks\":false,\"showFullWidthSpaces\":false,\"showTabs\":false,\"showSpaces\":true}",Storage.Json)!;
+    Assert(!chosenMarks.ShowLineBreaks && !chosenMarks.ShowFullWidthSpaces && !chosenMarks.ShowTabs && chosenMarks.ShowSpaces, "explicitly saved whitespace choices survive the default change");
     Assert(!legacy.WelcomeShown && legacy.ViewMode == "split" && legacy.WhitespaceStyles.Count == 4, "old settings keep first-use guidance available and receive split-view defaults");
     var visualSettings = new AppSettings { ViewMode = "preview", WelcomeShown = true, WhitespaceStyles = new()
     {
