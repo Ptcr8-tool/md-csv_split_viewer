@@ -42,14 +42,51 @@ export class TextPreview{
     container.addEventListener('copy',event=>this.copyGrid(event));
     container.addEventListener('paste',event=>this.pasteGrid(event));
     container.addEventListener('contextmenu',event=>this.csvContextMenu(event));
-    container.addEventListener('pointerdown',event=>{if(!this.commitHeaderSelection(event))this.beginResize(event);});
+    container.addEventListener('pointerdown',event=>{if(!this.commitHeaderSelection(event)){this.beginResize(event);this.beginCellSelection(event);}});
     container.addEventListener('dblclick',event=>{const cell=event.target.closest?.('[data-cell-row][data-cell-column]');if(cell&&!event.target.closest('textarea')){event.preventDefault();this.startEdit(Number(cell.dataset.cellRow),Number(cell.dataset.cellColumn));}});
-    container.addEventListener('keydown',event=>{if(event.target.closest?.('textarea,input,select,dialog,[contenteditable="true"]'))return;const key=event.key.toLowerCase(),inGrid=event.target.closest?.('.text-preview-scroll');if((event.ctrlKey||event.metaKey)&&inGrid&&this.parsed){if(key==='a'){event.preventDefault();event.stopPropagation();this.selectAll();return;}if((key==='z'||key==='y')&&this.api.history){event.preventDefault();event.stopPropagation();this.api.history(key==='y'||event.shiftKey);this.scroller?.focus({preventScroll:true});return;}}const cell=event.target.closest?.('[data-cell-row][data-cell-column]');if(cell&&event.key==='F2'){event.preventDefault();this.startEdit(Number(cell.dataset.cellRow),Number(cell.dataset.cellColumn));}else if(cell&&event.key==='Enter'&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();event.stopPropagation();this.moveAfterEnter(Number(cell.dataset.cellRow),Number(cell.dataset.cellColumn),false);}});
+    container.addEventListener('keydown',event=>{
+      if(event.target.closest?.('textarea,input,select,dialog,[contenteditable="true"]'))return;
+      const key=event.key.toLowerCase(),inGrid=event.target.closest?.('.text-preview-scroll');
+      if((event.ctrlKey||event.metaKey)&&!event.getModifierState?.('AltGraph')&&inGrid&&this.parsed){
+        if(key==='a'){event.preventDefault();event.stopPropagation();this.selectAll();return;}
+        if((key==='z'||key==='y')&&this.api.history){event.preventDefault();event.stopPropagation();this.api.history(key==='y'||event.shiftKey);this.scroller?.focus({preventScroll:true});return;}
+      }
+      const cell=event.target.closest?.('[data-cell-row][data-cell-column]');
+      if(!cell)return;
+      const row=Number(cell.dataset.cellRow),column=Number(cell.dataset.cellColumn);
+      if(event.key==='F2'){event.preventDefault();this.startEdit(row,column);return;}
+      if(event.key==='Enter'&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();event.stopPropagation();this.moveAfterEnter(row,column,false);return;}
+      const selection=this.selection;
+      if(selection?.kind!=='cell'||selection.entries.size!==1||!selection.entries.has(`${row}:${column}`))return;
+      const altGraph=event.getModifierState?.('AltGraph');
+      if(event.metaKey||((event.ctrlKey||event.altKey)&&!altGraph))return;
+      if(event.key==='Delete'||event.key==='Backspace'){
+        event.preventDefault();event.stopPropagation();
+        if(!this.startEdit(row,column))return;
+        const field=this._editing;field.input.value='';
+        if(!this.applyCellInput(field))return;
+        if(this.finishEdit())this.scroller?.querySelector(`[data-cell-row="${row}"][data-cell-column="${column}"]`)?.focus({preventScroll:true});
+        return;
+      }
+      // Let the IME initiate composition in the newly focused editor. Selecting
+      // the previous value makes the first committed input replace the cell.
+      if(event.key==='Process'||event.key==='Dead'||event.keyCode===229||event.isComposing){
+        if(this.startEdit(row,column))this._editing.input.select();
+        return;
+      }
+      if(event.key.length===1){
+        event.preventDefault();event.stopPropagation();
+        if(!this.startEdit(row,column))return;
+        const field=this._editing;field.input.value=event.key;
+        field.input.setSelectionRange(field.input.value.length,field.input.value.length);
+        this.applyCellInput(field);
+      }
+    });
   }
   get visible(){return this._visible;}
   get editing(){return this._editing||null;}
   get hasEditor(){return !!this._editing;}
-  clear(){this._cancelDialog?.();this._layoutShape=null;this.finishEdit({redraw:false,force:true});this.container.replaceChildren();this.container.hidden=true;this.container.classList.remove('text-preview');if(this.originalEditable===null)this.container.removeAttribute('contenteditable');else this.container.setAttribute('contenteditable',this.originalEditable);this._visible=false;this._activePosition=null;this._scrollLayout=null;this.raw=null;this.kind=null;this.cache=null;this.options=null;this.csvSettings=null;this.parsed=null;this._parsedRaw=null;this.scroller=null;this.status=null;this.pagination=null;this.view=normalizeCsvView();this.selection=null;this._resizeCleanup?.();this._resizeCleanup=null;}
+  clear(){this._cellDragCleanup?.();this._cancelDialog?.();this._layoutShape=null;this.finishEdit({redraw:false,force:true});this.container.replaceChildren();this.container.hidden=true;this.container.classList.remove('text-preview');if(this.originalEditable===null)this.container.removeAttribute('contenteditable');else this.container.setAttribute('contenteditable',this.originalEditable);this._visible=false;this._activePosition=null;this._scrollLayout=null;this.raw=null;this.kind=null;this.cache=null;this.options=null;this.csvSettings=null;this.parsed=null;this._parsedRaw=null;this.scroller=null;this.status=null;this.pagination=null;this.view=normalizeCsvView();this.selection=null;this._resizeCleanup?.();this._resizeCleanup=null;}
   render(raw,kind,options={}){
     if(!['html','csv','tsv'].includes(kind)){this.clear();return false;}
     const cache={docId:options.docId??options.documentId??null,fontSize:options.fontSize??14,delimiter:options.delimiter??null,header:options.header??null,language:currentUiLanguage(),view:JSON.stringify(normalizeCsvView(options.csvView??(this.cache?.docId===(options.docId??options.documentId??null)?this.view:{})))};
@@ -191,11 +228,42 @@ export class TextPreview{
     if(this.finishEdit()){this.selectRange(kind,index,null,event);const target=this.scroller?.querySelector(row?`[data-select-row="${index}"]`:`[data-select-column="${index}"]`);if(target?.tabIndex>=0)target.focus({preventScroll:true});else this.scroller?.focus({preventScroll:true});}return true;
   }
   selectFromEvent(event){
+    if(this._suppressSelectionClick){this._suppressSelectionClick=false;return;}
     if(!this.parsed||event.target.closest('textarea,dialog,[data-resize-row],[data-resize-column]'))return;
     const all=event.target.closest('[data-select-all]'),row=event.target.closest('[data-select-row]')||event.target.closest('.text-preview-row-number')?.querySelector('[data-select-row]'),column=event.target.closest('[data-select-column]'),cell=event.target.closest('[data-cell-row][data-cell-column]');
     if(all){this.selectAll();all.focus({preventScroll:true});}else if(row){this.selectRange('row',Number(row.dataset.selectRow),null,event);row.focus({preventScroll:true});}else if(column){this.selectRange('column',Number(column.dataset.selectColumn),null,event);if(!column.hasAttribute('tabindex'))this.scroller?.focus({preventScroll:true});else column.focus({preventScroll:true});}else if(cell){this.selectRange('cell',Number(cell.dataset.cellRow),Number(cell.dataset.cellColumn),event);cell.focus({preventScroll:true});}
   }
   selectAll(){if(!this.parsed?.rowCount||!this.parsed?.columnCount)return;this.selection={kind:'all',entries:new Set(['all']),anchor:[0,0]};this.updateSelectionStatus();}
+  beginCellSelection(event){
+    if(event.button!==0||!this.parsed||!this.scroller||event.target.closest('textarea,input,select,dialog,[contenteditable="true"],[data-resize-row],[data-resize-column],[data-select-column],[data-select-row]'))return;
+    const start=event.target.closest('[data-cell-row][data-cell-column]');
+    if(!start||!this.scroller.contains(start))return;
+    // The grid owns dragging; the editor textarea still uses normal text selection.
+    event.preventDefault();
+    const row=Number(start.dataset.cellRow),col=Number(start.dataset.cellColumn),docId=this.cache?.docId;
+    const old=this.selection,add=event.ctrlKey||event.metaKey;
+    const anchor=event.shiftKey&&old?.kind==='cell'?old.anchor:[row,col];
+    const base={kind:'cell',anchor,entries:add&&old?.kind==='cell'?new Set(old.entries):new Set()};
+    let dragged=false;
+    const move=e=>{
+      if(e.pointerId!==event.pointerId||this.cache?.docId!==docId||!this.scroller?.isConnected)return;
+      const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-cell-row][data-cell-column]');
+      if(!target||!this.scroller.contains(target))return;
+      const r=Number(target.dataset.cellRow),c=Number(target.dataset.cellColumn);
+      if(!dragged&&r===row&&c===col)return;
+      dragged=true;
+      this.selection=nextCsvSelection(base,'cell',r,c,{shiftKey:true,ctrlKey:add});
+      this.updateSelectionStatus();
+    };
+    const cleanup=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',finish);if(this._cellDragCleanup===cleanup)this._cellDragCleanup=null;};
+    const finish=e=>{
+      if(e.pointerId!==event.pointerId)return;
+      cleanup();
+      if(dragged){this._suppressSelectionClick=true;setTimeout(()=>{this._suppressSelectionClick=false;},0);start.focus({preventScroll:true});}
+    };
+    this._cellDragCleanup?.();this._cellDragCleanup=cleanup;
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',finish);window.addEventListener('pointercancel',finish);
+  }
   csvContextMenu(event){
     if(!['csv','tsv'].includes(this.kind)||!this.parsed||!event.target.closest?.('.text-preview-scroll')||event.target.closest?.('textarea,input,select,dialog,[contenteditable="true"]'))return;
     const cell=event.target.closest('[data-cell-row][data-cell-column]'),row=event.target.closest('[data-select-row]')||event.target.closest('.text-preview-row-number')?.querySelector('[data-select-row]'),column=event.target.closest('[data-select-column]');
@@ -437,3 +505,4 @@ export class TextPreview{
     }return true;
   }
 }
+
