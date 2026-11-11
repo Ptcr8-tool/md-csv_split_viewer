@@ -36,7 +36,9 @@ test('source list indentation carries nested items and works in Discord mode',as
 
 test('source single newlines are displayed as separate lines and exact right edits retain CRLF',async({page})=>{
   const raw='aa\r\naa\r\naa\r\n\r\nbb';await setText(page,raw);
-  const ys=await page.evaluate(()=>{const leaf=window.__mdSplit.renderer.leaves[0];return [0,3,6].map(i=>{const r=document.createRange();r.setStart(leaf.node,i);r.setEnd(leaf.node,i+1);return r.getBoundingClientRect().top;});});expect(ys[1]).toBeGreaterThan(ys[0]+10);expect(ys[2]).toBeGreaterThan(ys[1]+10);
+  // Whitespace markers split the rendered paragraph into multiple mapped text nodes.
+  // Locate the first character of each line by its original CRLF source offset.
+  const ys=await page.evaluate(()=>[0,4,8].map(pos=>{const leaf=window.__mdSplit.renderer.leaves.find(l=>l.from<=pos&&pos<l.to&&l.map.includes(pos));if(!leaf)throw new Error('Missing rendered source position '+pos);const offset=leaf.map.indexOf(pos),r=document.createRange();r.setStart(leaf.node,offset);r.setEnd(leaf.node,offset+1);return r.getBoundingClientRect().top;}));expect(ys[1]).toBeGreaterThan(ys[0]+10);expect(ys[2]).toBeGreaterThan(ys[1]+10);
   await select(page,4,6);await page.keyboard.insertText('ab');expect(await getText(page)).toBe(raw.replace('aa\r\naa\r\n','aa\r\nab\r\n'));
 });
 
