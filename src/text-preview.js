@@ -49,7 +49,14 @@ export class TextPreview{
       const key=event.key.toLowerCase(),inGrid=event.target.closest?.('.text-preview-scroll');
       if((event.ctrlKey||event.metaKey)&&!event.getModifierState?.('AltGraph')&&inGrid&&this.parsed){
         if(key==='a'){event.preventDefault();event.stopPropagation();this.selectAll();return;}
-        if((key==='z'||key==='y')&&this.api.history){event.preventDefault();event.stopPropagation();this.api.history(key==='y'||event.shiftKey);this.scroller?.focus({preventScroll:true});return;}
+        if((key==='z'||key==='y')&&this.api.history){
+          event.preventDefault();event.stopPropagation();this.api.history(key==='y'||event.shiftKey);
+          const selected=this.selection;
+          const entry=selected?.kind==='cell'&&selected.entries.size===1?[...selected.entries][0]:null;
+          const [row,column]=entry?entry.split(':').map(Number):[];
+          const target=entry?this.scroller?.querySelector(`[data-cell-row="${row}"][data-cell-column="${column}"]`):null;
+          (target||this.scroller)?.focus({preventScroll:true});return;
+        }
       }
       const cell=event.target.closest?.('[data-cell-row][data-cell-column]');
       if(!cell)return;
@@ -94,6 +101,7 @@ export class TextPreview{
     if(this._editing)this.finishEdit({redraw:false,force:true});
     if(this.raw===raw&&this.kind===kind&&this.cache&&Object.keys(cache).every(key=>this.cache[key]===cache[key]))return true;
     const sameDocument=this.kind===kind&&this.cache?.docId===cache.docId;
+    if(!sameDocument)this._cellDragCleanup?.();
     const previousHtmlFrame=sameDocument&&kind==='html'?this.container.querySelector('iframe.text-preview-html'):null;
     this.view=normalizeCsvView(options.csvView??(sameDocument?this.view:{}));if(!sameDocument){this.selection=null;this._layoutShape=null;this._pasteShapes=null;this._activePosition=null;this._scrollLayout=null;}this._cancelDialog?.();this.raw=raw;this.kind=kind;this.cache=cache;this.options=options;this._visible=true;this.container.hidden=false;this.container.classList.add('text-preview');this.container.contentEditable='false';
     // Keep the already approved large preview attached while the user edits;
@@ -236,18 +244,25 @@ export class TextPreview{
   selectAll(){if(!this.parsed?.rowCount||!this.parsed?.columnCount)return;this.selection={kind:'all',entries:new Set(['all']),anchor:[0,0]};this.updateSelectionStatus();}
   beginCellSelection(event){
     if(event.button!==0||!this.parsed||!this.scroller||event.target.closest('textarea,input,select,dialog,[contenteditable="true"],[data-resize-row],[data-resize-column],[data-select-column],[data-select-row]'))return;
-    const start=event.target.closest('[data-cell-row][data-cell-column]');
+    let start=event.target.closest('[data-cell-row][data-cell-column]');
     if(!start||!this.scroller.contains(start))return;
     // The grid owns dragging; the editor textarea still uses normal text selection.
     event.preventDefault();
     const row=Number(start.dataset.cellRow),col=Number(start.dataset.cellColumn),docId=this.cache?.docId;
+    // Committing an active editor rebuilds the grid, so the original target
+    // is detached. Continue selection with the corresponding live cell.
+    const committedEditor=!!this._editing;
+    if(committedEditor){
+      if(!this.finishEdit())return;
+      start=this.scroller?.querySelector(`[data-cell-row="${row}"][data-cell-column="${col}"]`);
+      if(!start)return;
+    }
     const old=this.selection,add=event.ctrlKey||event.metaKey;
     const anchor=event.shiftKey&&old?.kind==='cell'?old.anchor:[row,col];
     const base={kind:'cell',anchor,entries:add&&old?.kind==='cell'?new Set(old.entries):new Set()};
-    let dragged=false;
-    const move=e=>{
-      if(e.pointerId!==event.pointerId||this.cache?.docId!==docId||!this.scroller?.isConnected)return;
-      const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-cell-row][data-cell-column]');
+    let dragged=false,frame=0,lastTime=0,point=null;
+    const selectAt=(x,y)=>{
+      const target=document.elementFromPoint(x,y)?.closest('[data-cell-row][data-cell-column]');
       if(!target||!this.scroller.contains(target))return;
       const r=Number(target.dataset.cellRow),c=Number(target.dataset.cellColumn);
       if(!dragged&&r===row&&c===col)return;
@@ -255,14 +270,51 @@ export class TextPreview{
       this.selection=nextCsvSelection(base,'cell',r,c,{shiftKey:true,ctrlKey:add});
       this.updateSelectionStatus();
     };
-    const cleanup=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',finish);if(this._cellDragCleanup===cleanup)this._cellDragCleanup=null;};
+    const edgeSpeed=(value,min,max)=>{
+      const edge=32,maxSpeed=22;
+      if(value<min+edge)return -maxSpeed*Math.min(1,(min+edge-value)/edge);
+      if(value>max-edge)return maxSpeed*Math.min(1,(value-(max-edge))/edge);
+      return 0;
+    };
+    const scrollFrame=time=>{
+      frame=0;
+      if(!point||this.cache?.docId!==docId||!this.scroller?.isConnected)return;
+      const bounds=this.scroller.getBoundingClientRect(),leftEdge=bounds.left+this.scroller.clientLeft,topEdge=bounds.top+this.scroller.clientTop;
+      const rect={left:leftEdge,top:topEdge,right:leftEdge+this.scroller.clientWidth,bottom:topEdge+this.scroller.clientHeight,width:this.scroller.clientWidth,height:this.scroller.clientHeight};
+      if(rect.width<2||rect.height<2)return;
+      const step=lastTime?Math.min(2,(time-lastTime)/(1000/60)):1;lastTime=time;
+      const oldX=this.scroller.scrollLeft,oldY=this.scroller.scrollTop;
+      this.scroller.scrollBy(edgeSpeed(point.x,rect.left,rect.right)*step,edgeSpeed(point.y,rect.top,rect.bottom)*step);
+      if(oldX!==this.scroller.scrollLeft||oldY!==this.scroller.scrollTop){
+        const head=this.scroller.querySelector('thead th')?.getBoundingClientRect();
+        const rowHead=this.scroller.querySelector('.text-preview-row-number')?.getBoundingClientRect();
+        const left=Math.min(rect.right-1,Math.max(rect.left+1,rowHead?.right??rect.left+1));
+        const top=Math.min(rect.bottom-1,Math.max(rect.top+1,head?.bottom??rect.top+1));
+        selectAt(Math.min(rect.right-1,Math.max(left,point.x)),Math.min(rect.bottom-1,Math.max(top,point.y)));
+      }
+      frame=requestAnimationFrame(scrollFrame);
+    };
+    const move=e=>{
+      if(e.pointerId!==event.pointerId||this.cache?.docId!==docId||!this.scroller?.isConnected)return;
+      selectAt(e.clientX,e.clientY);
+      if(dragged||Math.hypot(e.clientX-event.clientX,e.clientY-event.clientY)>3){
+        point={x:e.clientX,y:e.clientY};
+        if(!frame){lastTime=0;frame=requestAnimationFrame(scrollFrame);}
+      }
+    };
+    const cleanup=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',cancel);window.removeEventListener('blur',cancel);if(frame)cancelAnimationFrame(frame);frame=0;point=null;if(this._cellDragCleanup===cleanup)this._cellDragCleanup=null;};
+    const cancel=e=>{if(e.type==='pointercancel'&&e.pointerId!==event.pointerId)return;cleanup();if(dragged&&this.cache?.docId===docId){this.selection=old;this.updateSelectionStatus();}};
     const finish=e=>{
       if(e.pointerId!==event.pointerId)return;
       cleanup();
-      if(dragged){this._suppressSelectionClick=true;setTimeout(()=>{this._suppressSelectionClick=false;},0);start.focus({preventScroll:true});}
+      if(dragged||committedEditor){
+        this._suppressSelectionClick=true;setTimeout(()=>{this._suppressSelectionClick=false;},0);
+        if(!dragged)this.selectRange('cell',row,col,event);
+        start.focus({preventScroll:true});
+      }
     };
     this._cellDragCleanup?.();this._cellDragCleanup=cleanup;
-    window.addEventListener('pointermove',move);window.addEventListener('pointerup',finish);window.addEventListener('pointercancel',finish);
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',finish);window.addEventListener('pointercancel',cancel);window.addEventListener('blur',cancel);
   }
   csvContextMenu(event){
     if(!['csv','tsv'].includes(this.kind)||!this.parsed||!event.target.closest?.('.text-preview-scroll')||event.target.closest?.('textarea,input,select,dialog,[contenteditable="true"]'))return;
