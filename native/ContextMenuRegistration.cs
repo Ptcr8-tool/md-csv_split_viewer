@@ -69,7 +69,7 @@ internal static class ContextMenuRegistration
     {
         if (TextFileTypes.SupportedExtensions.Any(ext => Owned(LegacyKey(ext), OpenCommand))) Set(true);
     }
-    public static object Set(bool enabled)
+    public static object Set(bool enabled, bool rememberChoice = true)
     {
         var entries = Entries();
         if (enabled)
@@ -98,8 +98,11 @@ internal static class ContextMenuRegistration
         // Remove only this installation's legacy per-extension verbs.
         foreach (var ext in TextFileTypes.SupportedExtensions)
             if (Owned(LegacyKey(ext), OpenCommand)) Registry.CurrentUser.DeleteSubKeyTree(LegacyKey(ext), false);
-        Directory.CreateDirectory(Storage.Root);
-        File.WriteAllText(Path.Combine(Storage.Root, "context-menu-choice.txt"), enabled ? "1" : "0");
+        if (rememberChoice)
+        {
+            Directory.CreateDirectory(Storage.Root);
+            File.WriteAllText(Path.Combine(Storage.Root, "context-menu-choice.txt"), enabled ? "1" : "0");
+        }
         Storage.NotifyAssociationsChanged();
         return Status();
     }

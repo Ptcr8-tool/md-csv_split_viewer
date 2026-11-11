@@ -541,6 +541,21 @@ try {
     if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Context-menu re-enable was not saved.' }
     Write-Output 'PASS: repair preserves both enabled and explicitly disabled context-menu preferences.'
 
+
+    # Removing system registrations is not a user request to disable the
+    # context-menu preference. Preserve an existing explicit enabled choice.
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Expected the explicit enabled choice before unregister.' }
+    Invoke-CheckedProcess $app @('--unregister-quiet')
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Unregister overwrote the user context-menu preference.' }
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -ne $key) { $key.Dispose(); throw 'Unregister did not remove an owned context-menu command.' }
+    }
+    # Restore owned registrations so the actual NSIS uninstall below tests
+    # the normal complete removal path, including UserChoice preservation.
+    Invoke-CheckedProcess $app @('--register-quiet')
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    Write-Output 'PASS: unregister removes owned context menus without changing the saved user preference.'
     Invoke-CheckedProcess $uninstaller @('/S')
     # NSIS uninstallers may continue in a temporary child process.
     $deadline = [DateTime]::UtcNow.AddMinutes(3)
