@@ -458,10 +458,10 @@ internal sealed class AppSettings
     public string Theme { get; set; } = "dark";
     public string ColorTheme { get; set; } = "black";
     public bool SoftBreaks { get; set; } = true;
-    public bool ShowLineBreaks { get; set; }
+    public bool ShowLineBreaks { get; set; } = true;
     public bool DistinguishLineBreaks { get; set; } = true;
-    public bool ShowFullWidthSpaces { get; set; }
-    public bool ShowTabs { get; set; }
+    public bool ShowFullWidthSpaces { get; set; } = true;
+    public bool ShowTabs { get; set; } = true;
     public bool ShowSpaces { get; set; }
     public int FontSize { get; set; } = 15;
     public bool Wrap { get; set; } = true;

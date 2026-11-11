@@ -46,7 +46,7 @@ const $=s=>document.querySelector(s);
 $('#app').innerHTML=applicationShell();
 installToolbarFolding();
 
-let settings={language:normalizeLanguage(null,navigator.language),openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:false,showFullWidthSpaces:false,showTabs:false,showSpaces:false};
+let settings={language:normalizeLanguage(null,navigator.language),openPolicy:'tabs',sessionPolicy:'clear',startupFormat:'md',theme:'dark',colorTheme:'black',fontSize:15,wrap:true,sync:true,outlineVisible:true,viewMode:'split',defaultViewMode:'last',welcomeShown:false,updateCheckDays:7,ratio:0.47,limit:2000,softBreaks:true,showLineBreaks:true,showFullWidthSpaces:true,showTabs:true,showSpaces:false};
 let textPreview={visible:false,editing:null,parsed:null,clear(){},finishEdit(){return true;},render(){return false;}};
 let textPreviewLoad=null;
 let pendingPreviewScroll=null;
