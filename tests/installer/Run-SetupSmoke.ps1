@@ -60,6 +60,7 @@ $initialBatchClassDefault = BatchClassDefaultSnapshot
 $globalVerbs = @(
     'Software\Classes\*\shell\MD.Split.Open',
     'Software\Classes\Directory\Background\shell\MD.Split.New',
+    'Software\Classes\DesktopBackground\shell\MD.Split.New',
     'Software\Classes\Directory\shell\MD.Split.New'
 )
 foreach ($verb in $globalVerbs) {
@@ -277,6 +278,20 @@ try {
     Assert-File $app 'application executable'
     Assert-File $html 'application UI'
     Assert-File $uninstaller 'uninstaller'
+
+    # A fresh install defaults to enabled: check every installed verb before
+    # using any explicit enable command. The Shell itself must expose and run
+    # the background entry, not merely have an apparently correct registry.
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -eq $key) { throw 'Fresh install did not enable every context-menu command by default.' }
+        $key.Dispose()
+    }
+    $contextChoice = Join-Path $installPath 'Data\context-menu-choice.txt'
+    Assert-File $contextChoice 'context-menu preference'
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Fresh install did not record enabled context menus.' }
+    & (Join-Path $PSScriptRoot 'Run-ContextMenuProbe.ps1') -Application $app -TestRoot $testRoot -ProbeSource (Join-Path $PSScriptRoot 'ShellBackgroundProbe.cs')
+    Write-Output 'PASS: fresh installation enables its context menus and the actual folder-background command works.'
     $languageMarker = Join-Path $installPath 'Data\install-language.txt'
     Assert-File $languageMarker 'initial installer language'
     $initialLanguage = [IO.File]::ReadAllText($languageMarker).Trim()
@@ -389,8 +404,9 @@ try {
     Invoke-CheckedProcess $app @('--context-menu-enable')
     $expectedCommands = @(
         ('"' + $app + '" "%1"'),
-        ('"' + $app + '" --new-in-directory "%V"'),
-        ('"' + $app + '" --new-in-directory "%1"')
+        ('"' + $app + '" --new-in-directory "%V\."'),
+        ('"' + $app + '" --new-in-desktop'),
+        ('"' + $app + '" --new-in-directory "%1\."')
     )
     for ($i=0; $i -lt $globalVerbs.Count; $i++) {
         $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($globalVerbs[$i] + '\command')
@@ -490,6 +506,23 @@ try {
     if ([IO.File]::ReadAllText($sentinel) -ne 'preserve during repair') { throw 'Repair did not preserve application data.' }
     if ([IO.File]::ReadAllText($languageMarker).Trim() -ne $preservedLanguage) { throw 'Repair overwrote the existing language marker.' }
     Write-Output 'PASS: same-version silent repair restored a missing file and preserved data.'
+
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -eq $key) { throw 'Repair unexpectedly disabled an explicitly enabled context menu.' }
+        $key.Dispose()
+    }
+    Invoke-CheckedProcess $app @('--context-menu-disable')
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '0') { throw 'Context-menu disable was not saved.' }
+    Invoke-CheckedProcess $setupPath @('/S', "/D=$installPath")
+    foreach ($verb in $globalVerbs) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($verb + '\command')
+        if ($null -ne $key) { $key.Dispose(); throw 'Repair re-enabled a context menu the user disabled.' }
+    }
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '0') { throw 'Repair did not preserve context-menu opt-out.' }
+    Invoke-CheckedProcess $app @('--context-menu-enable')
+    if ([IO.File]::ReadAllText($contextChoice).Trim() -ne '1') { throw 'Context-menu re-enable was not saved.' }
+    Write-Output 'PASS: repair preserves both enabled and explicitly disabled context-menu preferences.'
 
     Invoke-CheckedProcess $uninstaller @('/S')
     # NSIS uninstallers may continue in a temporary child process.

@@ -11,24 +11,35 @@ internal static class ContextMenuRegistration
     private const string FileKey = Root + @"*\shell\MD.Split.Open";
     private const string BackgroundKey = Root + @"Directory\Background\shell\MD.Split.New";
     private const string FolderKey = Root + @"Directory\shell\MD.Split.New";
+    private const string DesktopKey = Root + @"DesktopBackground\shell\MD.Split.New";
     private static string Executable => Environment.ProcessPath ?? throw new IOException(UiLanguage.T("実行ファイルが見つかりません。", "The executable was not found."));
     private static string OpenCommand => '"' + Executable + "\" \"%1\"";
-    private static string BackgroundCommand => '"' + Executable + "\" --new-in-directory \"%V\"";
-    private static string FolderCommand => '"' + Executable + "\" --new-in-directory \"%1\"";
+    private static string BackgroundCommand => '"' + Executable + "\" --new-in-directory \"%V\\.\"";
+    private static string FolderCommand => '"' + Executable + "\" --new-in-directory \"%1\\.\"";
+    private static string DesktopCommand => '"' + Executable + "\" --new-in-desktop";
+    private static string OldBackgroundCommand => '"' + Executable + "\" --new-in-directory \"%V\"";
+    private static string OldFolderCommand => '"' + Executable + "\" --new-in-directory \"%1\"";
     private static string LegacyKey(string ext) => LegacyRoot + ext + LegacyVerb;
     private static string? ExistingCommand(string path)
     {
         using var key = Registry.CurrentUser.OpenSubKey(path + @"\command");
         return key?.GetValue(null) as string;
     }
-    private static bool Owned(string path, string expected) => string.Equals(ExistingCommand(path), expected, StringComparison.OrdinalIgnoreCase);
+    private static bool Owned(string path, string expected)
+    {
+        var command = ExistingCommand(path);
+        return string.Equals(command, expected, StringComparison.OrdinalIgnoreCase)
+            || path == BackgroundKey && string.Equals(command, OldBackgroundCommand, StringComparison.OrdinalIgnoreCase)
+            || path == FolderKey && string.Equals(command, OldFolderCommand, StringComparison.OrdinalIgnoreCase);
+    }
     internal static string OpenTitle => UiLanguage.T("MD-CSV Split Editor で開く", "Open with MD-CSV Split Editor");
     internal static string NewTitle => UiLanguage.T("MD-CSV Split Editor で新規作成", "Create with MD-CSV Split Editor");
     private static (string Key, string Command, string Title)[] Entries() =>
     [
         (FileKey, OpenCommand, OpenTitle),
         (BackgroundKey, BackgroundCommand, NewTitle),
-        (FolderKey, FolderCommand, NewTitle)
+        (FolderKey, FolderCommand, NewTitle),
+        (DesktopKey, DesktopCommand, NewTitle)
     ];
 
     public static void RefreshLanguage()
@@ -39,7 +50,8 @@ internal static class ContextMenuRegistration
             // Do not create entries or modify another installation's verbs.
             if (!Owned(entry.Key, entry.Command)) continue;
             using var verb = Registry.CurrentUser.OpenSubKey(entry.Key, writable: true);
-            if (verb is null || string.Equals(verb.GetValue("MUIVerb") as string, entry.Title, StringComparison.Ordinal)) continue;
+            if (verb is null || (string.Equals(verb.GetValue("MUIVerb") as string, entry.Title, StringComparison.Ordinal) && string.Equals(verb.GetValue("") as string, entry.Title, StringComparison.Ordinal))) continue;
+            verb.SetValue("", entry.Title);
             verb.SetValue("MUIVerb", entry.Title);
             changed = true;
         }
@@ -71,9 +83,11 @@ internal static class ContextMenuRegistration
             foreach (var entry in entries)
             {
                 using var verb = Registry.CurrentUser.CreateSubKey(entry.Key);
+                verb.SetValue("", entry.Title);
                 verb.SetValue("MUIVerb", entry.Title);
                 verb.SetValue("Icon", '"' + Executable + "\",0");
-                verb.SetValue("MultiSelectModel", "Single");
+                if (entry.Key == BackgroundKey || entry.Key == DesktopKey) verb.DeleteValue("MultiSelectModel", false);
+                else verb.SetValue("MultiSelectModel", "Single");
                 using var command = verb.CreateSubKey("command");
                 command.SetValue("", entry.Command);
             }
@@ -84,6 +98,8 @@ internal static class ContextMenuRegistration
         // Remove only this installation's legacy per-extension verbs.
         foreach (var ext in TextFileTypes.SupportedExtensions)
             if (Owned(LegacyKey(ext), OpenCommand)) Registry.CurrentUser.DeleteSubKeyTree(LegacyKey(ext), false);
+        Directory.CreateDirectory(Storage.Root);
+        File.WriteAllText(Path.Combine(Storage.Root, "context-menu-choice.txt"), enabled ? "1" : "0");
         Storage.NotifyAssociationsChanged();
         return Status();
     }

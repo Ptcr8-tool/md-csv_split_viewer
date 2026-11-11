@@ -1,0 +1,30 @@
+name: Context menu focused checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  explorer:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: '10.0.x'
+      - run: npm ci
+      - run: npm run publish:win
+      - name: Verify shell menu and commands
+        shell: powershell
+        run: |
+          $exe = Join-Path $PWD 'release/MD-Split/MD-Split.exe'
+          $reg = Start-Process -FilePath $exe -ArgumentList '--context-menu-enable' -Wait -PassThru
+          if ($reg.ExitCode -ne 0) { throw "Registration failed" }
+          $root = Join-Path $env:RUNNER_TEMP ('md-shell-' + [Guid]::NewGuid().ToString('N'))
+          [void][IO.Directory]::CreateDirectory($root)
+          & ./tests/installer/Run-ContextMenuProbe.ps1 -Application $exe -TestRoot $root -ProbeSource ./tests/installer/ShellBackgroundProbe.cs
