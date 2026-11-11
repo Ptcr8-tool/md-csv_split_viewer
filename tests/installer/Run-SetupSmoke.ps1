@@ -189,6 +189,18 @@ public static class MdSplitSmokeShellIcon {
             sum+=Math.Abs((int)first[i]-second[i])+Math.Abs((int)first[i+1]-second[i+1])+Math.Abs((int)first[i+2]-second[i+2]);
         return sum;
     }
+    public static void VerifyType(string extension, string expectedType) {
+        int hr = CoInitializeEx(IntPtr.Zero, 0);
+        if (hr < 0 && hr != unchecked((int)0x80010106)) Marshal.ThrowExceptionForHR(hr);
+        try {
+            SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+            var info = new SHFILEINFO();
+            // TYPENAME | USEFILEATTRIBUTES queries the Explorer-visible type.
+            var result = SHGetFileInfo("synthetic" + extension, 0x80, ref info, (uint)Marshal.SizeOf(typeof(SHFILEINFO)), 0x410);
+            if (result == IntPtr.Zero || info.szTypeName != expectedType)
+                throw new InvalidOperationException("Unexpected shell type name: " + info.szTypeName + "; expected " + expectedType);
+        } finally { if (hr >= 0) CoUninitialize(); }
+    }
     public static void VerifyIcon(string extension, string expectedFile, string differentFile) {
         int hr = CoInitializeEx(IntPtr.Zero, 0);
         // RPC_E_CHANGED_MODE means this thread was already initialized using
@@ -239,6 +251,7 @@ function Assert-ShellIcon([string] $Extension, [string] $ExpectedIcon, [string] 
     try { $probeKey.SetValue('', ('MD.Split.File.' + $Extension.TrimStart('.').ToLowerInvariant())) } finally { $probeKey.Dispose() }
     try {
         [MdSplitSmokeShellIcon]::VerifyIcon($probeExt, $ExpectedIcon, $DifferentIcon)
+        [MdSplitSmokeShellIcon]::VerifyType($probeExt, ($Extension.TrimStart('.').ToUpperInvariant() + ' File (MD-CSV Split Editor)'))
     } finally {
         [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($probePath, $false)
     }
@@ -280,6 +293,14 @@ try {
     if (-not [string]::Equals($location, $installPath, [StringComparison]::OrdinalIgnoreCase)) { throw 'The registered install location does not match the test directory.' }
     if (-not (Test-Path -LiteralPath $progIdKey)) { throw 'The application association was not registered.' }
     $associations = Join-Path $capabilities 'FileAssociations'
+    # Simulate the prior typed descriptions and run the same registration used
+    # on upgrade. The existing ProgIDs and protected UserChoice remain intact.
+    foreach ($extension in @('.txt', '.md', '.csv')) {
+        $typedPath = 'Software\Classes\MD.Split.File.' + $extension.TrimStart('.')
+        $typedKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($typedPath, $true)
+        try { $typedKey.SetValue('', 'MD-CSV Split Editor ' + $extension.ToUpperInvariant() + ' Document') } finally { $typedKey.Dispose() }
+    }
+    Invoke-CheckedProcess $app @('--register-quiet')
     foreach ($extension in $associationExtensions) {
         $newProgId = 'MD.Split.File.' + $extension.TrimStart('.').ToLowerInvariant()
         $openWith = "HKCU:\Software\Classes\$extension\OpenWithProgids"
@@ -287,6 +308,9 @@ try {
         if (Get-ItemProperty -LiteralPath $openWith -Name 'MD.Split.Markdown' -ErrorAction SilentlyContinue) { throw "Legacy Open With candidate remains for $extension." }
         $value = Get-ItemProperty -LiteralPath $associations -Name $extension -ErrorAction Stop
         if ($value.PSObject.Properties[$extension].Value -ne $newProgId) { throw "Default-app capability missing for $extension." }
+        $typeKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $newProgId)
+        try { $typeName = [string]$typeKey.GetValue('') } finally { $typeKey.Dispose() }
+        if ($typeName -ne ($extension.TrimStart('.').ToUpperInvariant() + ' File (MD-CSV Split Editor)')) { throw "File type label did not put the extension first for $extension." }
         $iconPath = Join-Path $installPath ('doc-icons-v2\' + $extension.TrimStart('.').ToLowerInvariant() + '.ico')
         Assert-File $iconPath "document icon for $extension"
         $iconKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Classes\' + $newProgId + '\DefaultIcon')
