@@ -130,23 +130,28 @@ try {
         $pattern.Invoke()
         # Common Win32 SaveFileDialog uses control id 1001 for its file name.
         $filename = Wait-ProcessElement $createdProcess.Id @() ([System.Windows.Automation.ControlType]::Edit) '1001'
-        $value = $filename.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-        $baseName = 'shell-context-test-' + $index + '.md'
-        $value.SetValue($baseName)
-        if ($value.Current.Value -ne $baseName) { throw 'Save dialog did not accept the synthetic file name.' }
+        # Use the dialog's default name. UIA ValuePattern.SetValue on this
+        # native combo edit can change its display without delivering the
+        # edit notification that commits a user-typed file name.
+        $beforeFiles = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction Stop)
+        if ($beforeFiles.Count -ne 0) { throw 'The synthetic target folder was not initially empty.' }
         $beforeSaveUi = Get-ProcessUiSnapshot $createdProcess.Id
         $japaneseSave = [string][char]0x4fdd + [char]0x5b58
         $save = Wait-ProcessElement $createdProcess.Id @('Save', $japaneseSave, ($japaneseSave + '(&S)'), ($japaneseSave + '(S)')) ([System.Windows.Automation.ControlType]::Button)
         $save.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-        $expected = Join-Path $folder $baseName
-        Write-Output ('Checking Shell-created file ' + $index + ': ' + $expected)
+        Write-Output ('Checking Shell-created file ' + $index + ' in: ' + $folder)
         $until = [DateTime]::UtcNow.AddSeconds(30)
-        do { if (Test-Path -LiteralPath $expected -PathType Leaf) { break }; Start-Sleep -Milliseconds 250 } while ([DateTime]::UtcNow -lt $until)
-        if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
-            $nearby = @(Get-ChildItem -LiteralPath $resolvedRoot -Recurse -File -Filter ('shell-context-test-' + $index + '*') -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+        do {
+            $created = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction Stop)
+            if ($created.Count -eq 1 -and $created[0].Extension -eq '.md') { break }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $until)
+        if ($created.Count -ne 1 -or $created[0].Extension -ne '.md') {
+            $nearby = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
             $afterSaveUi = Get-ProcessUiSnapshot $createdProcess.Id
-            throw ('New file was not created at the selected background path: ' + $expected + '. Matching files under fixture: ' + ($nearby -join ', ') + '. UI before save: ' + $beforeSaveUi + '. UI after save: ' + $afterSaveUi)
+            throw ('One Markdown file was not created in the selected background folder: ' + $folder + '. Actual files in folder: ' + ($nearby -join ', ') + '. UI before save: ' + $beforeSaveUi + '. UI after save: ' + $afterSaveUi)
         }
+        Write-Output ('PASS: new file was created in the invoked folder: ' + $created[0].Name)
     }
     Write-Output 'PASS: Windows Shell exposes the desktop verb and invokes the folder-background verb for Unicode folders and a drive root, cold and already running.'
 } finally {

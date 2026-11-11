@@ -64,3 +64,11 @@ jobs:
           $setups = @(Get-ChildItem -LiteralPath release -Filter 'MD-Split-*-Setup.exe' -File)
           if ($setups.Count -ne 1) { throw 'Expected exactly one setup executable.' }
           & ./tests/installer/Run-SetupSmoke.ps1 -Setup $setups[0].FullName
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: MD-Split-Context-Test-Setup
+          path: |
+            release/MD-Split-*-Setup.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
