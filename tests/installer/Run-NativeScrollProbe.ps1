@@ -88,7 +88,6 @@ try{
    $delta=[Math]::Abs([double]$fields[2]-[double]$beforeFields[2])
    Write-Output "DELTA sync=$sync preview=$delta"
  }
- Test-Phase 'on' 'list'
  Invoke-Probe 'toggle'
  Test-Phase 'off' 'list'
 }finally{if($process -and -not $process.HasExited){$process.Kill();$process.WaitForExit()}}
