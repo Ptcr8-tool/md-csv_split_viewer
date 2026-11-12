@@ -3,6 +3,30 @@ test.beforeEach(async({page})=>{await page.goto('/');await page.waitForFunction(
 const setText=(page,text)=>page.evaluate(text=>window.__mdSplit.setText(text),text);
 const getText=page=>page.evaluate(()=>window.__mdSplit.getText());
 const select=(page,at)=>page.evaluate(at=>window.__mdSplit.renderer.restoreSelection(at),at);
+const clickAfter=async(page,character)=>{
+  const position=await page.evaluate(character=>{
+    const leaf=window.__mdSplit.renderer.leaves.find(l=>l.node.data.includes(character));
+    if(!leaf)throw new Error('Missing text for mouse test: '+character);
+    const at=leaf.node.data.indexOf(character),range=document.createRange();range.setStart(leaf.node,at);range.setEnd(leaf.node,at+1);
+    const rect=range.getBoundingClientRect();return {x:rect.right-.5,y:rect.top+rect.height/2};
+  },character);
+  await page.mouse.click(position.x,position.y);
+};
+
+test('mouse caret inside plain text inserts a newline at the clicked character',async({page})=>{
+  await setText(page,'abcd');await clickAfter(page,'b');await page.keyboard.press('Enter');await page.keyboard.insertText('X');
+  expect(await getText(page)).toBe('ab\nXcd');await expect(page.locator('#preview')).toContainText('Xcd');
+});
+
+test('mouse caret inside a quote inserts on the intended quoted line',async({page})=>{
+  await setText(page,'> abcd');await clickAfter(page,'b');await page.keyboard.press('Enter');await page.keyboard.insertText('X');
+  expect(await getText(page)).toBe('> ab\n> Xcd');await expect(page.locator('#preview blockquote')).toContainText('Xcd');
+});
+
+test('mouse caret at the end of bold keeps formatting after space and text',async({page})=>{
+  await setText(page,'**abc**');await clickAfter(page,'c');await page.keyboard.press('Space');await page.keyboard.insertText('X');
+  expect(await getText(page)).toBe('**abc** X');await expect(page.locator('#preview strong')).toHaveText('abc');await expect(page.locator('#preview')).toContainText('abc X');
+});
 
 test('typing at the end keeps the space, caret and next character in order',async({page})=>{
   await setText(page,'abc');await select(page,3);await page.keyboard.press('Space');await page.keyboard.insertText('x');
