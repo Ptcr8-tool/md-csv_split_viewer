@@ -16,9 +16,8 @@ public static class ScrollProbeWin {
 $root=Join-Path $env:RUNNER_TEMP ('native-scroll-'+[guid]::NewGuid().ToString('N'))
 $app=Join-Path $root 'Application'
 New-Item -ItemType Directory -Path $root -Force|Out-Null
-$setupPath=(Resolve-Path -LiteralPath $Setup).Path
-$setupProcess=Start-Process -FilePath $setupPath -ArgumentList @('/S',"/D=$app") -PassThru
-if(-not $setupProcess.WaitForExit(900000) -or $setupProcess.ExitCode -ne 0){throw 'Installation failed.'}
+$publishPath=(Resolve-Path -LiteralPath $Setup).Path
+Copy-Item -LiteralPath $publishPath -Destination $app -Recurse
 $index=Join-Path $app 'wwwroot\index.html'
 if(-not (Test-Path -LiteralPath $index)){throw 'Published HTML missing.'}
 Write-Output ('PRODUCT ' + [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $app 'MD-Split.exe')).ProductVersion)
@@ -86,7 +85,7 @@ try{
    $beforeFields=$before.Split(',')
    if($beforeFields.Count -ne 10){throw "Bad initial telemetry: $before"}
    $delta=[Math]::Abs([double]$fields[2]-[double]$beforeFields[2])
-   Write-Output "DELTA sync=$sync preview=$delta"
+   Write-Output "DELTA sync=$sync preview=$delta"; if($delta -ge 100){throw "Preview moved by $delta pixels: $final"}
  }
  Invoke-Probe 'toggle'
  Test-Phase 'off' 'list'
