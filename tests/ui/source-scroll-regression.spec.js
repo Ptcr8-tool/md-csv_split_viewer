@@ -40,7 +40,7 @@ for(const kind of ['plain','list'])test(`typing at viewport edge does not page p
 });
 
 for(const sync of [true,false])test(`list editing followed by mouse-selected plain text stays in range, sync ${sync}`,async({page})=>{
- await page.setViewportSize({width:1668,height:700});await page.goto('/');await page.waitForFunction(()=>window.__mdSplit);
+ await page.setViewportSize({width:1668,height:700});await page.addInitScript(()=>localStorage.setItem('mdsplit.settings',JSON.stringify({sync:true,softBreaks:true,showLineBreaks:true,showFullWidthSpaces:true,showTabs:true,showSpaces:true,wrap:true,viewMode:'split',defaultViewMode:'last',ratio:0.47,fontSize:15,welcomeShown:true,updateCheckDays:-1})));await page.goto('/');await page.waitForFunction(()=>window.__mdSplit);
  const raw=await (await import('node:fs/promises')).readFile('examples/Welcome.md','utf8');await page.evaluate(text=>window.__mdSplit.setText(text),raw);
  if(!sync)await page.locator('#sync-toggle').click();
  await page.evaluate(()=>{const cm=window.__mdSplit.editor(),p=cm.state.doc.toString().indexOf('野菜を買う')+5;cm.dispatch({selection:{anchor:p}});cm.focus();cm.scrollDOM.scrollTop=cm.lineBlockAt(p).top-100;});
