@@ -28,8 +28,7 @@ $html=[IO.File]::ReadAllText($index)
 if(-not $html.Contains('</body>')){throw 'Body missing.'}
 $html=$html.Replace('</body>','<script src="/native-scroll-probe.js"></script></body>')
 [IO.File]::WriteAllText($index,$html,[Text.UTF8Encoding]::new($false))
-Copy-Item -LiteralPath 'tests/installer/native-scroll-probe.js' -Destination (Join-Path $app 'wwwroot
-ative-scroll-probe.js')
+Copy-Item -LiteralPath 'tests/installer/native-scroll-probe.js' -Destination (Join-Path $app 'wwwroot\native-scroll-probe.js')
 $data=Join-Path $app 'Data'
 New-Item -ItemType Directory -Path $data -Force|Out-Null
 [IO.File]::WriteAllText((Join-Path $data 'settings.json'),'{"language":"ja","welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","sync":true,"softBreaks":true,"showLineBreaks":true,"showFullWidthSpaces":true,"showTabs":true,"showSpaces":true,"wrap":true,"fontSize":15}',[Text.UTF8Encoding]::new($false))
