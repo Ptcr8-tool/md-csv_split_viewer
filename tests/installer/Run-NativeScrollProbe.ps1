@@ -9,6 +9,8 @@ using System;
 using System.Runtime.InteropServices;
 public static class ScrollProbeWin {
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+ [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
 }
 '@
 $root=Join-Path $env:RUNNER_TEMP ('native-scroll-'+[guid]::NewGuid().ToString('N'))
@@ -26,7 +28,8 @@ $html=[IO.File]::ReadAllText($index)
 if(-not $html.Contains('</body>')){throw 'Body missing.'}
 $html=$html.Replace('</body>','<script src="/native-scroll-probe.js"></script></body>')
 [IO.File]::WriteAllText($index,$html,[Text.UTF8Encoding]::new($false))
-Copy-Item -LiteralPath 'tests/installer/native-scroll-probe.js' -Destination (Join-Path $app 'wwwroot\native-scroll-probe.js')
+Copy-Item -LiteralPath 'tests/installer/native-scroll-probe.js' -Destination (Join-Path $app 'wwwroot
+ative-scroll-probe.js')
 $data=Join-Path $app 'Data'
 New-Item -ItemType Directory -Path $data -Force|Out-Null
 [IO.File]::WriteAllText((Join-Path $data 'settings.json'),'{"language":"ja","welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","sync":true,"softBreaks":true,"showLineBreaks":true,"showFullWidthSpaces":true,"showTabs":true,"showSpaces":true,"wrap":true,"fontSize":15}',[Text.UTF8Encoding]::new($false))
@@ -61,13 +64,24 @@ try{
    do{$initial=$pattern.Current.Value;if($initial.StartsWith($name+',')){break};if($initial.StartsWith('notfound:') -or $initial.StartsWith('lost:') -or $initial.StartsWith('notvisible:')){throw "Target line $initial"};Start-Sleep -Milliseconds 250}while([DateTime]::UtcNow -lt $until)
    if(-not $initial.StartsWith($name+',')){throw "Could not prepare $name; $initial"}
    [void][ScrollProbeWin]::SetForegroundWindow($process.MainWindowHandle)
+   $targetCond=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'probe target')
+   $target=$window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$targetCond)
+   if(-not $target -or $target.Current.IsOffscreen){throw "Target line not visible: $name"}
+   $rect=$target.Current.BoundingRectangle
+   if($rect.Width -lt 4 -or $rect.Height -lt 4){throw "Invalid target rectangle: $name"}
+   [void][ScrollProbeWin]::SetCursorPos([int]($rect.Left+[Math]::Min(40,$rect.Width/2)),[int]($rect.Top+$rect.Height/2))
+   [ScrollProbeWin]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero);[ScrollProbeWin]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)
+   Start-Sleep -Seconds 2
+   $before=$pattern.Current.Value
    for($i=0;$i -lt 5;$i++){[Windows.Forms.SendKeys]::SendWait('{ENTER}a');Start-Sleep -Milliseconds 350}
    Start-Sleep -Seconds 2
    $final=$pattern.Current.Value
-   Write-Output "TRACE sync=$sync phase=$name initial=$initial final=$final"
+   Write-Output "TRACE sync=$sync phase=$name initial=$initial before=$before final=$final"
    $fields=$final.Split(',')
    if($fields.Count -ne 10 -or [int]$fields[8] -lt 5 -or [int]$fields[9] -lt 5){throw "Input events not delivered: $final"}
-   $delta=[Math]::Abs([double]$fields[2]-[double]$fields[1])
+   $beforeFields=$before.Split(',')
+   if($beforeFields.Count -ne 10){throw "Bad initial telemetry: $before"}
+   $delta=[Math]::Abs([double]$fields[2]-[double]$beforeFields[2])
    if($delta -ge 100){throw "Preview moved by $delta pixels: $final"}
  }
  Test-Phase 'on' 'list'

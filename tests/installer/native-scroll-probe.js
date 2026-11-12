@@ -20,13 +20,8 @@
     }
     const offset=line.getBoundingClientRect().top-source.getBoundingClientRect().top;
     if(offset<0||offset>source.clientHeight-20){probe.value='notvisible:'+name;probe.setAttribute('value',probe.value);return;}
-    input.focus();
-    const walker=document.createTreeWalker(line,NodeFilter.SHOW_TEXT);let node,last;
-    while((node=walker.nextNode()))if(node.length)last=node;
-    if(!last){probe.value='empty:'+name;probe.setAttribute('value',probe.value);return;}
-    const range=document.createRange();range.setStart(last,last.length);range.collapse(true);
-    const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
-    await sleep(600);
+    line.setAttribute('role','text');line.setAttribute('aria-label','probe target');
+    await sleep(500);
     initial=preview.scrollTop;minimum=initial;maximum=initial;sourceStart=source.scrollTop;events=keys=inputs=0;phase=name;
   }
   const timer=setInterval(()=>{
