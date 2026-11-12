@@ -10,10 +10,16 @@
       line=[...document.querySelectorAll('.cm-line')].find(x=>x.textContent.includes(target));if(line)break;
     }
     if(!line){probe.value='notfound:'+name;probe.setAttribute('value',probe.value);return;}
-    source.scrollTop+=line.getBoundingClientRect().top-source.getBoundingClientRect().top-120;
-    await sleep(700);
-    line=[...document.querySelectorAll('.cm-line')].find(x=>x.textContent.includes(target));
-    if(!line){probe.value='lost:'+name;probe.setAttribute('value',probe.value);return;}
+    for(let tries=0;tries<6;tries++){
+      source.scrollTop+=line.getBoundingClientRect().top-source.getBoundingClientRect().top-120;
+      await sleep(500);
+      line=[...document.querySelectorAll('.cm-line')].find(x=>x.textContent.includes(target));
+      if(!line){probe.value='lost:'+name;probe.setAttribute('value',probe.value);return;}
+      const offset=line.getBoundingClientRect().top-source.getBoundingClientRect().top;
+      if(offset>=10&&offset<source.clientHeight-30)break;
+    }
+    const offset=line.getBoundingClientRect().top-source.getBoundingClientRect().top;
+    if(offset<0||offset>source.clientHeight-20){probe.value='notvisible:'+name;probe.setAttribute('value',probe.value);return;}
     input.focus();
     const walker=document.createTreeWalker(line,NodeFilter.SHOW_TEXT);let node,last;
     while((node=walker.nextNode()))if(node.length)last=node;

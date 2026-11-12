@@ -19,6 +19,9 @@ $setupProcess=Start-Process -FilePath $setupPath -ArgumentList @('/S',"/D=$app")
 if(-not $setupProcess.WaitForExit(900000) -or $setupProcess.ExitCode -ne 0){throw 'Installation failed.'}
 $index=Join-Path $app 'wwwroot\index.html'
 if(-not (Test-Path -LiteralPath $index)){throw 'Published HTML missing.'}
+Write-Output ('PRODUCT ' + [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $app 'MD-Split.exe')).ProductVersion)
+$fixtureJs=Join-Path $app 'wwwroot\assets\index-CV3ngKhj.js'
+if (Test-Path -LiteralPath $fixtureJs) { Write-Output ('JS_SHA256 ' + (Get-FileHash -LiteralPath $fixtureJs -Algorithm SHA256).Hash.ToLowerInvariant()) }
 $html=[IO.File]::ReadAllText($index)
 if(-not $html.Contains('</body>')){throw 'Body missing.'}
 $html=$html.Replace('</body>','<script src="/native-scroll-probe.js"></script></body>')
@@ -55,7 +58,7 @@ try{
  function Test-Phase([string]$sync,[string]$name){
    Invoke-Probe $name
    $until=[DateTime]::UtcNow.AddSeconds(40)
-   do{$initial=$pattern.Current.Value;if($initial.StartsWith($name+',')){break};if($initial.StartsWith('notfound:') -or $initial.StartsWith('lost:')){throw "Target line $initial"};Start-Sleep -Milliseconds 250}while([DateTime]::UtcNow -lt $until)
+   do{$initial=$pattern.Current.Value;if($initial.StartsWith($name+',')){break};if($initial.StartsWith('notfound:') -or $initial.StartsWith('lost:') -or $initial.StartsWith('notvisible:')){throw "Target line $initial"};Start-Sleep -Milliseconds 250}while([DateTime]::UtcNow -lt $until)
    if(-not $initial.StartsWith($name+',')){throw "Could not prepare $name; $initial"}
    [void][ScrollProbeWin]::SetForegroundWindow($process.MainWindowHandle)
    for($i=0;$i -lt 5;$i++){[Windows.Forms.SendKeys]::SendWait('{ENTER}a');Start-Sleep -Milliseconds 350}
