@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string] $Setup)
+param([Parameter(Mandatory=$true)][string] $Setup,[Parameter(Mandatory=$true)][string] $Candidate)
 $ErrorActionPreference='Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:OS -ne 'Windows_NT' -or -not $env:RUNNER_TEMP) { throw 'Hosted Windows runner required.' }
 Add-Type -AssemblyName UIAutomationClient
@@ -16,8 +16,10 @@ public static class ScrollProbeWin {
 $root=Join-Path $env:RUNNER_TEMP ('native-scroll-'+[guid]::NewGuid().ToString('N'))
 $app=Join-Path $root 'Application'
 New-Item -ItemType Directory -Path $root -Force|Out-Null
-$publishPath=(Resolve-Path -LiteralPath $Setup).Path
-Copy-Item -LiteralPath $publishPath -Destination $app -Recurse
+$setupPath=(Resolve-Path -LiteralPath $Setup).Path
+$setupProcess=Start-Process -FilePath $setupPath -ArgumentList @('/S',"/D=$app") -PassThru
+if(-not $setupProcess.WaitForExit(900000) -or $setupProcess.ExitCode -ne 0){throw 'Installation failed.'}
+Copy-Item -Path (Join-Path (Resolve-Path -LiteralPath $Candidate).Path '*') -Destination $app -Recurse -Force
 $index=Join-Path $app 'wwwroot\index.html'
 if(-not (Test-Path -LiteralPath $index)){throw 'Published HTML missing.'}
 Write-Output ('PRODUCT ' + [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $app 'MD-Split.exe')).ProductVersion)
