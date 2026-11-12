@@ -27,3 +27,14 @@ test('source typing in the actual guide does not page the preview',async({page})
   trace.push(await sample());for(let i=0;i<7;i++){await page.keyboard.press('Enter');await page.keyboard.insertText('a');await page.waitForTimeout(150);trace.push(await sample());}
   console.log('guide-trace',JSON.stringify(trace));expect(Math.abs(trace.at(-1).preview-trace[0].preview)).toBeLessThan(100);
 });
+
+for(const kind of ['plain','list'])test(`typing at viewport edge does not page preview unexpectedly: ${kind}`,async({page})=>{
+  await page.setViewportSize({width:1500,height:540});await page.goto('/');await page.waitForFunction(()=>window.__mdSplit);
+  const text=Array.from({length:160},(_,i)=>kind==='list'?`- Row ${i} lorem ipsum text`:`Row ${i} lorem ipsum text\n`).join('\n');
+  await page.evaluate(text=>window.__mdSplit.setText(text),text);
+  await page.evaluate(()=>{const cm=window.__mdSplit.editor(),at=cm.state.doc.toString().indexOf('Row 50')+6;cm.dispatch({selection:{anchor:at}});cm.focus();cm.scrollDOM.scrollTop=cm.lineBlockAt(at).top-cm.scrollDOM.clientHeight+32;});
+  await settleScroll(page);await waitForScrollReady(page);
+  const trace=[],sample=()=>page.evaluate(()=>({source:window.__mdSplit.editor().scrollDOM.scrollTop,preview:document.querySelector('#preview').scrollTop}));trace.push(await sample());
+  for(let i=0;i<10;i++){await page.keyboard.press('Enter');await page.keyboard.insertText('x');await page.waitForTimeout(180);trace.push(await sample());}
+  console.log('edge-trace',kind,JSON.stringify(trace));let ds=Math.abs(trace.at(-1).source-trace[0].source),dp=Math.abs(trace.at(-1).preview-trace[0].preview);expect(dp).toBeLessThan(ds*3+120);
+});
