@@ -30,6 +30,15 @@ jobs:
         working-directory: candidate
       - run: npm run publish:win
         working-directory: candidate
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: MD-Split-Windows-setup
+          run-id: 43037080669
+          github-token: ${{ github.token }}
+          path: setup
       - name: Reproduce editing in real WebView2
         shell: powershell
-        run: '& ./tests/installer/Run-NativeScrollProbe.ps1 -Setup candidate/release/MD-Split'
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath setup -Recurse -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected one setup.' }
+          & ./tests/installer/Run-NativeScrollProbe.ps1 -Setup $setups[0].FullName -Candidate candidate/release/MD-Split
