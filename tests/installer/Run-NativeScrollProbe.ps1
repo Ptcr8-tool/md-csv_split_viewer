@@ -64,8 +64,13 @@ try{
    if(-not $initial.StartsWith($name+',')){throw "Could not prepare $name; $initial"}
    [void][ScrollProbeWin]::SetForegroundWindow($process.MainWindowHandle)
    $targetCond=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'probe target')
-   $target=$window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$targetCond)
-   if(-not $target -or $target.Current.IsOffscreen){throw "Target line not visible: $name"}
+   $target=$null
+   for($attempt=0;$attempt -lt 20;$attempt++){
+     $all=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$targetCond)
+     foreach($candidate in $all){if(-not $candidate.Current.IsOffscreen){$target=$candidate;break}}
+     if($target){break}; Start-Sleep -Milliseconds 200
+   }
+   if(-not $target){throw "Target line not visible: $name"}
    $rect=$target.Current.BoundingRectangle
    if($rect.Width -lt 4 -or $rect.Height -lt 4){throw "Invalid target rectangle: $name"}
    [void][ScrollProbeWin]::SetCursorPos([int]($rect.Left+[Math]::Min(40,$rect.Width/2)),[int]($rect.Top+$rect.Height/2))
