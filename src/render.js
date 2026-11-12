@@ -34,8 +34,14 @@ const graphemeSegmenter=new Intl.Segmenter('ja',{granularity:'grapheme'});
 export class RichRenderer {
   constructor(container, callbacks) { this.container=container; this.callbacks=callbacks; this.epoch=0; this.openDetails=new Set(); }
   render(source, mode, docId, options={}) {
+    // Keep existing diagram slots stable while asynchronous SVG drawing completes.
+    // Rebuild this snapshot each time; never retain a previous document's stages.
     this.diagramHeights=new Map();
-    for(const stage of this.container.querySelectorAll('.mermaid-stage')){const height=stage.getBoundingClientRect().height;if(stage._diagramCode!=null&&height>0)this.diagramHeights.set(stage._diagramCode,height);}
+    if(this.docId===docId)for(const stage of this.container.querySelectorAll('.mermaid-stage')){
+      if(stage._diagramCode==null)continue;
+      const heights=this.diagramHeights.get(stage._diagramCode)||[];
+      heights.push(stage.getBoundingClientRect().height);this.diagramHeights.set(stage._diagramCode,heights);
+    }
     this.source=source; this.mode=mode; this.docId=docId; this.epoch++;
     this.options=options;this.maps=new WeakMap(); this.leaves=[]; this.formats=[]; this.images=[];this.codeBlocks=[];this.headings=[];
     const fragment=document.createDocumentFragment();
@@ -283,7 +289,7 @@ export class RichRenderer {
   mermaid(node,from,to,start,end) {
     const n=el('figure','mermaid-block');n.contentEditable='false';n.dataset.atom='true';n.dataset.from=from;n.dataset.to=to;
     const tools=el('div','component-tools');const label=el('span');label.textContent='MERMAID';tools.append(label);
-    const stage=el('div','mermaid-stage');stage._diagramCode=node.value;const previousHeight=this.diagramHeights.get(node.value);if(previousHeight)stage.style.minHeight=`${previousHeight}px`;stage.textContent=tr('図を描画しています…','Rendering diagram…');
+    const stage=el('div','mermaid-stage');stage._diagramCode=node.value;const previousHeight=this.diagramHeights.get(node.value)?.shift();if(previousHeight)stage.style.minHeight=`${previousHeight}px`;stage.textContent=tr('図を描画しています…','Rendering diagram…');
     const edit=el('textarea','diagram-code');edit.hidden=true;edit.setAttribute('aria-label',tr('Mermaidコード','Mermaid code'));edit.value=this.source.slice(start,end);
     const button=(name,action)=>{const b=el('button');b.type='button';b.textContent=name;b.addEventListener('click',action);tools.append(b);return b;};
     button(tr('コード編集','Edit code'),()=>{edit.hidden=!edit.hidden;if(!edit.hidden)edit.focus();});
