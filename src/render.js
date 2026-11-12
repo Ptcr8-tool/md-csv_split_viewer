@@ -67,30 +67,38 @@ export class RichRenderer {
     return this.epoch;
   }
   addBlankLines(fragment) {
-    const containers=Array.from(fragment.querySelectorAll('blockquote[data-block],li[data-block],details.md-details[data-block]'));
-    const lists=Array.from(fragment.querySelectorAll('ul[data-block],ol[data-block]'));
-    const childrenByParent=new Map();
-    const existing=new Set(this.leaves.filter(l=>l.from===l.to).map(l=>l.from));
-    const rangeContains=(node,pos)=>Number(node.dataset.from)<=pos&&pos<=Number(node.dataset.to);
     const depth=node=>{let value=0;while(node.parentNode){value++;node=node.parentNode;}return value;};
-    const atomic=Array.from(fragment.querySelectorAll('.raw-block[data-block],.table-wrap[data-block],.mermaid-block[data-block]'));
+    // Sweep intervals in source order. Most lines overlap only a few active
+    // blocks, avoiding a full-document scan for every blank line.
+    const sweep=items=>{
+      const ordered=items.sort((a,b)=>a.from-b.from||a.to-b.to);let index=0,active=[];
+      return pos=>{while(index<ordered.length&&ordered[index].from<=pos)active.push(ordered[index++]);active=active.filter(x=>x.to>=pos);return active;};
+    };
+    const entry=node=>({node,from:Number(node.dataset.from),to:Number(node.dataset.to),depth:depth(node)});
+    const activeContainers=sweep(Array.from(fragment.querySelectorAll('blockquote[data-block],li[data-block],details.md-details[data-block]'),entry));
+    const activeLists=sweep(Array.from(fragment.querySelectorAll('ul[data-block],ol[data-block]'),entry));
+    const activeAtomic=sweep(Array.from(fragment.querySelectorAll('.raw-block[data-block],.table-wrap[data-block],.mermaid-block[data-block]'),entry));
+    const activeCode=sweep(this.codeBlocks.map(c=>({from:c.from,to:c.to-1})));
+    const childrenByParent=new Map(),itemsByList=new Map();
+    const existing=new Set(this.leaves.filter(l=>l.from===l.to).map(l=>l.from));
     let at=0;
     while(at<=this.source.length){
       const line=lineAt(this.source,at);
-      const plain=/^[ \\t]*$/.test(line.text);
-      const quoted=/^ {0,3}(?:>[ \\t]?)+[ \\t]*$/.test(line.text);
+      const plain=/^[ \t]*$/.test(line.text);
+      const quoted=/^ {0,3}(?:>[ \t]?)+[ \t]*$/.test(line.text);
       const position=line.end;
-      const inCode=this.codeBlocks.some(c=>line.start>=c.from&&line.start<c.to);
-      const inAtomic=atomic.some(n=>rangeContains(n,line.start));
-      const exists=existing.has(position);
-      if((plain||quoted)&&!inCode&&!inAtomic&&!exists){
-        let parent=containers.filter(n=>rangeContains(n,line.start)&&(n.tagName!=='BLOCKQUOTE'||quoted)).sort((a,b)=>depth(b)-depth(a))[0];
+      if((plain||quoted)&&!existing.has(position)&&!activeCode(line.start).length&&!activeAtomic(line.start).length){
+        let active=activeContainers(line.start).filter(x=>x.node.tagName!=='BLOCKQUOTE'||quoted);
+        let parent=active.reduce((best,x)=>!best||x.depth>best.depth?x:best,null)?.node;
         if(parent?.tagName==='DETAILS')parent=parent.querySelector(':scope > .details-body');
         if(!parent){
-          const list=lists.filter(n=>rangeContains(n,line.start)).sort((a,b)=>depth(b)-depth(a))[0];
+          active=activeLists(line.start);
+          const list=active.reduce((best,x)=>!best||x.depth>best.depth?x:best,null)?.node;
           if(list){
-            const items=Array.from(list.children).filter(n=>n.tagName==='LI'&&Number(n.dataset.from)<=line.start);
-            parent=items.at(-1);
+            let items=itemsByList.get(list);
+            if(!items){items=Array.from(list.children).filter(n=>n.tagName==='LI');itemsByList.set(list,items);}
+            let lo=0,hi=items.length;while(lo<hi){const mid=(lo+hi)>>>1;if(Number(items[mid].dataset.from)<=line.start)lo=mid+1;else hi=mid;}
+            parent=items[lo-1];
           }
         }
         parent ||= fragment;

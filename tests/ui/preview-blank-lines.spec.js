@@ -62,3 +62,20 @@ test('blank lines follow heading fold visibility and source text stays intact',a
   await expect(page.locator('#preview > .source-blank-line').first()).toBeHidden();
   expect(await getText(page)).toBe(raw);
 });
+
+test('a tab-only line is blank, but a t or backslash remains text',async({page})=>{
+  const raw='alpha\nt\n\\\n\t\nbeta';await setText(page,raw);
+  const blank=page.locator('#preview > .source-blank-line');
+  await expect(blank).toHaveCount(1);
+  await expect(page.locator('#preview')).toContainText('t');
+  expect(await getText(page)).toBe(raw);
+});
+
+test('many headings and quotes preserve blank lines without quadratic delay',async({page})=>{
+  const raw=Array.from({length:500},(_,i)=>`# Heading ${i}\n\n> content ${i}\n>\n`).join('');
+  const started=Date.now();await setText(page,raw);const elapsed=Date.now()-started;
+  expect(elapsed).toBeLessThan(15000);
+  await expect(page.locator('#preview blockquote')).toHaveCount(500);
+  await expect(page.locator('#preview .source-blank-line')).toHaveCount(1001);
+  expect(await getText(page)).toBe(raw);
+});
