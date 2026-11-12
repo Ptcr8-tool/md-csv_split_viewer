@@ -34,6 +34,14 @@ const graphemeSegmenter=new Intl.Segmenter('ja',{granularity:'grapheme'});
 export class RichRenderer {
   constructor(container, callbacks) { this.container=container; this.callbacks=callbacks; this.epoch=0; this.openDetails=new Set(); }
   render(source, mode, docId, options={}) {
+    // Keep existing diagram slots stable while asynchronous SVG drawing completes.
+    // Rebuild this snapshot each time; never retain a previous document's stages.
+    this.diagramHeights=new Map();
+    if(this.docId===docId)for(const stage of this.container.querySelectorAll('.mermaid-stage')){
+      if(stage._diagramCode==null)continue;
+      const heights=this.diagramHeights.get(stage._diagramCode)||[];
+      heights.push(stage.getBoundingClientRect().height);this.diagramHeights.set(stage._diagramCode,heights);
+    }
     this.source=source; this.mode=mode; this.docId=docId; this.epoch++;
     this.options=options;this.maps=new WeakMap(); this.leaves=[]; this.formats=[]; this.images=[];this.codeBlocks=[];this.headings=[];
     const fragment=document.createDocumentFragment();
@@ -281,7 +289,7 @@ export class RichRenderer {
   mermaid(node,from,to,start,end) {
     const n=el('figure','mermaid-block');n.contentEditable='false';n.dataset.atom='true';n.dataset.from=from;n.dataset.to=to;
     const tools=el('div','component-tools');const label=el('span');label.textContent='MERMAID';tools.append(label);
-    const stage=el('div','mermaid-stage');stage.textContent=tr('図を描画しています…','Rendering diagram…');
+    const stage=el('div','mermaid-stage');stage._diagramCode=node.value;const previousHeight=this.diagramHeights.get(node.value)?.shift();if(previousHeight)stage.style.minHeight=`${previousHeight}px`;stage.textContent=tr('図を描画しています…','Rendering diagram…');
     const edit=el('textarea','diagram-code');edit.hidden=true;edit.setAttribute('aria-label',tr('Mermaidコード','Mermaid code'));edit.value=this.source.slice(start,end);
     const button=(name,action)=>{const b=el('button');b.type='button';b.textContent=name;b.addEventListener('click',action);tools.append(b);return b;};
     button(tr('コード編集','Edit code'),()=>{edit.hidden=!edit.hidden;if(!edit.hidden)edit.focus();});
@@ -300,7 +308,7 @@ export class RichRenderer {
     n.append(tools,stage,error,edit);this.drawDiagram(stage,node.value,error);return n;
   }
   async drawDiagram(stage,code,error) {
-    const ticket=(stage._ticket||0)+1;stage._ticket=ticket;
+    const ticket=(stage._ticket||0)+1;stage._ticket=ticket;stage._diagramCode=code;
     try {
       const {default:mermaid}=await import('mermaid');
       if(!this.mermaidInitialized){mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'neutral',suppressErrorRendering:true,htmlLabels:false,secure:['secure','securityLevel','htmlLabels','startOnLoad','suppressErrorRendering','maxTextSize','maxEdges'],flowchart:{htmlLabels:false}});this.mermaidInitialized=true;}
@@ -309,6 +317,7 @@ export class RichRenderer {
       if(stage._ticket!==ticket)return;
       stage.innerHTML=DOMPurify.sanitize(result.svg,{USE_PROFILES:{svg:true,svgFilters:true},FORBID_TAGS:['script','foreignObject']});error.hidden=true;
     }catch(e){if(stage._ticket!==ticket)return;error.textContent=tr('図を更新できません。コードを確認してください。','Could not update the diagram. Check the code.');error.title=String(e.message||e);error.hidden=false;if(!stage.querySelector('svg'))stage.textContent=tr('Mermaidコードから図を描画できませんでした。','Could not render the Mermaid diagram.');}
+    finally{if(stage._ticket===ticket)stage.style.minHeight='';}
   }
   rebase(from,to,insert) {
     const delta=insert.length-(to-from);
