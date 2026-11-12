@@ -14,9 +14,9 @@ test('source typing below an image preserves the preview position',async({page})
  await page.waitForFunction(()=>{const img=document.querySelector('#preview img');return img?.complete&&img.naturalHeight>0;});
  await page.evaluate(()=>{const cm=window.__mdSplit.editor(),at=cm.state.doc.toString().indexOf('Editable text');cm.dispatch({selection:{anchor:at},scrollIntoView:true});cm.focus();});
  await settleScroll(page);await page.keyboard.insertText('z');await settleScroll(page);
- await page.evaluate(()=>{const p=document.querySelector('#preview'),h=[...p.querySelectorAll('h2')].find(n=>n.textContent==='Target');p.scrollTop+=h.getBoundingClientRect().top-p.getBoundingClientRect().top-100;});
+ await page.evaluate(()=>{const p=document.querySelector('#preview'),h=[...p.querySelectorAll('h2')].find(n=>n.textContent.includes('Target'));p.scrollTop+=h.getBoundingClientRect().top-p.getBoundingClientRect().top-100;});
  await settleScroll(page);
- const sample=()=>page.evaluate(()=>{const p=document.querySelector('#preview'),h=[...p.querySelectorAll('h2')].find(n=>n.textContent==='Target');return {scroll:p.scrollTop,top:h.getBoundingClientRect().top};});
+ const sample=()=>page.evaluate(()=>{const p=document.querySelector('#preview'),h=[...p.querySelectorAll('h2')].find(n=>n.textContent.includes('Target'));return {scroll:p.scrollTop,top:h.getBoundingClientRect().top};});
  const before=await sample(),trace=[];for(let i=0;i<6;i++){await page.keyboard.insertText('x');await page.waitForTimeout(300);trace.push(await sample());}
  console.log('image-scroll',JSON.stringify({requests,before,trace}));
  for(const value of trace){expect(Math.abs(value.scroll-before.scroll)).toBeLessThan(30);expect(Math.abs(value.top-before.top)).toBeLessThan(30);}
