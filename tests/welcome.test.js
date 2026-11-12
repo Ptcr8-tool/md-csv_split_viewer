@@ -34,6 +34,18 @@ describe('editable welcome guide',()=>{
     expect(welcomeDocument()).not.toBe(guide);
   });
 
+  it('explains Save As and fresh guide reopening before the examples in both languages',()=>{
+    for(const language of ['ja','en']){
+      try{
+        setUiLanguage(language);
+        const introduction=welcomeDocument().text.split('## 1.')[0];
+        expect(introduction).toContain('Ctrl+Shift+S');
+        expect(introduction).toContain(language==='ja'?'元の内容の新しいガイド':'a new guide opens with the original contents');
+        expect(introduction).toContain(language==='ja'?'編集中のタブはそのまま残ります':'existing edited tabs are kept');
+      }finally{setUiLanguage('ja');}
+    }
+  });
+
   it('contains usable Markdown examples rather than images of formatting',()=>{
     for(const type of ['heading','strong','emphasis','delete','inlineCode','blockquote','list','table','image']){
       expect(nodes.some(node=>node.type===type),type).toBe(true);
