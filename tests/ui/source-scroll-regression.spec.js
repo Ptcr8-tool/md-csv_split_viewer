@@ -38,3 +38,19 @@ for(const kind of ['plain','list'])test(`typing at viewport edge does not page p
   for(let i=0;i<10;i++){await page.keyboard.press('Enter');await page.keyboard.insertText('x');await page.waitForTimeout(180);trace.push(await sample());}
   console.log('edge-trace',kind,JSON.stringify(trace));let ds=Math.abs(trace.at(-1).source-trace[0].source),dp=Math.abs(trace.at(-1).preview-trace[0].preview);expect(dp).toBeLessThan(ds*3+120);
 });
+
+for(const sync of [true,false])test(`list editing followed by mouse-selected plain text stays in range, sync ${sync}`,async({page})=>{
+ await page.setViewportSize({width:1668,height:700});await page.goto('/');await page.waitForFunction(()=>window.__mdSplit);
+ const raw=await (await import('node:fs/promises')).readFile('examples/Welcome.md','utf8');await page.evaluate(text=>window.__mdSplit.setText(text),raw);
+ if(!sync)await page.locator('#sync-toggle').click();
+ await page.evaluate(()=>{const cm=window.__mdSplit.editor(),p=cm.state.doc.toString().indexOf('野菜を買う')+5;cm.dispatch({selection:{anchor:p}});cm.focus();cm.scrollDOM.scrollTop=cm.lineBlockAt(p).top-100;});
+ await settleScroll(page);await waitForScrollReady(page);
+ for(let i=0;i<5;i++){await page.keyboard.press('Enter');await page.keyboard.insertText('a');await page.waitForTimeout(200);}
+ const pos=await page.evaluate(()=>{const cm=window.__mdSplit.editor(),p=cm.state.doc.toString().indexOf('この段落を選んで')+3;cm.scrollDOM.scrollTop=cm.lineBlockAt(p).top-100;return p;});
+ await settleScroll(page);await waitForScrollReady(page);
+ const pt=await page.evaluate(p=>{const rect=window.__mdSplit.editor().coordsAtPos(p);return rect?{x:rect.left+1,y:(rect.top+rect.bottom)/2}:null;},pos);
+ expect(pt).not.toBeNull();await page.mouse.click(pt.x,pt.y);
+ await page.waitForTimeout(300);await settleScroll(page);const sample=()=>page.evaluate(()=>({source:window.__mdSplit.editor().scrollDOM.scrollTop,preview:document.querySelector('#preview').scrollTop,focus:document.activeElement?.className}));let trace=[await sample()];
+ for(let i=0;i<10;i++){await page.keyboard.press('Enter');await page.keyboard.insertText('a');await page.waitForTimeout(250);trace.push(await sample());}
+ console.log('sequence-trace',sync,JSON.stringify(trace));let ds=Math.abs(trace.at(-1).source-trace[0].source),dp=Math.abs(trace.at(-1).preview-trace[0].preview);expect(dp).toBeLessThan(ds*3+160);
+});
