@@ -338,10 +338,17 @@ listen('#preview','beforeinput',e=>{
         if(from===to){for(const f of rich.formats)if(f.kind!=='code-block'&&from===f.contentFrom)from=to=f.from;from=to=advanceClosingMarkup(from);}
         const next=enterList(raw,{from,to});if(next){if(next.from===from&&next.to===to){next.insert=balancedBreak(from,next.insert);next.selection={from:from+next.insert.length,to:from+next.insert.length};}applyEdit(next);return;}
       }
-      insert=mode==='normal'?(e.inputType==='insertLineBreak'?'  '+eol:eol+eol):eol;
+      const quote=lineAt(raw,from).text.match(/^ {0,3}(?:>[ \t]?)+/)?.[0]||'';
+      insert=(mode==='normal'&&e.inputType==='insertLineBreak'?'  ':'')+eol+quote;
       if(from===to&&e.inputType==='insertParagraph')insert=balancedBreak(from,insert);
     }
-  }else insert=escapeLiteral(insert,literal,!!inCell);
+  }else{
+    if(!literal&&from===to&&/^ +$/.test(insert)){
+      for(const f of rich.formats)if(f.kind!=='code-block'&&from===f.contentFrom)from=to=f.from;
+      from=to=advanceClosingMarkup(from);
+    }
+    insert=escapeLiteral(insert,literal,!!inCell);
+  }
   if(info){applyEdit(patchCode(raw,info,from,to,insert),'rich');return;}
   const c=replaceRich(raw,from,to,insert,rich.formats);apply(c.from,c.to,c.insert,'rich');
 });

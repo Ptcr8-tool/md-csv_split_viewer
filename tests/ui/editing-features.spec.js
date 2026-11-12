@@ -43,7 +43,7 @@ test('source single newlines are displayed as separate lines and exact right edi
 });
 
 test('new empty paragraph is a real caret target after Enter at the end of the document',async({page})=>{
-  await setText(page,'aa');await select(page,2);await page.keyboard.press('Enter');await page.keyboard.insertText('ab');expect(await getText(page)).toBe('aa\n\nab');
+  await setText(page,'aa');await select(page,2);await page.keyboard.press('Enter');await page.keyboard.insertText('ab');expect(await getText(page)).toBe('aa\nab');
 });
 
 test('a formatted list item can split in the middle and indent at its visible start',async({page})=>{

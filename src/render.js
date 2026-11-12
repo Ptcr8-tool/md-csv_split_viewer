@@ -39,6 +39,29 @@ export class RichRenderer {
     const fragment=document.createDocumentFragment();
     this.blocks(source,0,fragment);
     const hint=options.selection?.from,at=hint??source.length;
+    // CommonMark omits some line-edge spaces from its syntax tree. Preserve a
+    // real, mapped caret position while the user is editing those spaces.
+    if(hint!=null&&source[hint-1]===' '&&!this.leaves.some(l=>l.map.some((p,i)=>p===hint&&i>0&&l.node.data[i-1]===' '))){
+      let start=hint;while(start>0&&source[start-1]===' ')start--;
+      const lineStart=Math.max(source.lastIndexOf('\n',start-1),source.lastIndexOf('\r',start-1))+1;
+      const before=this.leaves.findLast(l=>l.to<=start&&l.to>=lineStart);
+      const after=this.leaves.find(l=>l.from>=hint&&source.slice(hint,l.from).indexOf('\n')<0&&source.slice(hint,l.from).indexOf('\r')<0);
+      const gap=before?source.slice(before.to,start):'';
+      if(before&&/^[*_~`\])]*$/.test(gap)||!before&&after&&/^ *$/.test(source.slice(lineStart,hint))){
+        const space=this.leaf(source.slice(start,hint),start,hint),created=this.leaves.pop();
+        const index=before?this.leaves.indexOf(before)+1:this.leaves.indexOf(after);
+        this.leaves.splice(index,0,created);
+        let anchor=(before||after).node.parentElement.closest('.md-leaf');
+        if(before&&gap)while(anchor.parentElement&&!anchor.parentElement.hasAttribute('data-block'))anchor=anchor.parentElement;
+        if(before)anchor.after(space);else anchor.before(space);
+      }
+    }
+    const line=lineAt(source,at),quoteOnly=/^ {0,3}(?:>[ \t]?)+[ \t]*$/.test(line.text);
+    if(hint!=null&&quoteOnly&&!this.leaves.some(l=>l.map.includes(at))){
+      const quotes=Array.from(fragment.querySelectorAll('blockquote'));
+      const target=quotes.findLast(q=>Number(q.dataset.from)<=at&&Number(q.dataset.to)>=line.start);
+      if(target){const p=el('p','empty-paragraph');p.dataset.block='';p.dataset.from=at;p.dataset.to=at;p.append(this.leaf('',at,at));target.append(p);}
+    }
     const trailing=/\r?\n[ \t]*$/.test(source)&&at===source.length;
     const code=this.codeBlocks.find(c=>at>=c.contentFrom&&at<=c.contentTo);
     if(source.length&&!code&&(trailing||hint!=null&&!lineAt(source,at).text.trim())&&!this.leaves.some(l=>l.from===at||l.to===at)){
@@ -57,11 +80,14 @@ export class RichRenderer {
     const raw=rawValue ?? this.source.slice(from,to);
     const map=textMap(raw,value,from,decodeNamedCharacterReference);
     const cuts=new Set([0,value.length]);for(const h of highlights){cuts.add(h.from);cuts.add(h.to);}
+    const preserveSpaces=kind==='text'&&this.mode!=='discord'&&this.options.softBreaks===false;
+    if(preserveSpaces)for(const run of value.matchAll(/ +/g)){cuts.add(run.index);cuts.add(run.index+run[0].length);}
     for(let i=0;i<value.length;i++)if(whitespaceMark(value[i],this.options)){cuts.add(i);cuts.add(i+1);}
     const points=Array.from(cuts).sort((a,b)=>a-b);
     const append=(a,b)=>{const text=document.createTextNode(value.slice(a,b)||'\u200b'),slice=value?map.slice(a,b+1):[from,from];let parent=span;
       const classes=highlights.filter(h=>h.from<=a&&h.to>=b).map(h=>h.classes).join(' '),mark=b===a+1?whitespaceMark(value[a],this.options):null;
-      if(classes||mark){parent=el('span',classes+(mark?' visible-whitespace ws-'+mark[0]:''));if(mark){if(mark[0]==='line-break'){const appearance=lineBreakAppearance(this.source.slice(map[a],map[b]),this.options.distinguishLineBreaks!==false);parent.dataset.mark=appearance.glyph;parent.title=appearance.label;}else parent.dataset.mark=mark[1];}span.append(parent);}
+      const spaceRun=preserveSpaces&&/^ +$/.test(value.slice(a,b));
+      if(classes||mark||spaceRun){parent=el('span',classes+(mark?' visible-whitespace ws-'+mark[0]:'')+(spaceRun?' md-space-run':''));if(mark){if(mark[0]==='line-break'){const appearance=lineBreakAppearance(this.source.slice(map[a],map[b]),this.options.distinguishLineBreaks!==false);parent.dataset.mark=appearance.glyph;parent.title=appearance.label;}else parent.dataset.mark=mark[1];}span.append(parent);}
       parent.append(text);this.maps.set(text,slice);this.leaves.push({node:text,map:slice,from:slice[0],to:slice.at(-1),kind});
     };
     if(!value)append(0,0);else for(let i=0;i<points.length-1;i++)append(points[i],points[i+1]);return span;
