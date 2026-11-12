@@ -56,23 +56,56 @@ export class RichRenderer {
         if(before)anchor.after(space);else anchor.before(space);
       }
     }
-    const line=lineAt(source,at),quoteOnly=/^ {0,3}(?:>[ \t]?)+[ \t]*$/.test(line.text);
-    if(hint!=null&&quoteOnly&&!this.leaves.some(l=>l.map.includes(at))){
-      const quotes=Array.from(fragment.querySelectorAll('blockquote'));
-      const target=quotes.findLast(q=>Number(q.dataset.from)<=at&&Number(q.dataset.to)>=line.start);
-      if(target){const p=el('p','empty-paragraph');p.dataset.block='';p.dataset.from=at;p.dataset.to=at;p.append(this.leaf('',at,at));target.append(p);}
-    }
-    const trailing=/\r?\n[ \t]*$/.test(source)&&at===source.length;
-    const code=this.codeBlocks.find(c=>at>=c.contentFrom&&at<=c.contentTo);
-    if(source.length&&!code&&(trailing||hint!=null&&!lineAt(source,at).text.trim())&&!this.leaves.some(l=>l.from===at||l.to===at)){
-      const p=el('p','empty-paragraph');p.dataset.block='';p.dataset.from=at;p.dataset.to=at;p.append(this.leaf('',at,at));const next=Array.from(fragment.childNodes).find(n=>Number(n.dataset?.from)>at);fragment.insertBefore(p,next||null);
-    }
+    // Preserve every editable blank source line, not only the line containing
+    // the current caret. Markdown parsers intentionally omit these lines.
+    if(source.length)this.addBlankLines(fragment);
     if(!fragment.childNodes.length){ const p=el('p');p.dataset.block='';p.dataset.from='0';p.dataset.to='0';p.append(this.leaf('',0,0));fragment.append(p); }
     this.container.replaceChildren(fragment);
     this.container.classList.toggle('is-empty',!source.length);
     this.container.classList.toggle('discord-view',mode==='discord');
     this.container.classList.toggle('preserve-lines',mode==='discord'||options.softBreaks!==false);
     return this.epoch;
+  }
+  addBlankLines(fragment) {
+    const containers=Array.from(fragment.querySelectorAll('blockquote[data-block],li[data-block],details.md-details[data-block]'));
+    const lists=Array.from(fragment.querySelectorAll('ul[data-block],ol[data-block]'));
+    const childrenByParent=new Map();
+    const existing=new Set(this.leaves.filter(l=>l.from===l.to).map(l=>l.from));
+    const rangeContains=(node,pos)=>Number(node.dataset.from)<=pos&&pos<=Number(node.dataset.to);
+    const depth=node=>{let value=0;while(node.parentNode){value++;node=node.parentNode;}return value;};
+    const atomic=Array.from(fragment.querySelectorAll('.raw-block[data-block],.table-wrap[data-block],.mermaid-block[data-block]'));
+    let at=0;
+    while(at<=this.source.length){
+      const line=lineAt(this.source,at);
+      const plain=/^[ \\t]*$/.test(line.text);
+      const quoted=/^ {0,3}(?:>[ \\t]?)+[ \\t]*$/.test(line.text);
+      const position=line.end;
+      const inCode=this.codeBlocks.some(c=>line.start>=c.from&&line.start<c.to);
+      const inAtomic=atomic.some(n=>rangeContains(n,line.start));
+      const exists=existing.has(position);
+      if((plain||quoted)&&!inCode&&!inAtomic&&!exists){
+        let parent=containers.filter(n=>rangeContains(n,line.start)&&(n.tagName!=='BLOCKQUOTE'||quoted)).sort((a,b)=>depth(b)-depth(a))[0];
+        if(parent?.tagName==='DETAILS')parent=parent.querySelector(':scope > .details-body');
+        if(!parent){
+          const list=lists.filter(n=>rangeContains(n,line.start)).sort((a,b)=>depth(b)-depth(a))[0];
+          if(list){
+            const items=Array.from(list.children).filter(n=>n.tagName==='LI'&&Number(n.dataset.from)<=line.start);
+            parent=items.at(-1);
+          }
+        }
+        parent ||= fragment;
+        const blank=el('div','empty-paragraph source-blank-line');
+        blank.dataset.block='';blank.dataset.from=position;blank.dataset.to=position;
+        blank.append(this.leaf('',position,position));
+        let children=childrenByParent.get(parent);
+        if(!children){children=Array.from(parent.children||parent.childNodes).filter(n=>n.dataset?.from!==undefined);childrenByParent.set(parent,children);}
+        let lo=0,hi=children.length;while(lo<hi){const mid=(lo+hi)>>>1;if(Number(children[mid].dataset.from)<=position)lo=mid+1;else hi=mid;}
+        parent.insertBefore(blank,children[lo]||null);
+      }
+      if(!line.eol)break;
+      at=line.end+line.eol.length;
+    }
+    this.leaves.sort((a,b)=>a.from-b.from||a.to-b.to);
   }
   leaf(value,from,to,kind='text',rawValue,highlights=[]) {
     value=normalized(value);
