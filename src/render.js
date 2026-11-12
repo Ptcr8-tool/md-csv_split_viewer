@@ -80,11 +80,14 @@ export class RichRenderer {
     const raw=rawValue ?? this.source.slice(from,to);
     const map=textMap(raw,value,from,decodeNamedCharacterReference);
     const cuts=new Set([0,value.length]);for(const h of highlights){cuts.add(h.from);cuts.add(h.to);}
+    const preserveSpaces=kind==='text'&&this.mode!=='discord'&&this.options.softBreaks===false;
+    if(preserveSpaces)for(const run of value.matchAll(/ +/g)){cuts.add(run.index);cuts.add(run.index+run[0].length);}
     for(let i=0;i<value.length;i++)if(whitespaceMark(value[i],this.options)){cuts.add(i);cuts.add(i+1);}
     const points=Array.from(cuts).sort((a,b)=>a-b);
     const append=(a,b)=>{const text=document.createTextNode(value.slice(a,b)||'\u200b'),slice=value?map.slice(a,b+1):[from,from];let parent=span;
       const classes=highlights.filter(h=>h.from<=a&&h.to>=b).map(h=>h.classes).join(' '),mark=b===a+1?whitespaceMark(value[a],this.options):null;
-      if(classes||mark){parent=el('span',classes+(mark?' visible-whitespace ws-'+mark[0]:''));if(mark){if(mark[0]==='line-break'){const appearance=lineBreakAppearance(this.source.slice(map[a],map[b]),this.options.distinguishLineBreaks!==false);parent.dataset.mark=appearance.glyph;parent.title=appearance.label;}else parent.dataset.mark=mark[1];}span.append(parent);}
+      const spaceRun=preserveSpaces&&/^ +$/.test(value.slice(a,b));
+      if(classes||mark||spaceRun){parent=el('span',classes+(mark?' visible-whitespace ws-'+mark[0]:'')+(spaceRun?' md-space-run':''));if(mark){if(mark[0]==='line-break'){const appearance=lineBreakAppearance(this.source.slice(map[a],map[b]),this.options.distinguishLineBreaks!==false);parent.dataset.mark=appearance.glyph;parent.title=appearance.label;}else parent.dataset.mark=mark[1];}span.append(parent);}
       parent.append(text);this.maps.set(text,slice);this.leaves.push({node:text,map:slice,from:slice[0],to:slice.at(-1),kind});
     };
     if(!value)append(0,0);else for(let i=0;i<points.length-1;i++)append(points[i],points[i+1]);return span;
