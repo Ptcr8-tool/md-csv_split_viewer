@@ -20,6 +20,9 @@ test('diagram editing, invalid code and resize release reserved height',async({p
  await page.locator('.mermaid-block button').first().click();const newEditor=page.locator('.diagram-code').first();await newEditor.fill('invalid ! syntax !');await newEditor.blur();
  await expect(page.locator('.diagram-error').first()).toBeVisible({timeout:30000});
  await expect.poll(()=>page.locator('.mermaid-stage').first().evaluate(n=>n.style.minHeight),{timeout:30000}).toBe('');
+ await page.locator('.mermaid-block button').first().click();const recovery=page.locator('.diagram-code').first();await recovery.fill('flowchart TD\nA --> B');await recovery.blur();
+ await expect(page.locator('.mermaid-stage svg')).toHaveCount(1,{timeout:30000});
+ await expect.poll(()=>page.locator('.mermaid-stage').first().evaluate(n=>n.style.minHeight),{timeout:30000}).toBe('');
 });
 
 test('identical diagrams in different widths retain their own rendered heights',async({page})=>{
