@@ -56,23 +56,64 @@ export class RichRenderer {
         if(before)anchor.after(space);else anchor.before(space);
       }
     }
-    const line=lineAt(source,at),quoteOnly=/^ {0,3}(?:>[ \t]?)+[ \t]*$/.test(line.text);
-    if(hint!=null&&quoteOnly&&!this.leaves.some(l=>l.map.includes(at))){
-      const quotes=Array.from(fragment.querySelectorAll('blockquote'));
-      const target=quotes.findLast(q=>Number(q.dataset.from)<=at&&Number(q.dataset.to)>=line.start);
-      if(target){const p=el('p','empty-paragraph');p.dataset.block='';p.dataset.from=at;p.dataset.to=at;p.append(this.leaf('',at,at));target.append(p);}
-    }
-    const trailing=/\r?\n[ \t]*$/.test(source)&&at===source.length;
-    const code=this.codeBlocks.find(c=>at>=c.contentFrom&&at<=c.contentTo);
-    if(source.length&&!code&&(trailing||hint!=null&&!lineAt(source,at).text.trim())&&!this.leaves.some(l=>l.from===at||l.to===at)){
-      const p=el('p','empty-paragraph');p.dataset.block='';p.dataset.from=at;p.dataset.to=at;p.append(this.leaf('',at,at));const next=Array.from(fragment.childNodes).find(n=>Number(n.dataset?.from)>at);fragment.insertBefore(p,next||null);
-    }
+    // Preserve every editable blank source line, not only the line containing
+    // the current caret. Markdown parsers intentionally omit these lines.
+    if(source.length)this.addBlankLines(fragment);
     if(!fragment.childNodes.length){ const p=el('p');p.dataset.block='';p.dataset.from='0';p.dataset.to='0';p.append(this.leaf('',0,0));fragment.append(p); }
     this.container.replaceChildren(fragment);
     this.container.classList.toggle('is-empty',!source.length);
     this.container.classList.toggle('discord-view',mode==='discord');
     this.container.classList.toggle('preserve-lines',mode==='discord'||options.softBreaks!==false);
     return this.epoch;
+  }
+  addBlankLines(fragment) {
+    const depth=node=>{let value=0;while(node.parentNode){value++;node=node.parentNode;}return value;};
+    // Sweep intervals in source order. Most lines overlap only a few active
+    // blocks, avoiding a full-document scan for every blank line.
+    const sweep=items=>{
+      const ordered=items.sort((a,b)=>a.from-b.from||a.to-b.to);let index=0,active=[];
+      return pos=>{while(index<ordered.length&&ordered[index].from<=pos)active.push(ordered[index++]);active=active.filter(x=>x.to>=pos);return active;};
+    };
+    const entry=node=>({node,from:Number(node.dataset.from),to:Number(node.dataset.to),depth:depth(node)});
+    const activeContainers=sweep(Array.from(fragment.querySelectorAll('blockquote[data-block],li[data-block],details.md-details[data-block]'),entry));
+    const activeLists=sweep(Array.from(fragment.querySelectorAll('ul[data-block],ol[data-block]'),entry));
+    const activeAtomic=sweep(Array.from(fragment.querySelectorAll('.raw-block[data-block],.table-wrap[data-block],.mermaid-block[data-block]'),entry));
+    const activeCode=sweep(this.codeBlocks.map(c=>({from:c.from,to:c.to-1})));
+    const childrenByParent=new Map(),itemsByList=new Map();
+    const existing=new Set(this.leaves.filter(l=>l.from===l.to).map(l=>l.from));
+    let at=0;
+    while(at<=this.source.length){
+      const line=lineAt(this.source,at);
+      const plain=/^[ \t]*$/.test(line.text);
+      const quoted=/^ {0,3}(?:>[ \t]?)+[ \t]*$/.test(line.text);
+      const position=line.end;
+      if((plain||quoted)&&!existing.has(position)&&!activeCode(line.start).length&&!activeAtomic(line.start).length){
+        let active=activeContainers(line.start).filter(x=>x.node.tagName!=='BLOCKQUOTE'||quoted);
+        let parent=active.reduce((best,x)=>!best||x.depth>best.depth?x:best,null)?.node;
+        if(parent?.tagName==='DETAILS')parent=parent.querySelector(':scope > .details-body');
+        if(!parent){
+          active=activeLists(line.start);
+          const list=active.reduce((best,x)=>!best||x.depth>best.depth?x:best,null)?.node;
+          if(list){
+            let items=itemsByList.get(list);
+            if(!items){items=Array.from(list.children).filter(n=>n.tagName==='LI');itemsByList.set(list,items);}
+            let lo=0,hi=items.length;while(lo<hi){const mid=(lo+hi)>>>1;if(Number(items[mid].dataset.from)<=line.start)lo=mid+1;else hi=mid;}
+            parent=items[lo-1];
+          }
+        }
+        parent ||= fragment;
+        const blank=el('div','empty-paragraph source-blank-line');
+        blank.dataset.block='';blank.dataset.from=position;blank.dataset.to=position;
+        blank.append(this.leaf('',position,position));
+        let children=childrenByParent.get(parent);
+        if(!children){children=Array.from(parent.children||parent.childNodes).filter(n=>n.dataset?.from!==undefined);childrenByParent.set(parent,children);}
+        let lo=0,hi=children.length;while(lo<hi){const mid=(lo+hi)>>>1;if(Number(children[mid].dataset.from)<=position)lo=mid+1;else hi=mid;}
+        parent.insertBefore(blank,children[lo]||null);
+      }
+      if(!line.eol)break;
+      at=line.end+line.eol.length;
+    }
+    this.leaves.sort((a,b)=>a.from-b.from||a.to-b.to);
   }
   leaf(value,from,to,kind='text',rawValue,highlights=[]) {
     value=normalized(value);
