@@ -31,7 +31,7 @@ $file=Join-Path $root 'fixture.md'
 Copy-Item -LiteralPath 'examples/Welcome.md' -Destination $file
 $process=Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -ArgumentList ('"'+$file+'"') -PassThru
 try{
- $until=[DateTime]::UtcNow.AddSeconds(100);$element=$null;$initial=$null
+ $until=[DateTime]::UtcNow.AddSeconds(100);$element=$null;$window=$null
  do{
   if($process.HasExited){throw 'App exited.'}
   try{
@@ -40,25 +40,36 @@ try{
     $window=[System.Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
     $condition=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'scroll telemetry')
     $element=$window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$condition)
-    if($element){
-      $pattern=$element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-      $initial=$pattern.Current.Value
-      if($initial -match '^[-0-9.,]+$'){break}
-    }
+    if($element){$pattern=$element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern);if($pattern.Current.Value -eq 'ready'){break}}
    }
   }catch [System.Windows.Automation.ElementNotAvailableException]{}
   Start-Sleep -Milliseconds 250
  }while([DateTime]::UtcNow -lt $until)
- if(-not $initial){throw 'Probe did not initialize.'}
- Write-Output "INITIAL $initial"
- [void][ScrollProbeWin]::SetForegroundWindow($process.MainWindowHandle)
- for($i=0;$i -lt 7;$i++){[Windows.Forms.SendKeys]::SendWait('{ENTER}a');Start-Sleep -Milliseconds 350}
- Start-Sleep -Seconds 2
- $final=$pattern.Current.Value
- Write-Output "FINAL $final"
- $fields=$final.Split(',')
- if($fields.Count -ne 6){throw 'Bad telemetry.'}
- $delta=[Math]::Abs([double]$fields[1]-[double]$fields[0])
- Write-Output "DELTA $delta; events $($fields[5])"
- if($delta -ge 100){throw 'Preview moved by at least 100px.'}
+ if(-not $element){throw 'Probe did not initialize.'}
+ function Invoke-Probe([string]$name){
+   $cond=New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,('probe '+$name))
+   $button=$window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$cond)
+   if(-not $button){throw "Missing probe button $name"}
+   $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+ }
+ function Test-Phase([string]$sync,[string]$name){
+   Invoke-Probe $name
+   $until=[DateTime]::UtcNow.AddSeconds(40)
+   do{$initial=$pattern.Current.Value;if($initial.StartsWith($name+',')){break};if($initial.StartsWith('notfound:') -or $initial.StartsWith('lost:')){throw "Target line $initial"};Start-Sleep -Milliseconds 250}while([DateTime]::UtcNow -lt $until)
+   if(-not $initial.StartsWith($name+',')){throw "Could not prepare $name; $initial"}
+   [void][ScrollProbeWin]::SetForegroundWindow($process.MainWindowHandle)
+   for($i=0;$i -lt 5;$i++){[Windows.Forms.SendKeys]::SendWait('{ENTER}a');Start-Sleep -Milliseconds 350}
+   Start-Sleep -Seconds 2
+   $final=$pattern.Current.Value
+   Write-Output "TRACE sync=$sync phase=$name initial=$initial final=$final"
+   $fields=$final.Split(',')
+   if($fields.Count -ne 10 -or [int]$fields[8] -lt 5 -or [int]$fields[9] -lt 5){throw "Input events not delivered: $final"}
+   $delta=[Math]::Abs([double]$fields[2]-[double]$fields[1])
+   if($delta -ge 100){throw "Preview moved by $delta pixels: $final"}
+ }
+ Test-Phase 'on' 'list'
+ Test-Phase 'on' 'plain'
+ Invoke-Probe 'toggle'
+ Test-Phase 'off' 'list'
+ Test-Phase 'off' 'plain'
 }finally{if($process -and -not $process.HasExited){$process.Kill();$process.WaitForExit()}}
