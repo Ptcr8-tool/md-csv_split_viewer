@@ -198,7 +198,7 @@ export function textMap(raw, value, start, decodeEntity = () => null) {
     }
     if (raw[i] !== value[j]) {
       const at = raw.indexOf(value[j], i);
-      if (at >= i && at - i < 5) { i = at; map[map.length-1]=start+i; }
+      if (at >= i && (at - i < 5 || /^(?:[ \t]*>[ \t]?)+$/.test(raw.slice(i,at)))) { i = at; map[map.length-1]=start+i; }
     }
     i = Math.min(i + 1, raw.length); j++; map.push(start + i);
   }

@@ -25,3 +25,18 @@ test('Shift+Enter creates a hard break and retains quote prefixes and CRLF',asyn
   await setText(page,'> abcd\r\n\r\n後');await select(page,4);await page.keyboard.press('Shift+Enter');await page.keyboard.insertText('X');
   expect(await getText(page)).toBe('> ab  \r\n> Xcd\r\n\r\n後');await expect(page.locator('#preview blockquote br')).toHaveCount(1);
 });
+
+test('a nested quote keeps the insertion point after its entire prefix',async({page})=>{
+  await setText(page,'> > > abcd');await select(page,8);await page.keyboard.press('Enter');await page.keyboard.insertText('X');
+  expect(await getText(page)).toBe('> > > ab\n> > > Xcd');
+});
+
+test('repeated Enter at the end of a quote keeps an editable quoted line',async({page})=>{
+  await setText(page,'> abc');await select(page,5);await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.keyboard.insertText('X');
+  expect(await getText(page)).toBe('> abc\n> \n> X');await expect(page.locator('#preview blockquote')).toContainText('X');
+});
+
+test('space before and inside bold retains the text and order',async({page})=>{
+  await setText(page,'**abc**');await select(page,2);await page.keyboard.press('Space');await page.keyboard.insertText('x');expect(await getText(page)).toBe(' x**abc**');
+  await setText(page,'**abcd**');await select(page,4);await page.keyboard.press('Space');await page.keyboard.insertText('x');expect(await getText(page)).toBe('**ab xcd**');
+});
