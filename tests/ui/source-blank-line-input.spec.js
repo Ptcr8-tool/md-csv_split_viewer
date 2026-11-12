@@ -32,12 +32,11 @@ test('repeated source Enter inserts each blank line into the preview',async({pag
 
 test('source Enter and quote markers retain each blank quoted line in the preview',async({page})=>{
   await setText(page,'> alpha\n> beta');
-  await sourceSelect(page,'> alpha'.length);
   for(let count=1;count<=3;count++){
-    // The source editor inserts a newline; type the Markdown quote prefix,
-    // preserving the block as a user editing raw Markdown would.
+    // Enter on a nonempty quote automatically continues its marker. Reposition
+    // before each Enter so the empty-quote exit command is not invoked.
+    await sourceSelect(page,'> alpha'.length);
     await page.keyboard.press('Enter');
-    await page.keyboard.insertText('> ');
     const expected='> alpha\n'+'> \n'.repeat(count)+'> beta';
     await expect.poll(()=>getText(page)).toBe(expected);
     await assertSeparateBlankLines(page.locator('#preview blockquote > .source-blank-line'),count);
