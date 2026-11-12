@@ -1,0 +1,21 @@
+name: Focused preview editing
+on:
+  push:
+    branches: ['fix/preview-markdown-editing']
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npx playwright test tests/ui/preview-edit-regression.spec.js tests/ui/editing-features.spec.js

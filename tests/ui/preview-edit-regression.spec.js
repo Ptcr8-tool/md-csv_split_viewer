@@ -40,3 +40,18 @@ test('space before and inside bold retains the text and order',async({page})=>{
   await setText(page,'**abc**');await select(page,2);await page.keyboard.press('Space');await page.keyboard.insertText('x');expect(await getText(page)).toBe(' x**abc**');
   await setText(page,'**abcd**');await select(page,4);await page.keyboard.press('Space');await page.keyboard.insertText('x');expect(await getText(page)).toBe('**ab xcd**');
 });
+
+test('spaces remain distinct when soft-break display is disabled',async({page})=>{
+  await page.getByRole('button',{name:'設定',exact:true}).click();await page.locator('#setting-soft-breaks').uncheck();await page.getByRole('button',{name:'適用',exact:true}).click();
+  await setText(page,'a   b\nc');
+  const result=await page.evaluate(()=>{
+    const preview=document.querySelector('#preview');
+    const leaf=window.__mdSplit.renderer.leaves.find(l=>l.node.data.includes('a   b'));
+    const width=(start,end)=>{const range=document.createRange();range.setStart(leaf.node,start);range.setEnd(leaf.node,end);return range.getBoundingClientRect().width;};
+    const y=(node,start,end)=>{const range=document.createRange();range.setStart(node,start);range.setEnd(node,end);return range.getBoundingClientRect().top;};
+    const c=window.__mdSplit.renderer.leaves.find(l=>l.node.data.includes('c'));
+    return {preserving:preview.classList.contains('preserve-lines'),supported:CSS.supports('white-space-collapse','preserve-spaces'),single:width(1,2),triple:width(1,4),bTop:y(leaf.node,4,5),cTop:y(c.node,c.node.data.indexOf('c'),c.node.data.indexOf('c')+1),source:window.__mdSplit.getText()};
+  });
+  expect(result.preserving).toBe(false);expect(result.supported).toBe(true);expect(result.triple).toBeGreaterThan(result.single*2.5);expect(result.cTop).toBeCloseTo(result.bTop,0);expect(result.source).toBe('a   b\nc');
+  await select(page,4);await page.keyboard.insertText('X');expect(await getText(page)).toBe('a   Xb\nc');
+});
