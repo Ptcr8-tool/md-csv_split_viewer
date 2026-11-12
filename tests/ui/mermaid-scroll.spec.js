@@ -14,5 +14,5 @@ for(const sync of [true,false])for(const location of ['middle','bottom'])test(`g
  const trace=[await sample()];
  for(let i=0;i<12;i++){await page.keyboard.insertText('a');await page.waitForTimeout(250);trace.push(await sample());}
  await page.waitForTimeout(1200);trace.push(await sample());console.log('diagram-trace',sync,JSON.stringify(trace));
- expect(Math.abs(trace.at(-1).preview-trace[0].preview)).toBeLessThan(30);expect(Math.abs(trace.at(-1).heading-trace[0].heading)).toBeLessThan(30);
+ for(const sample of trace){expect(Math.abs(sample.preview-trace[0].preview)).toBeLessThan(30);expect(Math.abs(sample.heading-trace[0].heading)).toBeLessThan(30);}
 });
