@@ -23,3 +23,5 @@ dialog{width:465px;max-width:90vw;max-height:85vh;border:1px solid var(--line);b
 .preview-pane{position:relative}.discord-boundary-overlay{position:absolute;top:43px;right:0;bottom:0;left:0;overflow:hidden;pointer-events:none}.discord-preview-boundary{position:absolute;right:7px;min-width:23px;height:23px;padding:0 4px;border:1px solid var(--green);border-radius:12px;color:var(--green);background:var(--paper);font-size:10px;font-weight:700;cursor:grab;pointer-events:auto;box-shadow:0 1px 4px #0003}.discord-preview-boundary:active{cursor:grabbing}.document.discord-boundary-drop{outline:2px dashed var(--green);outline-offset:-4px}
 
 .source-pane{position:relative}#source.discord-boundary-drop{outline:2px dashed var(--green);outline-offset:-4px}
+
+#preview{overflow-anchor:none}
