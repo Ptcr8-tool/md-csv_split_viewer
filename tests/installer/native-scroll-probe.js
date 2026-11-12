@@ -1,9 +1,9 @@
 (function(){
-  let source,preview,input,probe,phase='waiting',initial=0,minimum=0,maximum=0,sourceStart=0,events=0,keys=0,inputs=0;
+  let source,preview,input,probe,iteration=0,phase='waiting',initial=0,minimum=0,maximum=0,sourceStart=0,events=0,keys=0,inputs=0;
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   async function selectPhase(name){
     phase='loading';probe.value='loading';probe.setAttribute('value','loading');
-    const target=name==='list'?'野菜を買う':'この段落を選んで';
+    const target=name==='list'?(iteration?'にんじん':'野菜を買う'):(iteration?'この文章も':'この段落を選んで');
     let line=null;
     for(let top=0;top<4500;top+=Math.max(100,source.clientHeight*.6)){
       source.scrollTop=top;await sleep(70);
@@ -30,7 +30,7 @@
     clearInterval(timer);
     const box=document.createElement('div');box.style.cssText='position:fixed;right:3px;top:3px;z-index:9999;background:white;color:black;display:flex;gap:3px';
     probe=document.createElement('input');probe.setAttribute('aria-label','scroll telemetry');probe.readOnly=true;probe.style.width='400px';box.append(probe);
-    for(const name of ['list','plain','toggle']){const button=document.createElement('button');button.setAttribute('aria-label','probe '+name);button.textContent=name;button.onclick=()=>name==='toggle'?document.querySelector('#sync-toggle').click():void selectPhase(name);box.append(button);}
+    for(const name of ['list','plain','toggle']){const button=document.createElement('button');button.setAttribute('aria-label','probe '+name);button.textContent=name;button.onclick=()=>{if(name==='toggle'){iteration++;document.querySelector('#sync-toggle').click();}else void selectPhase(name);};box.append(button);}
     document.body.append(box);
     input.addEventListener('keydown',()=>{if(phase==='list'||phase==='plain')keys++;});
     input.addEventListener('input',()=>{if(phase==='list'||phase==='plain')inputs++;});
