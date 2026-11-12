@@ -42,7 +42,29 @@ export class WorkspaceFeatures{
     $('#outline-expand').onclick=()=>this.foldAll(false);$('#outline-collapse').onclick=()=>this.foldAll(true);
     document.addEventListener('keydown',e=>{if(e.key==='F3'&&!e.target.closest('dialog')){e.preventDefault();if($('#search-panel').hidden)this.openSearch();else this.api.guard(()=>this.search(e.shiftKey?'prev':'next'))();}});
   }
-  extensions(){return linkedEditor(()=>this.headings,from=>this.toggleHeading(from));}
+  extensions(){return [...linkedEditor(()=>this.headings,from=>this.toggleHeading(from)),EditorView.updateListener.of(update=>this.sourceFoldChanged(update))];}
+  sourceFoldChanged(update){
+    if(this.syncingFolds||update.docChanged)return;
+    const d=this.api.current();if(!d)return;
+    const raw=d.raw,expanded=new Set();
+    for(const transaction of update.transactions)for(const effect of transaction.effects){
+      if(!effect.is(unfoldEffect))continue;
+      for(const heading of this.headings)if(heading.closed&&rawToLf(raw,heading.to)===effect.value.from&&rawToLf(raw,heading.foldTo)===effect.value.to)expanded.add(heading.from);
+    }
+    if(!expanded.size)return;
+    // CodeMirror is still dispatching; update shared state after it finishes.
+    queueMicrotask(()=>{
+      if(this.api.current()!==d||d.raw!==raw)return;
+      const anchors=this.closedAnchors(),keep=[];
+      for(const anchor of anchors){if(expanded.has(anchor.from))anchor.dispose();else keep.push(anchor);}
+      if(keep.length===anchors.length)return;
+      d.foldAnchors=keep;this.api.render();
+    });
+  }
+  syncSourceFolds(cm,effects){
+    if(!effects.length)return;
+    this.syncingFolds=true;try{cm.dispatch({effects});}finally{this.syncingFolds=false;}
+  }
   sourcePointer(e,view){if(!e.ctrlKey&&e.type!=='dblclick')return false;const at=view.posAtCoords({x:e.clientX,y:e.clientY});if(at===null)return false;const url=linkAt(this.api.current().raw,lfToRaw(this.api.current().raw,at),this.api.isMarkdown?.()!==false);if(!url)return false;e.preventDefault();this.api.guard(()=>this.api.openLink(url))();return true;}
   previewLink(e){const s=this.api.rich.selection();if(!s)return;const url=linkAt(this.api.current().raw,s.from);if(url){e.preventDefault();this.api.guard(()=>this.api.openLink(url))();}}
   closedAnchors(){const d=this.api.current();if(!d.foldAnchors)d.foldAnchors=[];d.foldAnchors=d.foldAnchors.filter(a=>a.valid);return d.foldAnchors;}
@@ -54,7 +76,7 @@ export class WorkspaceFeatures{
       if(this.htmlOutlineState?.doc!==d)this.htmlOutlineState={doc:d,raw:null,headings:null};
       const state=this.htmlOutlineState;
       if(state.raw!==d.raw){
-        this.headings=[];const effects=[];foldedRanges(cm.state).between(0,cm.state.doc.length,(from,to)=>effects.push(unfoldEffect.of({from,to})));if(effects.length)cm.dispatch({effects});
+        this.headings=[];const effects=[];foldedRanges(cm.state).between(0,cm.state.doc.length,(from,to)=>effects.push(unfoldEffect.of({from,to})));this.syncSourceFolds(cm,effects);
         $('#outline-panel').hidden=api.settings().outlineVisible===false;$('#outline-toggle').classList.toggle('selected',api.settings().outlineVisible!==false);$('#outline-toggle').setAttribute('aria-pressed',String(api.settings().outlineVisible!==false));
         const list=$('#outline-tree');list.replaceChildren();const message=document.createElement('p');message.className='muted';message.textContent=tr('大きなHTMLの見出し作成には時間やメモリが必要になる場合があります。','Creating an outline for large HTML may take time and memory.');const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=state.raw===null?tr('見出しを表示','Show headings'):tr('見出しを更新','Update headings');button.onclick=()=>{const raw=d.raw;button.disabled=true;message.textContent=tr('見出しを作成しています。','Creating outline.');setTimeout(()=>{if(api.current()!==d||d.raw!==raw)return;try{state.headings=htmlOutline(raw);state.raw=raw;this.render();}catch(error){message.textContent=tr('見出しを作成できませんでした。原文はそのまま編集できます。','Could not create the outline. You can still edit the source.');button.disabled=false;}},0);};list.append(message,button);this.active(d.selection.from);return;
       }
@@ -62,7 +84,7 @@ export class WorkspaceFeatures{
     const anchors=this.closedAnchors();const outline=html?(this.htmlOutlineState?.doc===d&&this.htmlOutlineState.raw===d.raw?this.htmlOutlineState.headings:htmlOutline(d.raw)):outlineFromHeadings(api.rich.headings,d.raw);this.headings=outline.map(h=>({...h,lfFrom:cm.state.doc.lineAt(rawToLf(d.raw,h.from)).from,closed:anchors.some(a=>a.from===h.from)}));
     const effects=[];foldedRanges(cm.state).between(0,cm.state.doc.length,(from,to)=>effects.push(unfoldEffect.of({from,to})));
     for(const h of this.headings)if(h.closed&&h.foldTo>h.to)effects.push(foldEffect.of({from:rawToLf(d.raw,h.to),to:rawToLf(d.raw,h.foldTo)}));
-    if(effects.length)cm.dispatch({effects});
+    this.syncSourceFolds(cm,effects);
     for(const node of $('#preview').querySelectorAll('[data-block]')){const from=Number(node.dataset.from);node.hidden=this.headings.some(h=>h.closed&&from>h.from&&from<h.end);const heading=this.headings.find(h=>h.from===from),b=node.querySelector(':scope > .heading-fold');if(heading&&b){b.textContent=heading.closed?'▸':'▾';b.setAttribute('aria-expanded',String(!heading.closed));b.setAttribute('aria-label',heading.closed?tr('見出しを開く','Expand heading'):tr('見出しを折りたたむ','Collapse heading'));b.disabled=heading.foldTo<=heading.to;node.classList.toggle('section-collapsed',heading.closed);}}
     $('#outline-panel').hidden=api.settings().outlineVisible===false;$('#outline-toggle').classList.toggle('selected',api.settings().outlineVisible!==false);$('#outline-toggle').setAttribute('aria-pressed',String(api.settings().outlineVisible!==false));
     $('#sync-toggle').classList.toggle('selected',api.settings().sync);$('#sync-toggle').setAttribute('aria-pressed',String(api.settings().sync));
