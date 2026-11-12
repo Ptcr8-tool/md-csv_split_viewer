@@ -39,6 +39,29 @@ export class RichRenderer {
     const fragment=document.createDocumentFragment();
     this.blocks(source,0,fragment);
     const hint=options.selection?.from,at=hint??source.length;
+    // CommonMark omits some line-edge spaces from its syntax tree. Preserve a
+    // real, mapped caret position while the user is editing those spaces.
+    if(hint!=null&&source[hint-1]===' '&&!this.leaves.some(l=>l.map.some((p,i)=>p===hint&&i>0&&l.node.data[i-1]===' '))){
+      let start=hint;while(start>0&&source[start-1]===' ')start--;
+      const lineStart=Math.max(source.lastIndexOf('\n',start-1),source.lastIndexOf('\r',start-1))+1;
+      const before=this.leaves.findLast(l=>l.to<=start&&l.to>=lineStart);
+      const after=this.leaves.find(l=>l.from>=hint&&source.slice(hint,l.from).indexOf('\n')<0&&source.slice(hint,l.from).indexOf('\r')<0);
+      const gap=before?source.slice(before.to,start):'';
+      if(before&&/^[*_~`\])]*$/.test(gap)||!before&&after&&/^ *$/.test(source.slice(lineStart,hint))){
+        const space=this.leaf(source.slice(start,hint),start,hint),created=this.leaves.pop();
+        const index=before?this.leaves.indexOf(before)+1:this.leaves.indexOf(after);
+        this.leaves.splice(index,0,created);
+        let anchor=(before||after).node.parentElement.closest('.md-leaf');
+        if(before&&gap)while(anchor.parentElement&&!anchor.parentElement.hasAttribute('data-block'))anchor=anchor.parentElement;
+        if(before)anchor.after(space);else anchor.before(space);
+      }
+    }
+    const line=lineAt(source,at),quoteOnly=/^ {0,3}(?:>[ \t]?)+[ \t]*$/.test(line.text);
+    if(hint!=null&&quoteOnly&&!this.leaves.some(l=>l.map.includes(at))){
+      const quotes=Array.from(fragment.querySelectorAll('blockquote'));
+      const target=quotes.findLast(q=>Number(q.dataset.from)<=at&&Number(q.dataset.to)>=line.start);
+      if(target){const p=el('p','empty-paragraph');p.dataset.block='';p.dataset.from=at;p.dataset.to=at;p.append(this.leaf('',at,at));target.append(p);}
+    }
     const trailing=/\r?\n[ \t]*$/.test(source)&&at===source.length;
     const code=this.codeBlocks.find(c=>at>=c.contentFrom&&at<=c.contentTo);
     if(source.length&&!code&&(trailing||hint!=null&&!lineAt(source,at).text.trim())&&!this.leaves.some(l=>l.from===at||l.to===at)){
