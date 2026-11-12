@@ -60,6 +60,67 @@ test('rendered and source links open only on Ctrl click or double click',async({
   await mockedDesktop(page);await page.locator('#preview a').first().click();expect(await page.evaluate(()=>window._calls.filter(c=>c.method==='shell.open').length)).toBe(0);await page.locator('#preview a').first().dblclick();await page.locator('#preview a').first().click({modifiers:['Control']});
   const word=page.locator('.cm-line').first();await word.dblclick({position:{x:25,y:10}});await word.click({position:{x:25,y:10},modifiers:['Control']});expect(await page.evaluate(()=>window._calls.filter(c=>c.method==='shell.open').map(c=>c.args.url))).toEqual(Array(4).fill('https://example.com/path'));
 });
+test('update notes render Markdown safely while keeping links and update controls usable',async({page})=>{
+  await page.route('https://example.com/image.png',route=>route.fulfill({status:200,contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZ8AAAAASUVORK5CYII=','base64')}));
+  const notes=[
+    '## 主な変更',
+    '- **CSV・TSV のセル編集**：選択したセルにそのまま入力できます。',
+    '- *操作* と ~~取り消し~~、`Delete` キーに対応。',
+    '',
+    '[公式ページ](https://example.com/release) / [危険](javascript:alert(1)) / [ローカル](file:///C:/secret.txt)',
+    '',
+    '[参照リンク][details]',
+    '',
+    '[details]: https://example.com/details',
+    '',
+    '> 引用',
+    '',
+    '| 内容 | 状態 |',
+    '| --- | --- |',
+    '| CSV | 完了 |',
+    '',
+    '```text',
+    '<script>window._unsafeUpdate=true</script>',
+    '```',
+    '',
+    '<img src=x onerror="window._unsafeUpdate=true">',
+    '',
+    '![画像を開く](https://example.com/image.png)',
+    '',
+    ...Array.from({length:20},(_,i)=>`段落 ${i+1} の更新内容。\n`)
+  ].join('\n');
+  await mockedDesktop(page,true,{checkResult:{available:true,status:'available',version:'1.1.2',bytes:12345678,notes}});
+  await page.getByRole('button',{name:'設定',exact:true}).click();
+  await page.getByRole('button',{name:'今すぐ更新を確認',exact:true}).click();
+  const body=page.locator('#update-notes');
+  await expect(body.locator('h2')).toHaveText('主な変更');
+  await expect(body.locator('li strong')).toHaveText('CSV・TSV のセル編集');
+  await expect(body.locator('li em')).toHaveText('操作');
+  await expect(body.locator('li del')).toHaveText('取り消し');
+  await expect(body.locator('li code')).toHaveText('Delete');
+  await expect(body.locator('blockquote')).toContainText('引用');
+  await expect(body.locator('table th')).toHaveText(['内容','状態']);
+  await expect(body.locator('table td')).toHaveText(['CSV','完了']);
+  await expect(body.locator('pre code')).toContainText('<script>');
+  await expect(body).toContainText('<img src=x');
+  await expect(body.locator('script,iframe')).toHaveCount(0);
+  await expect(body.locator('img')).toHaveCount(1);
+  await expect(body.getByRole('img',{name:'画像を開く'})).toHaveAttribute('src','https://example.com/image.png');
+  await expect(body.locator('img[onerror],img[src^="file:"],img[src^="javascript:"]')).toHaveCount(0);
+  await expect(body.locator('a[href^="javascript:"],a[href^="file:"]')).toHaveCount(0);
+  await expect(body.getByText('危険',{exact:true})).toHaveCount(1);
+  await expect(body.getByText('ローカル',{exact:true})).toHaveCount(1);
+  expect(await page.evaluate(()=>window._unsafeUpdate)).toBeUndefined();
+  expect(await body.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+  await body.getByRole('link',{name:'公式ページ'}).click();
+  await expect.poll(()=>page.evaluate(()=>window._calls.filter(c=>c.method==='shell.open').map(c=>c.args.url))).toEqual(['https://example.com/release']);
+  await body.getByRole('link',{name:'参照リンク'}).focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(()=>page.evaluate(()=>window._calls.filter(c=>c.method==='shell.open').map(c=>c.args.url))).toEqual(['https://example.com/release','https://example.com/details']);
+  await expect(page.getByRole('button',{name:'更新',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'キャンセル',exact:true}).click();
+  expect(await page.evaluate(()=>window._calls.some(c=>c.method==='update.download'))).toBe(false);
+});
 test('disabled startup checks stay offline; update confirmation downloads and preserves tabs before ready',async({page})=>{
   await page.clock.install();await mockedDesktop(page,true);await page.clock.fastForward(1700);expect(await page.evaluate(()=>window._calls.some(c=>c.method==='update.check'))).toBe(false);await page.getByRole('button',{name:'設定',exact:true}).click();await expect(page.locator('#setting-updates')).toHaveValue('-1');await page.getByRole('button',{name:'今すぐ更新を確認',exact:true}).click();await expect(page.locator('#dialog-title')).toHaveText('新しいバージョンがあります');await expect(page.locator('#update-notes')).toContainText('<img');await expect(page.locator('#update-notes img')).toHaveCount(0);await page.getByRole('button',{name:'キャンセル',exact:true}).click();expect(await page.evaluate(()=>window._calls.some(c=>c.method==='update.download'))).toBe(false);
   await page.getByRole('button',{name:'設定',exact:true}).click();await page.getByRole('button',{name:'今すぐ更新を確認',exact:true}).click();await page.getByRole('button',{name:'更新',exact:true}).click();await page.waitForFunction(()=>window._calls.some(c=>c.method==='update.ready'));const calls=await page.evaluate(()=>window._calls);expect(calls.find(c=>c.method==='update.ready').args.ready).toBe(true);expect(calls.filter(c=>c.method==='recovery.write').at(-1).args.reason).toBe('update');expect(calls.findIndex(c=>c.method==='update.download')).toBeLessThan(calls.findIndex(c=>c.method==='update.prepare'));
