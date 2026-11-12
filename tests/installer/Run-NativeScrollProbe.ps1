@@ -26,7 +26,7 @@ $html=$html.Replace('</body>','<script src="/native-scroll-probe.js"></script></
 Copy-Item -LiteralPath 'tests/installer/native-scroll-probe.js' -Destination (Join-Path $app 'wwwroot\native-scroll-probe.js')
 $data=Join-Path $app 'Data'
 New-Item -ItemType Directory -Path $data -Force|Out-Null
-[IO.File]::WriteAllText((Join-Path $data 'settings.json'),'{"language":"ja","welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","sync":true}',[Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $data 'settings.json'),'{"language":"ja","welcomeShown":true,"updateCheckDays":-1,"sessionPolicy":"clear","sync":true,"softBreaks":true,"showLineBreaks":true,"showFullWidthSpaces":true,"showTabs":true,"showSpaces":true,"wrap":true,"fontSize":15}',[Text.UTF8Encoding]::new($false))
 $file=Join-Path $root 'fixture.md'
 Copy-Item -LiteralPath 'examples/Welcome.md' -Destination $file
 $process=Start-Process -FilePath (Join-Path $app 'MD-Split.exe') -ArgumentList ('"'+$file+'"') -PassThru
