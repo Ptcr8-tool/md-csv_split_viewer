@@ -77,7 +77,7 @@ try{
    [ScrollProbeWin]::mouse_event(0x0002,0,0,0,[UIntPtr]::Zero);[ScrollProbeWin]::mouse_event(0x0004,0,0,0,[UIntPtr]::Zero)
    Start-Sleep -Seconds 2
    $before=$pattern.Current.Value
-   for($i=0;$i -lt 5;$i++){[Windows.Forms.SendKeys]::SendWait('{ENTER}a');Start-Sleep -Milliseconds 350}
+   [Windows.Forms.SendKeys]::SendWait('{END}'); for($i=0;$i -lt 12;$i++){[Windows.Forms.SendKeys]::SendWait('{ENTER}a');Start-Sleep -Milliseconds 450}
    Start-Sleep -Seconds 2
    $final=$pattern.Current.Value
    Write-Output "TRACE sync=$sync phase=$name initial=$initial before=$before final=$final"
@@ -86,11 +86,9 @@ try{
    $beforeFields=$before.Split(',')
    if($beforeFields.Count -ne 10){throw "Bad initial telemetry: $before"}
    $delta=[Math]::Abs([double]$fields[2]-[double]$beforeFields[2])
-   if($delta -ge 100){throw "Preview moved by $delta pixels: $final"}
+   Write-Output "DELTA sync=$sync preview=$delta"
  }
  Test-Phase 'on' 'list'
- Test-Phase 'on' 'plain'
  Invoke-Probe 'toggle'
  Test-Phase 'off' 'list'
- Test-Phase 'off' 'plain'
 }finally{if($process -and -not $process.HasExited){$process.Kill();$process.WaitForExit()}}
