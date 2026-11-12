@@ -1,0 +1,35 @@
+name: Candidate native WebView2 video probe
+on:
+  push:
+    branches: ['verify/native-scroll-probe']
+permissions:
+  contents: read
+jobs:
+  native-scroll:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: aa8dd28d04a65bea4d2c4702cbdc4a7123b864d5
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - run: npm ci
+        working-directory: candidate
+      - run: npm run publish:win
+        working-directory: candidate
+      - name: Reproduce editing in real WebView2
+        shell: powershell
+        run: '& ./tests/installer/Run-NativeScrollProbe.ps1 -Setup candidate/release/MD-Split'
