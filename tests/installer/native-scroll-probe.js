@@ -20,6 +20,7 @@
     }
     const offset=line.getBoundingClientRect().top-source.getBoundingClientRect().top;
     if(offset<0||offset>source.clientHeight-20){probe.value='notvisible:'+name;probe.setAttribute('value',probe.value);return;}
+    for(const old of document.querySelectorAll('[aria-label="probe target"]')){old.removeAttribute('aria-label');old.removeAttribute('role');}
     line.setAttribute('role','text');line.setAttribute('aria-label','probe target');
     await sleep(500);
     initial=preview.scrollTop;minimum=initial;maximum=initial;sourceStart=source.scrollTop;events=keys=inputs=0;phase=name;
