@@ -50,7 +50,7 @@ for(const sync of [true,false])test(`list editing followed by mouse-selected pla
  await settleScroll(page);await waitForScrollReady(page);
  const pt=await page.evaluate(p=>{const rect=window.__mdSplit.editor().coordsAtPos(p);return rect?{x:rect.left+1,y:(rect.top+rect.bottom)/2}:null;},pos);
  expect(pt).not.toBeNull();await page.mouse.click(pt.x,pt.y);
- await page.waitForTimeout(300);await settleScroll(page);const sample=()=>page.evaluate(()=>({source:window.__mdSplit.editor().scrollDOM.scrollTop,preview:document.querySelector('#preview').scrollTop,focus:document.activeElement?.className}));let trace=[await sample()];
+ await page.waitForTimeout(300);if(!sync)await page.locator('#preview').evaluate(n=>{n.scrollTop=700;});await settleScroll(page);const sample=()=>page.evaluate(()=>({source:window.__mdSplit.editor().scrollDOM.scrollTop,preview:document.querySelector('#preview').scrollTop,focus:document.activeElement?.className}));let trace=[await sample()];
  for(let i=0;i<10;i++){await page.keyboard.press('Enter');await page.keyboard.insertText('a');await page.waitForTimeout(250);trace.push(await sample());}
  console.log('sequence-trace',sync,JSON.stringify(trace));let ds=Math.abs(trace.at(-1).source-trace[0].source),dp=Math.abs(trace.at(-1).preview-trace[0].preview);expect(dp).toBeLessThan(ds*3+160);
 });
