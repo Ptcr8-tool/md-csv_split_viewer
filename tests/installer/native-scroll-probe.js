@@ -3,15 +3,15 @@
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   async function selectPhase(name){
     phase='loading';probe.value='loading';probe.setAttribute('value','loading');
-    const target=name==='list'?(iteration?'にんじん':'野菜を買う'):(iteration?'この文章も':'この段落を選んで');
+    const target='別ウィンドウの表示';
     let line=null;
-    for(let top=0;top<4500;top+=Math.max(100,source.clientHeight*.6)){
+    for(let top=0;top<source.scrollHeight;top+=Math.max(100,source.clientHeight*.6)){
       source.scrollTop=top;await sleep(70);
       line=[...document.querySelectorAll('.cm-line')].find(x=>x.textContent.includes(target));if(line)break;
     }
     if(!line){probe.value='notfound:'+name;probe.setAttribute('value',probe.value);return;}
     for(let tries=0;tries<6;tries++){
-      source.scrollTop+=line.getBoundingClientRect().top-source.getBoundingClientRect().top-120;
+      source.scrollTop+=line.getBoundingClientRect().top-source.getBoundingClientRect().top-source.clientHeight*.55;
       await sleep(500);
       line=[...document.querySelectorAll('.cm-line')].find(x=>x.textContent.includes(target));
       if(!line){probe.value='lost:'+name;probe.setAttribute('value',probe.value);return;}
