@@ -1,0 +1,27 @@
+name: Native WebView2 preview scroll probe
+on:
+  push:
+    branches: ['verify/native-scroll-probe']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-scroll:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: MD-Split-Windows-setup
+          run-id: 43037080669
+          github-token: ${{ github.token }}
+          path: setup
+      - name: Verify source editing in real WebView2
+        shell: powershell
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath setup -Recurse -Filter 'MD-Split-*-Setup.exe' -File)
+          if ($setups.Count -ne 1) { throw 'Expected one setup.' }
+          & ./tests/installer/Run-NativeScrollProbe.ps1 -Setup $setups[0].FullName
