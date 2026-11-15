@@ -2,7 +2,9 @@
 
 This text editor is designed for Markdown and CSV. It also edits text, configuration and code files and previews HTML.
 
-In this editable guide, the left side shows the **Markdown source** and the right side shows the **rendered document**. Edit either side and the other updates. Try changing the note below. You can reopen a fresh copy from Help at any time.
+In this editable guide, the left side shows the **Markdown source** and the right side shows the **rendered document**. Edit either side and the other updates. Try changing the note below.
+
+**Use Save As to keep your changes.** Choose **Save As** or press **Ctrl+Shift+S**, then select your own folder and filename. Each time you choose **Open editable guide** in Help, a new guide opens with the original contents. Editing or overwriting a saved copy does not change the original guide. Your saved files and existing edited tabs are kept.
 
 > Today's note: check the shopping list before leaving.
 
@@ -10,7 +12,7 @@ In this editable guide, the left side shows the **Markdown source** and the righ
 
 1. Type on either side and check the change on the other side.
 2. Select some text and press the bold button. The shared toolbar acts on the side you last used.
-3. Press **Ctrl+S** or the save icon to save your own Markdown file.
+3. Choose **Save As** or press **Ctrl+Shift+S** to save your own Markdown file.
 
 This guide opens as an untitled document. If you do not need your changes, discard them when closing. An example screenshot appears near the end of the guide.
 
@@ -26,7 +28,7 @@ Choose paragraph or heading levels 1–6 from the toolbar. Headings also appear 
 
 ### A smaller heading
 
-You can edit this text directly on the right. In normal mode, Enter starts a paragraph and Shift+Enter inserts a line break. Settings control whether a single source line break is shown on the right; Discord mode displays single line breaks.
+You can edit this text directly on the right. Enter inserts one source line break; Shift+Enter inserts a Markdown hard break. Add an empty line to separate paragraphs. Settings control whether a single source line break is shown on the right; Discord mode displays single line breaks.
 
 Insert a horizontal rule with the toolbar:
 

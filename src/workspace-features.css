@@ -75,3 +75,14 @@ dialog.regex-dialog{width:min(680px,90vw);max-height:min(780px,calc(100dvh - 36p
 .regex-sample-value{display:grid;grid-template-columns:38px minmax(0,1fr);width:100%;gap:8px;font-size:11px}
 .regex-sample-value>span{color:var(--muted)}
 @media(max-width:500px){.regex-reference-row{grid-template-columns:1fr;gap:3px}.regex-dialog .dialog-heading{padding:14px 16px}.regex-dialog #dialog-body{padding:0 16px 16px}.regex-dialog .dialog-actions{padding:10px 16px}}
+
+/* Read-only Markdown in the update confirmation. */
+.update-notes{white-space:normal;max-height:min(42vh,340px);font-size:13px;line-height:1.65;overflow-wrap:anywhere}
+.update-notes>:first-child{margin-top:0}.update-notes>:last-child{margin-bottom:0}
+.update-notes h1,.update-notes h2,.update-notes h3,.update-notes h4,.update-notes h5,.update-notes h6{line-height:1.4;margin:1em 0 .5em;font-weight:650}
+.update-notes h1{font-size:1.25em}.update-notes h2{font-size:1.15em}.update-notes h3,.update-notes h4,.update-notes h5,.update-notes h6{font-size:1.05em}
+.update-notes p{margin:.5em 0}.update-notes ul,.update-notes ol{padding-left:1.5em;margin:.5em 0}.update-notes li{margin:.3em 0}.update-notes li>p{margin:.15em 0}
+.update-notes li>input[type=checkbox]{margin-right:.4em}.update-notes li:has(>input[type=checkbox])>p:first-of-type{display:inline}
+.update-notes a{color:var(--syntax-link);text-decoration:underline;text-underline-offset:2px}.update-notes blockquote{border-left:3px solid var(--quote-border);margin:.7em 0;padding:0 0 0 .8em;color:var(--muted)}
+.update-notes code{font: .92em Consolas,'Cascadia Code',monospace;background:var(--green-soft);padding:.1em .25em;border-radius:3px}.update-notes pre{overflow:auto;white-space:pre;padding:.65em;background:var(--source);border:1px solid var(--line);border-radius:5px}.update-notes pre code{padding:0;background:none}
+.update-notes hr{border:0;border-top:1px solid var(--line);margin:.8em 0}.update-notes img{max-width:100%;height:auto}.update-notes-table{overflow:auto}.update-notes table{border-collapse:collapse;width:100%}.update-notes th,.update-notes td{border:1px solid var(--line);padding:.3em .5em;text-align:left}

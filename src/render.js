@@ -34,16 +34,39 @@ const graphemeSegmenter=new Intl.Segmenter('ja',{granularity:'grapheme'});
 export class RichRenderer {
   constructor(container, callbacks) { this.container=container; this.callbacks=callbacks; this.epoch=0; this.openDetails=new Set(); }
   render(source, mode, docId, options={}) {
+    // Keep existing diagram slots stable while asynchronous SVG drawing completes.
+    // Rebuild this snapshot each time; never retain a previous document's stages.
+    this.diagramHeights=new Map();
+    if(this.docId===docId)for(const stage of this.container.querySelectorAll('.mermaid-stage')){
+      if(stage._diagramCode==null)continue;
+      const heights=this.diagramHeights.get(stage._diagramCode)||[];
+      heights.push(stage.getBoundingClientRect().height);this.diagramHeights.set(stage._diagramCode,heights);
+    }
     this.source=source; this.mode=mode; this.docId=docId; this.epoch++;
     this.options=options;this.maps=new WeakMap(); this.leaves=[]; this.formats=[]; this.images=[];this.codeBlocks=[];this.headings=[];
     const fragment=document.createDocumentFragment();
     this.blocks(source,0,fragment);
     const hint=options.selection?.from,at=hint??source.length;
-    const trailing=/\r?\n[ \t]*$/.test(source)&&at===source.length;
-    const code=this.codeBlocks.find(c=>at>=c.contentFrom&&at<=c.contentTo);
-    if(source.length&&!code&&(trailing||hint!=null&&!lineAt(source,at).text.trim())&&!this.leaves.some(l=>l.from===at||l.to===at)){
-      const p=el('p','empty-paragraph');p.dataset.block='';p.dataset.from=at;p.dataset.to=at;p.append(this.leaf('',at,at));const next=Array.from(fragment.childNodes).find(n=>Number(n.dataset?.from)>at);fragment.insertBefore(p,next||null);
+    // CommonMark omits some line-edge spaces from its syntax tree. Preserve a
+    // real, mapped caret position while the user is editing those spaces.
+    if(hint!=null&&source[hint-1]===' '&&!this.leaves.some(l=>l.map.some((p,i)=>p===hint&&i>0&&l.node.data[i-1]===' '))){
+      let start=hint;while(start>0&&source[start-1]===' ')start--;
+      const lineStart=Math.max(source.lastIndexOf('\n',start-1),source.lastIndexOf('\r',start-1))+1;
+      const before=this.leaves.findLast(l=>l.to<=start&&l.to>=lineStart);
+      const after=this.leaves.find(l=>l.from>=hint&&source.slice(hint,l.from).indexOf('\n')<0&&source.slice(hint,l.from).indexOf('\r')<0);
+      const gap=before?source.slice(before.to,start):'';
+      if(before&&/^[*_~`\])]*$/.test(gap)||!before&&after&&/^ *$/.test(source.slice(lineStart,hint))){
+        const space=this.leaf(source.slice(start,hint),start,hint),created=this.leaves.pop();
+        const index=before?this.leaves.indexOf(before)+1:this.leaves.indexOf(after);
+        this.leaves.splice(index,0,created);
+        let anchor=(before||after).node.parentElement.closest('.md-leaf');
+        if(before&&gap)while(anchor.parentElement&&!anchor.parentElement.hasAttribute('data-block'))anchor=anchor.parentElement;
+        if(before)anchor.after(space);else anchor.before(space);
+      }
     }
+    // Preserve every editable blank source line, not only the line containing
+    // the current caret. Markdown parsers intentionally omit these lines.
+    if(source.length)this.addBlankLines(fragment);
     if(!fragment.childNodes.length){ const p=el('p');p.dataset.block='';p.dataset.from='0';p.dataset.to='0';p.append(this.leaf('',0,0));fragment.append(p); }
     this.container.replaceChildren(fragment);
     this.container.classList.toggle('is-empty',!source.length);
@@ -51,17 +74,69 @@ export class RichRenderer {
     this.container.classList.toggle('preserve-lines',mode==='discord'||options.softBreaks!==false);
     return this.epoch;
   }
+  addBlankLines(fragment) {
+    const depth=node=>{let value=0;while(node.parentNode){value++;node=node.parentNode;}return value;};
+    // Sweep intervals in source order. Most lines overlap only a few active
+    // blocks, avoiding a full-document scan for every blank line.
+    const sweep=items=>{
+      const ordered=items.sort((a,b)=>a.from-b.from||a.to-b.to);let index=0,active=[];
+      return pos=>{while(index<ordered.length&&ordered[index].from<=pos)active.push(ordered[index++]);active=active.filter(x=>x.to>=pos);return active;};
+    };
+    const entry=node=>({node,from:Number(node.dataset.from),to:Number(node.dataset.to),depth:depth(node)});
+    const activeContainers=sweep(Array.from(fragment.querySelectorAll('blockquote[data-block],li[data-block],details.md-details[data-block]'),entry));
+    const activeLists=sweep(Array.from(fragment.querySelectorAll('ul[data-block],ol[data-block]'),entry));
+    const activeAtomic=sweep(Array.from(fragment.querySelectorAll('.raw-block[data-block],.table-wrap[data-block],.mermaid-block[data-block]'),entry));
+    const activeCode=sweep(this.codeBlocks.map(c=>({from:c.from,to:c.to-1})));
+    const childrenByParent=new Map(),itemsByList=new Map();
+    const existing=new Set(this.leaves.filter(l=>l.from===l.to).map(l=>l.from));
+    let at=0;
+    while(at<=this.source.length){
+      const line=lineAt(this.source,at);
+      const plain=/^[ \t]*$/.test(line.text);
+      const quoted=/^ {0,3}(?:>[ \t]?)+[ \t]*$/.test(line.text);
+      const position=line.end;
+      if((plain||quoted)&&!existing.has(position)&&!activeCode(line.start).length&&!activeAtomic(line.start).length){
+        let active=activeContainers(line.start).filter(x=>x.node.tagName!=='BLOCKQUOTE'||quoted);
+        let parent=active.reduce((best,x)=>!best||x.depth>best.depth?x:best,null)?.node;
+        if(parent?.tagName==='DETAILS')parent=parent.querySelector(':scope > .details-body');
+        if(!parent){
+          active=activeLists(line.start);
+          const list=active.reduce((best,x)=>!best||x.depth>best.depth?x:best,null)?.node;
+          if(list){
+            let items=itemsByList.get(list);
+            if(!items){items=Array.from(list.children).filter(n=>n.tagName==='LI');itemsByList.set(list,items);}
+            let lo=0,hi=items.length;while(lo<hi){const mid=(lo+hi)>>>1;if(Number(items[mid].dataset.from)<=line.start)lo=mid+1;else hi=mid;}
+            parent=items[lo-1];
+          }
+        }
+        parent ||= fragment;
+        const blank=el('div','empty-paragraph source-blank-line');
+        blank.dataset.block='';blank.dataset.from=position;blank.dataset.to=position;
+        blank.append(this.leaf('',position,position));
+        let children=childrenByParent.get(parent);
+        if(!children){children=Array.from(parent.children||parent.childNodes).filter(n=>n.dataset?.from!==undefined);childrenByParent.set(parent,children);}
+        let lo=0,hi=children.length;while(lo<hi){const mid=(lo+hi)>>>1;if(Number(children[mid].dataset.from)<=position)lo=mid+1;else hi=mid;}
+        parent.insertBefore(blank,children[lo]||null);
+      }
+      if(!line.eol)break;
+      at=line.end+line.eol.length;
+    }
+    this.leaves.sort((a,b)=>a.from-b.from||a.to-b.to);
+  }
   leaf(value,from,to,kind='text',rawValue,highlights=[]) {
     value=normalized(value);
     const span=el('span','md-leaf');span.dataset.from=from;span.dataset.to=to;span.dataset.kind=kind;
     const raw=rawValue ?? this.source.slice(from,to);
     const map=textMap(raw,value,from,decodeNamedCharacterReference);
     const cuts=new Set([0,value.length]);for(const h of highlights){cuts.add(h.from);cuts.add(h.to);}
+    const preserveSpaces=kind==='text'&&this.mode!=='discord'&&this.options.softBreaks===false;
+    if(preserveSpaces)for(const run of value.matchAll(/ +/g)){cuts.add(run.index);cuts.add(run.index+run[0].length);}
     for(let i=0;i<value.length;i++)if(whitespaceMark(value[i],this.options)){cuts.add(i);cuts.add(i+1);}
     const points=Array.from(cuts).sort((a,b)=>a-b);
     const append=(a,b)=>{const text=document.createTextNode(value.slice(a,b)||'\u200b'),slice=value?map.slice(a,b+1):[from,from];let parent=span;
       const classes=highlights.filter(h=>h.from<=a&&h.to>=b).map(h=>h.classes).join(' '),mark=b===a+1?whitespaceMark(value[a],this.options):null;
-      if(classes||mark){parent=el('span',classes+(mark?' visible-whitespace ws-'+mark[0]:''));if(mark){if(mark[0]==='line-break'){const appearance=lineBreakAppearance(this.source.slice(map[a],map[b]),this.options.distinguishLineBreaks!==false);parent.dataset.mark=appearance.glyph;parent.title=appearance.label;}else parent.dataset.mark=mark[1];}span.append(parent);}
+      const spaceRun=preserveSpaces&&/^ +$/.test(value.slice(a,b));
+      if(classes||mark||spaceRun){parent=el('span',classes+(mark?' visible-whitespace ws-'+mark[0]:'')+(spaceRun?' md-space-run':''));if(mark){if(mark[0]==='line-break'){const appearance=lineBreakAppearance(this.source.slice(map[a],map[b]),this.options.distinguishLineBreaks!==false);parent.dataset.mark=appearance.glyph;parent.title=appearance.label;}else parent.dataset.mark=mark[1];}span.append(parent);}
       parent.append(text);this.maps.set(text,slice);this.leaves.push({node:text,map:slice,from:slice[0],to:slice.at(-1),kind});
     };
     if(!value)append(0,0);else for(let i=0;i<points.length-1;i++)append(points[i],points[i+1]);return span;
@@ -214,7 +289,7 @@ export class RichRenderer {
   mermaid(node,from,to,start,end) {
     const n=el('figure','mermaid-block');n.contentEditable='false';n.dataset.atom='true';n.dataset.from=from;n.dataset.to=to;
     const tools=el('div','component-tools');const label=el('span');label.textContent='MERMAID';tools.append(label);
-    const stage=el('div','mermaid-stage');stage.textContent=tr('図を描画しています…','Rendering diagram…');
+    const stage=el('div','mermaid-stage');stage._diagramCode=node.value;const previousHeight=this.diagramHeights.get(node.value)?.shift();if(previousHeight)stage.style.minHeight=`${previousHeight}px`;stage.textContent=tr('図を描画しています…','Rendering diagram…');
     const edit=el('textarea','diagram-code');edit.hidden=true;edit.setAttribute('aria-label',tr('Mermaidコード','Mermaid code'));edit.value=this.source.slice(start,end);
     const button=(name,action)=>{const b=el('button');b.type='button';b.textContent=name;b.addEventListener('click',action);tools.append(b);return b;};
     button(tr('コード編集','Edit code'),()=>{edit.hidden=!edit.hidden;if(!edit.hidden)edit.focus();});
@@ -233,7 +308,7 @@ export class RichRenderer {
     n.append(tools,stage,error,edit);this.drawDiagram(stage,node.value,error);return n;
   }
   async drawDiagram(stage,code,error) {
-    const ticket=(stage._ticket||0)+1;stage._ticket=ticket;
+    const ticket=(stage._ticket||0)+1;stage._ticket=ticket;stage._diagramCode=code;
     try {
       const {default:mermaid}=await import('mermaid');
       if(!this.mermaidInitialized){mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'neutral',suppressErrorRendering:true,htmlLabels:false,secure:['secure','securityLevel','htmlLabels','startOnLoad','suppressErrorRendering','maxTextSize','maxEdges'],flowchart:{htmlLabels:false}});this.mermaidInitialized=true;}
@@ -242,6 +317,7 @@ export class RichRenderer {
       if(stage._ticket!==ticket)return;
       stage.innerHTML=DOMPurify.sanitize(result.svg,{USE_PROFILES:{svg:true,svgFilters:true},FORBID_TAGS:['script','foreignObject']});error.hidden=true;
     }catch(e){if(stage._ticket!==ticket)return;error.textContent=tr('図を更新できません。コードを確認してください。','Could not update the diagram. Check the code.');error.title=String(e.message||e);error.hidden=false;if(!stage.querySelector('svg'))stage.textContent=tr('Mermaidコードから図を描画できませんでした。','Could not render the Mermaid diagram.');}
+    finally{if(stage._ticket===ticket)stage.style.minHeight='';}
   }
   rebase(from,to,insert) {
     const delta=insert.length-(to-from);
