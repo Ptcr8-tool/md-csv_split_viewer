@@ -1,5 +1,10 @@
 import {test,expect} from '@playwright/test';
-test.beforeEach(async({page})=>{await page.goto('/');await page.waitForFunction(()=>window.__mdSplit);});
+test.beforeEach(async({page})=>{
+  page.on('pageerror',error=>console.error('STARTUP_PAGE_ERROR',error.stack||error.message));
+  page.on('requestfailed',request=>{if(!request.failure()?.errorText?.includes('ERR_ABORTED'))console.error('STARTUP_REQUEST_FAILED',request.url(),request.failure()?.errorText);});
+  await page.goto('/');
+  await page.waitForFunction(()=>window.__mdSplit);
+});
 const setText=(page,text)=>page.evaluate(text=>window.__mdSplit.setText(text),text);
 const getText=page=>page.evaluate(()=>window.__mdSplit.getText());
 

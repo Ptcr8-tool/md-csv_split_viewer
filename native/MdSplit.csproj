@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>MD-Split</AssemblyName>
     <RootNamespace>MdSplit</RootNamespace>
-    <Version>1.1.2</Version>
+    <Version>1.1.3</Version>
     <Product>MD-CSV Split Editor</Product>
     <Description>Text, Markdown and CSV editor</Description>
     <ApplicationIcon>app.ico</ApplicationIcon>
