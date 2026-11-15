@@ -6,7 +6,7 @@ READMEやメモの作成、AIから受け取ったMarkdownの確認、Discordの
 
 ![Markdownの原文と展開表示を並べた画面。見出しナビから移動し、左右どちらからも編集できます](docs/screenshots/01-markdown-split.png)
 
-**最新版 v1.1.1**：CSV・TSV のセル操作を改善し、エクスプローラーの右クリックメニューを使いやすくしました。[v1.1.1 の変更点](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/tag/v1.1.1)
+**最新版 v1.1.3**：Markdownの改行・空行、プレビューのスクロール、折りたたみの連動を修正しました。[v1.1.3 の変更点](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/tag/v1.1.3)
 
 [ダウンロード](#download) · [対応ファイル](#formats) · [Markdown](#markdown) · [CSV・TSV](#csv-tsv) · [Discord](#discord) · [表示と設定](#appearance)
 
@@ -32,6 +32,7 @@ READMEやメモの作成、AIから受け取ったMarkdownの確認、Discordの
 <!-- downloads:start -->
 | バージョン | 対応環境 | ダウンロード | 主な内容 |
 |---|---|---|---|
+| 1.1.3 | Windows 10／11・x64 | [⬇ Setup.exe](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.3/MD-Split-1.1.3-Setup.exe) | Markdownの改行・プレビュー表示を修正 |
 | 1.1.1 | Windows 10／11・x64 | [⬇ Setup.exe](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.1/MD-Split-1.1.1-Setup.exe) | CSV・TSV のセル操作と右クリックメニューを改善 |
 | 1.1.0 | Windows 10／11・x64 | [⬇ Setup.exe](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.0/MD-Split-1.1.0-Setup.exe) | 言語切替・タブ操作・アイコンと関連付けを改善 |
 | 1.0.3 | Windows 10／11・x64 | [⬇ Setup.exe](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.0.3/MD-Split-1.0.3-Setup.exe) | GitHub のビルド出所証明による更新検証 |
@@ -226,7 +227,7 @@ Windows版では、タブをドラッグして同じウィンドウ内で並べ�
 
 起動時の更新確認は **なし／毎回／1日／7日／30日／指定した日数** から選べます。公開されたGitHub Releasesへバックグラウンドで問い合わせ、新しい版がある場合に確認します。更新を選んだ後にダウンロードし、署名・サイズ・SHA-256などの検証に成功したファイルだけを使用します。
 
-v1.0.2以前から最新版へ更新する場合は、[最新版のセットアップ](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.1/MD-Split-1.1.1-Setup.exe)を手動でダウンロードし、アプリを終了して実行してください。v1.0.3からはアプリ内の更新確認も利用でき、GitHub Actionsが発行したビルド出所証明を使って更新ファイルを検証します。これはWindowsの発行元証明書とは別のもので、SmartScreenの警告を解消するものではありません。
+v1.0.2以前から最新版へ更新する場合は、[最新版のセットアップ](https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.3/MD-Split-1.1.3-Setup.exe)を手動でダウンロードし、アプリを終了して実行してください。v1.0.3からはアプリ内の更新確認も利用でき、GitHub Actionsが発行したビルド出所証明を使って更新ファイルを検証します。これはWindowsの発行元証明書とは別のもので、SmartScreenの警告を解消するものではありません。
 
 更新先へ接続できない場合は、小さな通知で知らせて編集を続けられます。セットアップ自体はネットワークへ接続しませんが、アプリの更新確認・ダウンロード、URL画像の表示、外部リンクを開く操作では通信が発生します。
 
@@ -234,7 +235,7 @@ v1.0.2以前から最新版へ更新する場合は、[最新版のセットア�
 
 ## 確認状況と資料
 
-掲載画像は、v1.0.3 のソースをブラウザーで起動し、サンプル文書を使って撮影したものです。Windows 固有の機能やダイアログ、インストーラーは含まず、公開中の Web 版とは一部異なる場合があります。v1.1.1 は GitHub Actions の Windows 環境でインストール、v1.0.2・v1.0.3・v1.1.0 からの更新、修復、アンインストールを検証しています。旧版からの更新後の `.bat` 実行も確認していますが、`.cmd` の実行自体はこのテストに含まれていません。個々の利用環境や Microsoft IME などの動作は引き続き確認が必要です。[検証したワークフロー](https://github.com/Ptcr8-tool/md-csv_split_viewer/actions/runs/43122898228)。Windows の発行元署名（Authenticode）は未付与です。
+掲載画像は、v1.0.3 のソースをブラウザーで起動し、サンプル文書を使って撮影したものです。Windows 固有の機能やダイアログ、インストーラーは含まず、公開中の Web 版とは一部異なる場合があります。v1.1.3 は GitHub Actions の Windows 環境でインストール、v1.0.2・v1.0.3・v1.1.0・v1.1.1 からの更新、修復、アンインストールを検証しています。旧版からの更新後の `.bat` 実行も確認していますが、`.cmd` の実行自体はこのテストに含まれていません。個々の利用環境や Microsoft IME などの動作は引き続き確認が必要です。[検証したワークフロー](https://github.com/Ptcr8-tool/md-csv_split_viewer/actions/runs/43675384207)。Windows の発行元署名（Authenticode）は未付与です。
 
 [変更履歴](CHANGELOG.md) · [安全性と更新処理](SECURITY.md) · [検証結果](VALIDATION.md) · [ビルド・配布手順](docs/Releasing.md) · [第三者ライセンス](THIRD_PARTY_NOTICES.txt)
 
