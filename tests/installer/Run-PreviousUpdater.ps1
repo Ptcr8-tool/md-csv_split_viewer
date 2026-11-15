@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)][string] $CandidateSetup,
     [Parameter(Mandatory = $true)][string] $CandidateProof,
     [Parameter(Mandatory = $true)][string] $CandidateVersion,
-    [ValidateSet('1.0.3', '1.1.0')][string] $OldVersion = '1.0.3',
+    [ValidateSet('1.0.3', '1.1.0', '1.1.1')][string] $OldVersion = '1.0.3',
     [switch] $AssumeOlderForTest
 )
 $ErrorActionPreference = 'Stop'
@@ -14,6 +14,7 @@ $proof = (Resolve-Path -LiteralPath $CandidateProof).Path
 $expectedOldSha = @{
     '1.0.3' = '172cf4a064cbdd3016241403d64762ad6ea3a420560c85ad5df639873a5aa24a'
     '1.1.0' = '882eb35b0d7bf89d59c45eeac7cccc0e5a31199d9015b6acd6617ddc3c90da30'
+    '1.1.1' = 'd128adc0d52376bf7265bf082b97e0501c706b6eacec66c2fdbb5a94038cce0f'
 }[$OldVersion]
 if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedOldSha) { throw "The old setup does not match published v$OldVersion." }
 if ($CandidateVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid candidate version.' }

@@ -89,6 +89,15 @@ jobs:
           Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.0/MD-Split-1.1.0-Setup.exe.sigstore.json' -OutFile $oldProof -MaximumRetryCount 5 -RetryIntervalSec 10
           if ((Get-FileHash -LiteralPath $oldProof -Algorithm SHA256).Hash.ToLowerInvariant() -cne '5a100c2c56ad040eeea40cf2d8860b5663029107db9f82dac21152dc34f5d684') { throw 'Published v1.1.0 proof hash mismatch.' }
           & ./tests/installer/Run-PreviousUpdater.ps1 -OldSetup $old -OldVersion '1.1.0' -CandidateSetup $old -CandidateProof $oldProof -CandidateVersion '1.1.0' -AssumeOlderForTest
+      - name: Verify the shipped v1.1.1 updater against its published proof
+        shell: pwsh
+        run: |
+          $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.1.1-Setup.exe'
+          $oldProof = "$old.sigstore.json"
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.1/MD-Split-1.1.1-Setup.exe' -OutFile $old -MaximumRetryCount 5 -RetryIntervalSec 10
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.1/MD-Split-1.1.1-Setup.exe.sigstore.json' -OutFile $oldProof -MaximumRetryCount 5 -RetryIntervalSec 10
+          if ((Get-FileHash -LiteralPath $oldProof -Algorithm SHA256).Hash.ToLowerInvariant() -cne '4881c771198e95bef0621d7c745e149c307dd5fd35c04499922369b43771e1ad') { throw 'Published v1.1.1 proof hash mismatch.' }
+          & ./tests/installer/Run-PreviousUpdater.ps1 -OldSetup $old -OldVersion '1.1.1' -CandidateSetup $old -CandidateProof $oldProof -CandidateVersion '1.1.1' -AssumeOlderForTest
 
   build:
     if: github.repository == 'Ptcr8-tool/md-csv_split_viewer' && github.repository_id == '1440570920' && github.ref_type == 'tag'
@@ -196,6 +205,17 @@ jobs:
         env:
           SETUP_NAME: ${{ steps.identity.outputs.setup }}
         run: ./tests/installer/Run-UpgradeV102Smoke.ps1 -OldSetup (Join-Path $env:RUNNER_TEMP 'MD-Split-1.1.0-Setup.exe') -OldVersion '1.1.0' -NewSetup "release/$env:SETUP_NAME"
+      - name: Download and verify v1.1.1
+        shell: pwsh
+        run: |
+          $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.1.1-Setup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.1/MD-Split-1.1.1-Setup.exe' -OutFile $old -MaximumRetryCount 5 -RetryIntervalSec 10
+          if ((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'd128adc0d52376bf7265bf082b97e0501c706b6eacec66c2fdbb5a94038cce0f') { throw 'Published v1.1.1 setup hash mismatch.' }
+      - name: Verify upgrade and data preservation from v1.1.1
+        shell: powershell
+        env:
+          SETUP_NAME: ${{ steps.identity.outputs.setup }}
+        run: ./tests/installer/Run-UpgradeV102Smoke.ps1 -OldSetup (Join-Path $env:RUNNER_TEMP 'MD-Split-1.1.1-Setup.exe') -OldVersion '1.1.1' -NewSetup "release/$env:SETUP_NAME"
       - name: Verify CSV clipboard in WebView2
         shell: powershell
         run: ./tests/installer/Run-CsvClipboardWebView2.ps1 -Payload 'release/MD-Split'
@@ -318,6 +338,15 @@ jobs:
           $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.1.0-Setup.exe'
           Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.0/MD-Split-1.1.0-Setup.exe' -OutFile $old -MaximumRetryCount 5 -RetryIntervalSec 10
           & ./tests/installer/Run-PreviousUpdater.ps1 -OldSetup $old -OldVersion '1.1.0' -CandidateSetup "release-input/release/$env:SETUP_NAME" -CandidateProof "release-input/release/$env:SETUP_NAME.sigstore.json" -CandidateVersion $env:VERSION
+      - name: Verify candidate with the shipped v1.1.1 updater
+        shell: pwsh
+        env:
+          SETUP_NAME: ${{ needs.build.outputs.setup }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          $old = Join-Path $env:RUNNER_TEMP 'MD-Split-1.1.1-Setup.exe'
+          Invoke-WebRequest -Uri 'https://github.com/Ptcr8-tool/md-csv_split_viewer/releases/download/v1.1.1/MD-Split-1.1.1-Setup.exe' -OutFile $old -MaximumRetryCount 5 -RetryIntervalSec 10
+          & ./tests/installer/Run-PreviousUpdater.ps1 -OldSetup $old -OldVersion '1.1.1' -CandidateSetup "release-input/release/$env:SETUP_NAME" -CandidateProof "release-input/release/$env:SETUP_NAME.sigstore.json" -CandidateVersion $env:VERSION
       - name: Store verified attestation
         id: artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
