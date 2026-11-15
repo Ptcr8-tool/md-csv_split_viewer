@@ -234,7 +234,22 @@ jobs:
       - name: Verify binary viewer in WebView2
         shell: powershell
         run: ./tests/installer/Run-BinaryViewer.ps1 -Payload 'release/MD-Split'
-      - run: npm run test:ui
+      - name: Run browser UI tests in isolated shards
+        shell: pwsh
+        run: |
+          for ($shard = 1; $shard -le 4; $shard++) {
+            Write-Output "Running browser UI shard $shard/4"
+            & npm run test:ui -- ("--shard={0}/4" -f $shard)
+            if ($LASTEXITCODE -ne 0) { throw "Browser UI shard $shard failed." }
+          }
+      - name: Preserve browser UI failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: browser-ui-failure
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Hash the tested release
         id: hashes
         shell: pwsh

@@ -67,6 +67,7 @@ test('space before and inside bold retains the text and order',async({page})=>{
 
 test('spaces remain distinct when soft-break display is disabled',async({page})=>{
   await page.getByRole('button',{name:'設定',exact:true}).click();await page.locator('#setting-soft-breaks').uncheck();await page.getByRole('button',{name:'適用',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__mdSplit.settings().softBreaks)).toBe(false);
   await setText(page,'a   b\nc');
   const result=await page.evaluate(()=>{
     const preview=document.querySelector('#preview');
