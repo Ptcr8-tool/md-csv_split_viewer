@@ -14,11 +14,11 @@ internal static class CsvViewChecks
         var sidecar = csv + ".mdsplit-view.json";
         assert(CsvViewStore.SidecarPath(csv) == sidecar && CsvViewStore.Load(csv) is null, "CSV sidecar name is derived from the document and missing preferences do not create a file");
         var view = Json("""
-        {"version":1,"columnLabel":"numbers","wrap":false,"enterDirection":"right","stripedRows":true,"defaultColumnWidth":180,"defaultRowHeight":0,"freezeRows":2,"freezeColumns":1,"hiddenRows":[3],"hiddenColumns":[2],"rowHeights":{"1":60},"columnWidths":{"0":200},"alignment":{"horizontal":"left","vertical":"viewport"},"rowAlignment":{"0":{"horizontal":"center"}},"columnAlignment":{"2":{"vertical":"bottom"}},"cellAlignment":{"2:3":{"horizontal":"right","vertical":"middle"}}}
+        {"version":1,"columnLabel":"numbers","wrap":false,"enterDirection":"right","stripedRows":true,"defaultColumnWidth":180,"defaultRowHeight":0,"freezeRows":2,"freezeColumns":1,"hiddenRows":[3],"hiddenColumns":[2],"rowHeights":{"1":60,"2":0},"rowLimit":150,"cellFolds":{"1:2":true,"2:3":false},"columnWidths":{"0":200},"alignment":{"horizontal":"left","vertical":"viewport"},"rowAlignment":{"0":{"horizontal":"center"}},"columnAlignment":{"2":{"vertical":"bottom"}},"cellAlignment":{"2:3":{"horizontal":"right","vertical":"middle"}}}
         """);
         await CsvViewStore.Save(csv, view);
         var loaded = CsvViewStore.Load(csv)!.Value;
-        assert(loaded.GetRawText() == view.GetRawText(), "sidecar round trip preserves only validated view preferences including cell and viewport alignment");
+        assert(loaded.GetRawText() == view.GetRawText(), "sidecar round trip preserves only validated view preferences including row heights, cell folding, row limit, and alignment");
         assert((await File.ReadAllBytesAsync(csv)).SequenceEqual(original), "saving view preferences leaves original CSV bytes and BOM unchanged");
         var future = CsvViewStore.ValidateView(Json("{\"version\":1,\"wrap\":false,\"futureSetting\":{\"value\":42}}"));
         assert(!future.TryGetProperty("futureSetting", out _) && !future.GetProperty("wrap").GetBoolean(), "unknown future settings are ignored and are not serialized into the sidecar");
@@ -33,6 +33,8 @@ internal static class CsvViewChecks
             "{\"version\":1,\"freezeRows\":1.5}", "{\"version\":1,\"freezeRows\":101}", "{\"version\":1,\"freezeColumns\":51}",
             "{\"version\":1,\"hiddenRows\":[-1]}", "{\"version\":1,\"hiddenColumns\":{}}",
             "{\"version\":1,\"columnWidths\":{\"path\":200}}", "{\"version\":1,\"rowHeights\":{\"0\":10}}",
+            "{\"version\":1,\"rowLimit\":9}", "{\"version\":1,\"rowLimit\":501}", "{\"version\":1,\"rowLimit\":10.5}",
+            "{\"version\":1,\"cellFolds\":{\"0:1:2\":true}}", "{\"version\":1,\"cellFolds\":{\"0:1\":\"false\"}}",
             "{\"version\":1,\"cellAlignment\":{\"0:1:2\":{}}}", "{\"version\":1,\"rowAlignment\":{\"100000000\":{}}}",
             "{\"version\":1,\"alignment\":{\"vertical\":\"url(value)\"}}", "{\"version\":1,\"alignment\":{\"horizontal\":\"bottom\"}}",
             "{\"version\":1,\"alignment\":{\"text\":\"not allowed\"}}"

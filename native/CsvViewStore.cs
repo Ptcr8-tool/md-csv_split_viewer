@@ -34,7 +34,7 @@ internal static class CsvViewStore
                 case "enterDirection": if (item.Value.ValueKind != JsonValueKind.String || item.Value.GetString() is not ("down" or "up" or "left" or "right" or "none")) throw Invalid(); break;
                 case "stripedRows": if (item.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw Invalid(); break;
                 case "defaultColumnWidth": Number(item.Value, 40, 4000); break;
-                // Zero means automatic height; explicit per-row heights start at 20 px.
+                // Zero means automatic height; explicit fixed row heights start at 20 px.
                 case "defaultRowHeight": Number(item.Value, 0, 5000); break;
                 case "freezeRows": Integer(item.Value, 0, 100); break;
                 case "freezeColumns": Integer(item.Value, 0, 50); break;
@@ -42,7 +42,9 @@ internal static class CsvViewStore
                     if (item.Value.ValueKind != JsonValueKind.Array) throw Invalid();
                     foreach (var index in item.Value.EnumerateArray()) Integer(index, 0, 99_999_999);
                     break;
-                case "rowHeights": Map(item.Value, false, x => Number(x, 20, 5000)); break;
+                case "rowHeights": Map(item.Value, false, RowHeight); break;
+                case "rowLimit": Integer(item.Value, 10, 500); break;
+                case "cellFolds": Map(item.Value, true, Boolean); break;
                 case "columnWidths": Map(item.Value, false, x => Number(x, 40, 4000)); break;
                 case "alignment": Alignment(item.Value); break;
                 case "rowAlignment": case "columnAlignment": Map(item.Value, false, Alignment); break;
@@ -116,6 +118,15 @@ internal static class CsvViewStore
             var text = p.Value.GetString()!;
             if (p.Name == "horizontal" ? !Horizontal.Contains(text) : p.Name == "vertical" ? !Vertical.Contains(text) : true) throw Invalid();
         }
+    }
+    private static void RowHeight(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var height) && height == 0) return;
+        Number(value, 20, 5000);
+    }
+    private static void Boolean(JsonElement value)
+    {
+        if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw Invalid();
     }
     private static void Number(JsonElement value, double min, double max)
     {
