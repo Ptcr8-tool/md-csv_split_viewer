@@ -78,8 +78,9 @@
 .csv-select-all:hover{color:var(--text);background:color-mix(in srgb,var(--green) 12%,var(--paper))}
 /* The column-address band is part of an explicitly sized header row. */
 .text-preview-table thead .csv-sized-row th:not(.text-preview-row-number)>.csv-column-label{box-sizing:border-box;height:min(20px,calc(var(--csv-row-height) - 1px));margin:0;padding:0 4px;overflow:hidden}
-.text-preview-table thead .csv-sized-row .csv-select-all{height:min(20px,calc(var(--csv-row-height) - 1px))}
-.text-preview-table thead .csv-sized-row .csv-cell-content,.text-preview-table thead .csv-sized-row .csv-row-select{height:max(0px,calc(var(--csv-row-height) - 21px));max-height:none}
+.text-preview-table thead .csv-sized-row .csv-select-all{position:absolute;top:0;left:0;width:20px;height:min(20px,calc(var(--csv-row-height) - 1px));border-right:1px solid var(--line)}
+.text-preview-table thead .csv-sized-row .csv-row-select{padding-left:22px}
+.text-preview-table thead .csv-sized-row .csv-cell-content{height:max(0px,calc(var(--csv-row-height) - 21px));max-height:none}
 
 /* A compact cell contributes only one line to auto height. A fixed row still
    constrains expanded text to the assigned space and scrolls within the cell. */

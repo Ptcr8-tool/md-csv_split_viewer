@@ -73,6 +73,8 @@ test('a header with multiline content can be resized to exactly 20 px', async ({
   await number(page, 0).click();
   await applyHeight(page, 0, 20);
   await expect.poll(() => height(row(page, 0))).toBe(20);
+  await number(page, 0).click();
+  await expect(number(page, 0)).toHaveClass(/csv-selected/);
   await expect(cell(page, 0, 0)).toContainText('Name');
   await expect(cell(page, 0, 0)).toContainText('Heading');
   await assertClean(page, text);

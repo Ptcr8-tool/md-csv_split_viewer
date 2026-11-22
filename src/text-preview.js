@@ -414,7 +414,7 @@ export class TextPreview{
     if(!cell&&!row&&!column)return;
     const r=cell?Number(cell.dataset.gridRow):row?Number(row.dataset.selectRow):null,c=cell?Number(cell.dataset.gridColumn):column?Number(column.dataset.selectColumn):null,s=this.selection;
     const selected=s&&(s.kind==='all'||s.kind==='row'&&r!==null&&s.entries.has(r)||s.kind==='column'&&c!==null&&s.entries.has(c)||s.kind==='cell'&&r!==null&&c!==null&&s.entries.has(`${r}:${c}`));
-    if(!selected){if(row)this.selectRange('row',r,null);else if(cell)this.selectRange('cell',r,c);else this.selectRange('column',c,null);}
+    if(!selected){if(row)this.selectRange('row',r,null);else if(column)this.selectRange('column',c,null);else this.selectRange('cell',r,c);}
     event.preventDefault();event.stopPropagation();this._closeCsvMenu?.();
     const id=this.cache?.docId,selection=this.selection,raw=this.raw;
     const checked=action=>()=>{if(this.cache?.docId!==id||this.selection!==selection||this.raw!==raw){if(this.status)this.status.textContent=tr('文書または選択が変更されたため、操作を中止しました。','The document or selection changed; the operation was cancelled.');return;}action();};
@@ -551,13 +551,11 @@ export class TextPreview{
     const pieces=[];let position=0;
     for(const edit of edits){pieces.push(before.slice(position,edit.from),edit.insert);position=edit.to;}
     pieces.push(before.slice(position));const next=pieces.join('');
-    const scrollTop=this.scroller?.scrollTop||0,scrollLeft=this.scroller?.scrollLeft||0;
     this.raw=next;
     try{if(this.api.patch({docId:id,...csvChangedRange(before,next),kind:'command'})===false)throw new Error();}
     catch{this.raw=before;if(this.status)this.status.textContent=tr('セルの消去を反映できませんでした。原文は変更していません。','Could not clear the cells. The source is unchanged.');return;}
     this.renderTable();
     if(this.scroller){
-      this.scroller.scrollTop=scrollTop;this.scroller.scrollLeft=scrollLeft;
       (this.scroller.querySelector(`[data-cell-row="${activeRow}"][data-cell-column="${activeColumn}"]`)||this.scroller).focus({preventScroll:true});
     }
   }
