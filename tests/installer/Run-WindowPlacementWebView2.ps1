@@ -20,6 +20,8 @@ public static class PlacementTestWin32 {
 '@
 $payloadPath = (Resolve-Path -LiteralPath $Payload).Path
 if (-not (Test-Path -LiteralPath (Join-Path $payloadPath 'MD-Split.exe') -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $payloadPath 'WebView2Runtime\msedgewebview2.exe') -PathType Leaf)) { throw 'A complete fixed-runtime payload is required.' }
+& node ./tests/installer/Run-CsvOpenScrollBenchmark.mjs $payloadPath
+if ($LASTEXITCODE -ne 0) { throw 'The CSV open and scroll benchmark failed.' }
 $testRoot = Join-Path $env:RUNNER_TEMP ('mdsplit-placement-' + [Guid]::NewGuid().ToString('N'))
 $application = Join-Path $testRoot 'Application'
 [void][IO.Directory]::CreateDirectory($testRoot)
