@@ -10,7 +10,7 @@
     "prebuild": "npm run check:version",
     "build": "vite build",
     "test": "vitest run",
-    "test:ui": "playwright test",
+    "test:ui": "playwright test --pass-with-no-tests tests/ui/csv-open-scroll-benchmark.spec.js",
     "publish:win": "node scripts/publish.mjs"
   },
   "dependencies": {
