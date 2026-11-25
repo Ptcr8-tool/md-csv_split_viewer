@@ -43,7 +43,10 @@ internal static class CsvViewStore
                     foreach (var index in item.Value.EnumerateArray()) Integer(index, 0, 99_999_999);
                     break;
                 case "rowHeights": Map(item.Value, false, RowHeight); break;
-                case "rowLimit": Integer(item.Value, 10, 500); break;
+                case "rowLimit":
+                    if (item.Value.ValueKind != JsonValueKind.String || item.Value.GetString() != "unlimited")
+                        Integer(item.Value, 10, 500);
+                    break;
                 case "cellFolds": Map(item.Value, true, Boolean); break;
                 case "columnWidths": Map(item.Value, false, x => Number(x, 40, 4000)); break;
                 case "alignment": Alignment(item.Value); break;

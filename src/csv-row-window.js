@@ -1,8 +1,10 @@
 export const CSV_PAGE_ROWS = 100;
 export const MIN_CSV_PAGE_ROWS = 10;
 export const MAX_CSV_PAGE_ROWS = 500;
+export const UNLIMITED_CSV_PAGE_ROWS = 'unlimited';
 
 export function normalizeCsvPageRows(value) {
+  if (value === UNLIMITED_CSV_PAGE_ROWS) return value;
   if (typeof value === 'string' && value.trim()) value = Number(value);
   if (!Number.isSafeInteger(value)) return CSV_PAGE_ROWS;
   return Math.min(MAX_CSV_PAGE_ROWS, Math.max(MIN_CSV_PAGE_ROWS, value));
@@ -10,6 +12,7 @@ export function normalizeCsvPageRows(value) {
 
 export function csvRowWindow(total, pageRows, start = 0) {
   const size = normalizeCsvPageRows(pageRows);
+  if (size === UNLIMITED_CSV_PAGE_ROWS) return { start: 0, end: total, previous: null, next: null };
   const step = Math.floor(size / 2);
   const lastStart = Math.max(0, Math.ceil((total - size) / step) * step);
   const first = Math.min(lastStart, Math.max(0, Math.floor(start / step) * step));

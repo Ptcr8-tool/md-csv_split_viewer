@@ -31,4 +31,9 @@ describe('CSV view metadata',()=>{
     expect(view.rowHeights).toEqual({2:0,3:20,4:5000});
     expect(view.rowHeights[5]).toBeUndefined();
   });
+
+  it('restores an unlimited row count from saved view metadata',()=>{
+    const view=normalizeCsvView({rowLimit:'unlimited'});
+    expect(normalizeCsvView(JSON.parse(JSON.stringify(view))).rowLimit).toBe('unlimited');
+  });
 });

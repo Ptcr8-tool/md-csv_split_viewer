@@ -65,3 +65,42 @@ test('changing the displayed row count also changes manual paging and keyboard n
   await expect(cell(page, 41)).toHaveClass(/csv-selected/);
   expect(await page.evaluate(() => window.__mdSplit.getText())).toBe(text);
 });
+
+test('view settings can show all rows and return to a limited window', async ({ page }) => {
+  const settings = page.getByRole('button', { name: '表示設定', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'CSVの表示設定', exact: true });
+  const mode = dialog.locator('#csv-page-mode');
+  const count = dialog.locator('#csv-page-rows');
+  const nextRows = range(page).getByRole('button', { name: '次の行', exact: true });
+
+  await nextRows.click();
+  await settings.click();
+  await mode.selectOption('unlimited');
+  await expect(count).toBeHidden();
+  await dialog.getByRole('button', { name: '適用', exact: true }).click();
+  await expect(rows(page)).toHaveCount(230);
+  await expect(nextRows).toHaveCount(0);
+
+  await settings.click();
+  await expect(mode).toHaveValue('unlimited');
+  await mode.selectOption('limited');
+  await count.fill('40');
+  await dialog.getByRole('button', { name: '適用', exact: true }).click();
+  await expect(rows(page)).toHaveCount(40);
+  await expect(nextRows).toBeEnabled();
+  expect(await page.evaluate(() => window.__mdSplit.getText())).toBe(text);
+});
+
+test('the first large-table prompt can open every row with one action', async ({ page }) => {
+  const largeText = ['Name,Value', ...Array.from({ length: 1100 }, (_, index) => `row${index + 1},value`)].join('\n');
+  await page.evaluate(text => window.__mdSplit.openDocument({ name: 'large.csv', text, savedText: text, encoding: 'utf8', hasBom: false }), largeText);
+  const prompt = page.getByRole('dialog', { name: '大きな表のプレビュー', exact: true });
+  await expect(prompt).toBeVisible();
+  await expect(prompt.getByRole('button', { name: '表示する', exact: true })).toBeVisible();
+  await prompt.getByRole('button', { name: '⚠️ 無制限で表示', exact: true }).click();
+  await expect(prompt).toBeHidden();
+  await expect(rows(page)).toHaveCount(1100);
+  await expect(cell(page, 1100)).toHaveText('row1100');
+  await expect(range(page)).toBeHidden();
+  expect(await page.evaluate(() => window.__mdSplit.getText())).toBe(largeText);
+});

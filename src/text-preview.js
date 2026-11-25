@@ -12,7 +12,7 @@ const localizeGridToolbar=toolbar=>{
 };
 import './text-preview.css';
 import {normalizeCsvView,csvColumnLabel,csvCellAlignment,csvCellFold,deleteDelimitedSelection} from './csv-view.js';
-import {MIN_CSV_PAGE_ROWS,MAX_CSV_PAGE_ROWS,csvRowWindow,csvRowWindowForIndex} from './csv-row-window.js';
+import {CSV_PAGE_ROWS,MIN_CSV_PAGE_ROWS,MAX_CSV_PAGE_ROWS,UNLIMITED_CSV_PAGE_ROWS,csvRowWindow,csvRowWindowForIndex} from './csv-row-window.js';
 import {csvSelectionAddress,createCsvSelectionFooter} from './csv-selection-status.js';
 import {nextCsvSelection} from './csv-selection.js';
 import {csvSelectionBounds,csvCopyText,parseClipboardGrid,pasteCsvGrid,csvChangedRange} from './csv-clipboard.js';
@@ -187,7 +187,7 @@ export class TextPreview{
        const rowWindow=csvRowWindow(scrollingRows.length,this.view.rowLimit,this.csvSettings.rowStart);
        const colSize=large?CSV_PAGE_COLUMNS:Math.max(1,scrollingCols.length),colPages=Math.max(1,Math.ceil(scrollingCols.length/colSize));
        this.csvSettings.rowStart=rowWindow.start;this.csvSettings.columnPage=Math.min(this.csvSettings.columnPage||0,colPages-1);
-       this._scrollLayout={rowWindow,scrollingRows,scrollingCols,hiddenRows,colSize};
+       this._scrollLayout={rowWindow,scrollingRows,scrollingCols,hiddenRows,colSize,frozenRowCount:frozenRows.length};
        const visibleRows=[...frozenRows,...scrollingRows.slice(rowWindow.start,rowWindow.end)],columns=[...frozenCols,...scrollingCols.slice(this.csvSettings.columnPage*colSize,(this.csvSettings.columnPage+1)*colSize)];
        const pagedRows=rowWindow.previous!==null||rowWindow.next!==null;
        this.pagination.replaceChildren();this.pagination.hidden=!pagedRows&&colPages===1;
@@ -225,11 +225,18 @@ export class TextPreview{
   gridViewportRow(){
     const p=this.scroller;
     if(!p?.clientHeight)return null;
-    const stickyTop=parseFloat(p.querySelector('table')?.style.getPropertyValue('--csv-sticky-top'))||0;
+    const table=p.querySelector('table'),rows=table?.tBodies[0].rows;
+    const stickyTop=parseFloat(table?.style.getPropertyValue('--csv-sticky-top'))||0;
     const top=p.getBoundingClientRect().top+stickyTop+1;
-    const rows=[...p.querySelectorAll('tbody tr[data-grid-row]')];
-    const moving=rows.filter(row=>Number(row.dataset.gridRow)>=this.view.freezeRows);
-    return {top,row:moving.find(row=>row.getBoundingClientRect().bottom>top)||moving.at(-1)||rows.at(-1)};
+    if(!rows?.length)return {top};
+    // The row boxes stay in source order even when their frozen cells stick.
+    let first=this._scrollLayout.frozenRowCount,last=rows.length;
+    while(first<last){
+      const middle=Math.floor((first+last)/2);
+      if(rows[middle].getBoundingClientRect().bottom<=top)first=middle+1;
+      else last=middle;
+    }
+    return {top,row:rows[Math.min(first,rows.length-1)]};
   }
   captureGridViewport(){
     const p=this.scroller;
@@ -626,26 +633,43 @@ export class TextPreview{
     const ok=await this.gridDialog(tr('CSVの表示設定','CSV view settings'),selected?tr('選択した範囲のサイズ・配置に適用します。固定範囲は表全体に適用します。','Apply size and alignment to the selection. Frozen ranges apply to the entire table.'):tr('サイズ・配置の初期値を表全体に適用します。','Apply default size and alignment to the entire table.'),dialog=>{
        const input=(label,id,value)=>{const l=make('label',null,label),n=make('input');n.type='number';n.id=id;n.value=value;n.min='0';l.append(n);dialog.append(l);fields[id]=n;initial[id]=n.value;};
        input(tr('列幅（px）','Column width (px)'),'csv-column-width',chosenCols.length?(this.view.columnWidths[chosenCols[0]]??this.view.defaultColumnWidth):this.view.defaultColumnWidth);input(tr('行の高さ（px、0は自動）','Row height (px; 0 for auto)'),'csv-row-height',chosenRows.length?(this.view.rowHeights[chosenRows[0]]??this.view.defaultRowHeight):this.view.defaultRowHeight);input(tr('固定する行数（最大100）','Frozen rows (max 100)'),'csv-freeze-rows',this.view.freezeRows);input(tr('固定する列数（最大50）','Frozen columns (max 50)'),'csv-freeze-columns',this.view.freezeColumns);
-       const range=`${MIN_CSV_PAGE_ROWS}–${MAX_CSV_PAGE_ROWS}`;
-       input(tr(`一度に表示する行数（${range}）`,`Rows per view (${range})`),'csv-page-rows',this.view.rowLimit);
-       const pageRows=fields['csv-page-rows'];
-       pageRows.min=String(MIN_CSV_PAGE_ROWS);pageRows.max=String(MAX_CSV_PAGE_ROWS);pageRows.required=true;
-      const select=(label,id,options,value)=>{const l=make('label',null,label),n=make('select');n.id=id;for(const [v,t] of options){const o=make('option',null,t);o.value=v;n.append(o);}n.value=value;l.append(n);dialog.append(l);fields[id]=n;};select(tr('列番号','Column labels'),'csv-column-label',[['letters',tr('アルファベット（A、B、C…）','Letters (A, B, C…)')],['numbers',tr('数字（1、2、3…）','Numbers (1, 2, 3…)')]],this.view.columnLabel);select(tr('横位置','Horizontal alignment'),'csv-horizontal',[['left',tr('左揃え','Left')],['center',tr('中央揃え','Center')],['right',tr('右揃え','Right')]],a.horizontal);select(tr('縦位置','Vertical alignment'),'csv-vertical',[['top',tr('上揃え','Top')],['middle',tr('中央揃え','Center')],['bottom',tr('下揃え','Bottom')],['viewport',tr('画面表示に合わせる','Fit visible area')]],a.vertical);
+      const select=(label,id,options,value)=>{const l=make('label',null,label),n=make('select');n.id=id;for(const [v,t] of options){const o=make('option',null,t);o.value=v;n.append(o);}n.value=value;l.append(n);dialog.append(l);fields[id]=n;};
+      const unlimited=this.view.rowLimit===UNLIMITED_CSV_PAGE_ROWS;
+      select(tr('一度に表示する行数','Rows per view'),'csv-page-mode',[
+        ['limited',tr('行数を指定','Set row count')],
+        [UNLIMITED_CSV_PAGE_ROWS,tr('無制限（全行）','Unlimited (all rows)')]
+      ],unlimited?UNLIMITED_CSV_PAGE_ROWS:'limited');
+      const range=`${MIN_CSV_PAGE_ROWS}–${MAX_CSV_PAGE_ROWS}`;
+      input(tr(`行数（${range}）`,`Row count (${range})`),'csv-page-rows',unlimited?CSV_PAGE_ROWS:this.view.rowLimit);
+      const pageRows=fields['csv-page-rows'],pageMode=fields['csv-page-mode'];
+      pageRows.min=String(MIN_CSV_PAGE_ROWS);pageRows.max=String(MAX_CSV_PAGE_ROWS);pageRows.required=true;
+      const warning=make('p',null,tr('全行を表示すると、大きな表では表示に時間がかかったり、動作が重くなることがあります。','Displaying all rows of a large table can take time and slow down the editor.'));
+      dialog.append(warning);
+      const syncRowLimitFields=()=>{
+        const showAll=pageMode.value===UNLIMITED_CSV_PAGE_ROWS;
+        pageRows.disabled=showAll;
+        pageRows.parentElement.hidden=showAll;
+        warning.hidden=!showAll;
+      };
+      pageMode.addEventListener('change',syncRowLimitFields);
+      syncRowLimitFields();
+      select(tr('列番号','Column labels'),'csv-column-label',[['letters',tr('アルファベット（A、B、C…）','Letters (A, B, C…)')],['numbers',tr('数字（1、2、3…）','Numbers (1, 2, 3…)')]],this.view.columnLabel);select(tr('横位置','Horizontal alignment'),'csv-horizontal',[['left',tr('左揃え','Left')],['center',tr('中央揃え','Center')],['right',tr('右揃え','Right')]],a.horizontal);select(tr('縦位置','Vertical alignment'),'csv-vertical',[['top',tr('上揃え','Top')],['middle',tr('中央揃え','Center')],['bottom',tr('下揃え','Bottom')],['viewport',tr('画面表示に合わせる','Fit visible area')]],a.vertical);
       select(tr('Enterキーの移動方向','Enter key direction'),'csv-enter-direction',[['down',tr('下','Down')],['up',tr('上','Up')],['right',tr('右','Right')],['left',tr('左','Left')],['none',tr('移動しない','Do not move')]],this.view.enterDirection);
       select(tr('行の背景','Row background'),'csv-striped-rows',[['off',tr('通常','Normal')],['on',tr('交互に色を付ける','Alternate colors')]],this.view.stripedRows?'on':'off');
       const reset=make('button','csv-reset-view',tr('表示設定を初期化','Reset view settings'));reset.type='button';reset.onclick=()=>{this.setView({});dialog.close('cancel');};dialog.append(reset);
      },undefined,()=>fields['csv-page-rows'].reportValidity());if(!ok||id!==this.cache?.docId)return;
     const width=Number(fields['csv-column-width'].value),height=Number(fields['csv-row-height'].value),alignment={horizontal:fields['csv-horizontal'].value,vertical:fields['csv-vertical'].value};
-     const pageSizeOnly=fields['csv-page-rows'].value!==initial['csv-page-rows']&&
-       fields['csv-column-width'].value===initial['csv-column-width']&&fields['csv-row-height'].value===initial['csv-row-height']&&
-       alignment.horizontal===a.horizontal&&alignment.vertical===a.vertical;
-     if(!pageSizeOnly){
+     const layoutChanged=fields['csv-column-width'].value!==initial['csv-column-width']||
+       fields['csv-row-height'].value!==initial['csv-row-height']||
+       alignment.horizontal!==a.horizontal||alignment.vertical!==a.vertical;
+     if(layoutChanged){
        if(selected){for(const col of chosenCols)this.view.columnWidths[col]=width;for(const row of chosenRows)this.view.rowHeights[row]=height;if(s.kind==='cell')for(const cell of s.entries)this.view.cellAlignment[cell]=alignment;else{const target=s.kind==='row'?'rowAlignment':'columnAlignment';for(const index of s.entries)this.view[target][index]=alignment;for(const key of Object.keys(this.view.cellAlignment))if(s.entries.has(Number(key.split(':')[s.kind==='row'?0:1])))delete this.view.cellAlignment[key];}}
        else{this.view.defaultColumnWidth=width;this.view.defaultRowHeight=height;this.view.alignment=alignment;this.view.rowHeights={};this.view.columnWidths={};this.view.rowAlignment={};this.view.columnAlignment={};this.view.cellAlignment={};}
      }
      const anchor=this.captureGridViewport();
      this.view.columnLabel=fields['csv-column-label'].value;this.view.freezeRows=Number(fields['csv-freeze-rows'].value);this.view.freezeColumns=Number(fields['csv-freeze-columns'].value);this.view.enterDirection=fields['csv-enter-direction'].value;this.view.stripedRows=fields['csv-striped-rows'].value==='on';
-     this.view.rowLimit=fields['csv-page-rows'].valueAsNumber;
+     this.view.rowLimit=fields['csv-page-mode'].value===UNLIMITED_CSV_PAGE_ROWS
+       ?UNLIMITED_CSV_PAGE_ROWS:fields['csv-page-rows'].valueAsNumber;
      const layout=this._scrollLayout,at=layout?.scrollingRows.indexOf(Number(anchor?.index))??-1;
      if(at>=0)this.csvSettings.rowStart=csvRowWindowForIndex(layout.scrollingRows.length,this.view.rowLimit,this.csvSettings.rowStart,at).start;
      this.publishView();this.renderTable({anchor});
@@ -656,10 +680,26 @@ export class TextPreview{
     const finish=()=>{cleanup();this.view[column?'columnWidths':'rowHeights'][index]=value;this.publishView();this.renderTable();};const cleanup=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',finish);window.removeEventListener('pointercancel',finish);this._resizeCleanup=null;};this._resizeCleanup?.();this._resizeCleanup=cleanup;window.addEventListener('pointermove',move);window.addEventListener('pointerup',finish,{once:true});window.addEventListener('pointercancel',finish,{once:true});
   }
   applySticky(){
-    if(!this.scroller)return;const table=this.scroller.querySelector('table');if(!table)return;const header=table.querySelector('thead'),headHeight=header?.getBoundingClientRect().height||0;table.style.setProperty('--csv-sticky-top',headHeight+'px');let top=headHeight;
-    for(const row of table.querySelectorAll('tbody tr')){const frozen=Number(row.dataset.gridRow)<this.view.freezeRows;for(const cell of row.children){cell.classList.toggle('csv-frozen-row',frozen);if(frozen)cell.style.top=top+'px';else cell.style.removeProperty('top');}if(frozen)top+=row.getBoundingClientRect().height;}
+    const table=this.scroller?.querySelector('table');
+    if(!table)return;
+    let top=table.tHead.getBoundingClientRect().height;
+    const rows=table.tBodies[0].rows;
+    for(let i=0;i<this._scrollLayout.frozenRowCount;i++){
+      const row=rows[i];
+      for(const cell of row.cells){cell.classList.add('csv-frozen-row');cell.style.top=top+'px';}
+      top+=row.getBoundingClientRect().height;
+    }
     table.style.setProperty('--csv-sticky-top',top+'px');
-    let left=44;const columns=[...table.querySelectorAll('col[data-column-size]')];for(const col of columns){const index=Number(col.dataset.columnSize),frozen=index<this.view.freezeColumns;for(const cell of table.querySelectorAll(`[data-grid-column="${index}"]`)){cell.classList.toggle('csv-frozen-column',frozen);if(frozen)cell.style.left=left+'px';else cell.style.removeProperty('left');}if(frozen)left+=parseFloat(col.style.width);}
+    if(!this.view.freezeColumns)return;
+    let left=44;
+    for(const col of table.querySelectorAll('col[data-column-size]')){
+      const index=Number(col.dataset.columnSize);
+      if(index>=this.view.freezeColumns)break;
+      for(const cell of table.querySelectorAll(`[data-grid-column="${index}"]`)){
+        cell.classList.add('csv-frozen-column');cell.style.left=left+'px';
+      }
+      left+=parseFloat(col.style.width);
+    }
   }
   offerLargePreview(error){
     this.showError(error,this.scroller);
@@ -667,9 +707,26 @@ export class TextPreview{
     const show=()=>{
       if(this.container.querySelector('.text-preview-large-dialog'))return;
       const dialog=make('dialog','text-preview-large-dialog');dialog.setAttribute('aria-label',tr('大きな表のプレビュー','Large table preview'));
-      dialog.append(make('h2',null,tr('大きな表を表示しますか？','Display the large table?')),make('p',null,tr('このCSVは大きいため、解析に時間がかかったり、メモリを多く使う場合があります。表はページに分けて表示します。原文はそのまま編集できます。','This CSV is large; parsing it may take time and memory. The table will be paginated. You can still edit the source.')));
-      const actions=make('div','text-preview-dialog-actions'),cancel=make('button',null,tr('表示しない','Do not show')),accept=make('button',null,tr('表示する','Show'));cancel.type=accept.type='button';actions.append(cancel,accept);dialog.append(actions);this.container.append(dialog);
-      cancel.addEventListener('click',()=>dialog.close());accept.addEventListener('click',()=>{this.csvSettings.allowLarge=true;dialog.close();this.renderTable();});dialog.addEventListener('close',()=>dialog.remove());
+      dialog.append(
+        make('h2',null,tr('大きな表を表示しますか？','Display the large table?')),
+        make('p',null,tr('通常は行を分けて表示します。無制限で開くと全行を一度に表示するため、読み込みや操作が重くなることがあります。原文はそのまま編集できます。','The table normally opens in pages. Opening all rows at once can take longer and slow down the editor. You can still edit the source.'))
+      );
+      const actions=make('div','text-preview-dialog-actions');
+      const cancel=make('button',null,tr('表示しない','Do not show'));
+      const accept=make('button',null,tr('表示する','Show'));
+      const unlimited=make('button',null,tr('⚠️ 無制限で表示','⚠️ Show all rows'));
+      const display=rowLimit=>{
+        this.csvSettings.allowLarge=true;
+        dialog.close();
+        if(this.view.rowLimit!==rowLimit){this.view.rowLimit=rowLimit;this.publishView();}
+        this.renderTable();
+      };
+      cancel.type=accept.type=unlimited.type='button';
+      cancel.addEventListener('click',()=>dialog.close());
+      accept.addEventListener('click',()=>display(this.view.rowLimit===UNLIMITED_CSV_PAGE_ROWS?CSV_PAGE_ROWS:this.view.rowLimit));
+      unlimited.addEventListener('click',()=>display(UNLIMITED_CSV_PAGE_ROWS));
+      dialog.addEventListener('close',()=>dialog.remove());
+      actions.append(cancel,accept,unlimited);dialog.append(actions);this.container.append(dialog);
       try{dialog.showModal();}catch{dialog.setAttribute('open','');}
     };
     button.addEventListener('click',show);

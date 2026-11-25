@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { csvRowWindow, csvRowWindowForIndex, normalizeCsvPageRows } from '../src/csv-row-window.js';
+import { csvRowWindow, csvRowWindowForIndex, normalizeCsvPageRows, UNLIMITED_CSV_PAGE_ROWS } from '../src/csv-row-window.js';
 
 describe('CSV row windows', () => {
   it('advances half a window, including when the last window is partial', () => {
@@ -36,5 +36,14 @@ describe('CSV row windows', () => {
     expect(csvRowWindowForIndex(230, 100, current.start, 229)).toEqual({
       start: 150, end: 230, previous: 100, next: null,
     });
+  });
+
+  it('includes every row without paging when the row limit is unlimited', () => {
+    const all = { start: 0, end: 1200, previous: null, next: null };
+    expect(normalizeCsvPageRows(UNLIMITED_CSV_PAGE_ROWS)).toBe('unlimited');
+    expect(normalizeCsvPageRows('Unlimited')).toBe(100);
+    expect(csvRowWindow(1200, UNLIMITED_CSV_PAGE_ROWS, 500)).toEqual(all);
+    expect(csvRowWindowForIndex(1200, UNLIMITED_CSV_PAGE_ROWS, 500, 1199)).toEqual(all);
+    expect(csvRowWindow(0, UNLIMITED_CSV_PAGE_ROWS)).toEqual({ start: 0, end: 0, previous: null, next: null });
   });
 });

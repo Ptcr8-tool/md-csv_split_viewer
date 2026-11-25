@@ -19,6 +19,8 @@ internal static class CsvViewChecks
         await CsvViewStore.Save(csv, view);
         var loaded = CsvViewStore.Load(csv)!.Value;
         assert(loaded.GetRawText() == view.GetRawText(), "sidecar round trip preserves only validated view preferences including row heights, cell folding, row limit, and alignment");
+        await CsvViewStore.Save(csv, Json("""{"version":1,"rowLimit":"unlimited"}"""));
+        assert(CsvViewStore.Load(csv)!.Value.GetProperty("rowLimit").GetString() == "unlimited", "sidecar round trip preserves unlimited row display");
         assert((await File.ReadAllBytesAsync(csv)).SequenceEqual(original), "saving view preferences leaves original CSV bytes and BOM unchanged");
         var future = CsvViewStore.ValidateView(Json("{\"version\":1,\"wrap\":false,\"futureSetting\":{\"value\":42}}"));
         assert(!future.TryGetProperty("futureSetting", out _) && !future.GetProperty("wrap").GetBoolean(), "unknown future settings are ignored and are not serialized into the sidecar");
@@ -34,6 +36,7 @@ internal static class CsvViewChecks
             "{\"version\":1,\"hiddenRows\":[-1]}", "{\"version\":1,\"hiddenColumns\":{}}",
             "{\"version\":1,\"columnWidths\":{\"path\":200}}", "{\"version\":1,\"rowHeights\":{\"0\":10}}",
             "{\"version\":1,\"rowLimit\":9}", "{\"version\":1,\"rowLimit\":501}", "{\"version\":1,\"rowLimit\":10.5}",
+            "{\"version\":1,\"rowLimit\":\"Unlimited\"}", "{\"version\":1,\"rowLimit\":\"150\"}", "{\"version\":1,\"rowLimit\":null}",
             "{\"version\":1,\"cellFolds\":{\"0:1:2\":true}}", "{\"version\":1,\"cellFolds\":{\"0:1\":\"false\"}}",
             "{\"version\":1,\"cellAlignment\":{\"0:1:2\":{}}}", "{\"version\":1,\"rowAlignment\":{\"100000000\":{}}}",
             "{\"version\":1,\"alignment\":{\"vertical\":\"url(value)\"}}", "{\"version\":1,\"alignment\":{\"horizontal\":\"bottom\"}}",
