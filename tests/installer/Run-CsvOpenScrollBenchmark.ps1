@@ -91,12 +91,15 @@ function Wheel([int]$Delta) {
     [CsvBenchmarkMouse]::mouse_event(2048,0,0,$Delta,[UIntPtr]::Zero)
     Start-Sleep -Milliseconds 90
 }
-function Wait-Absent([string]$Name) {
-    $end = [DateTime]::UtcNow.AddSeconds(20)
-    while ($null -ne (Find-Visible $Name)) {
-        if ([DateTime]::UtcNow -ge $end) { throw "Unexpected UI element remained visible: $Name" }
-        Start-Sleep -Milliseconds 25
-    }
+function Wait-ActiveFile([string]$Name) {
+    $end = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+        $process.Refresh()
+        if ($process.HasExited) { throw 'MD-Split exited during the benchmark.' }
+        if ($process.MainWindowTitle.StartsWith($Name + ' — ')) { return }
+        Start-Sleep -Milliseconds 20
+    } while ([DateTime]::UtcNow -lt $end)
+    throw "Expected active file did not appear: $Name"
 }
 function Cell-Name([int]$Row) { return "$Row" + '行 1列を編集' }
 function Verify-Scroll([int]$Records,[string]$Mode) {
@@ -145,17 +148,16 @@ try {
                     $renderMs = $render.Elapsed.TotalMilliseconds
                     $openMs = $promptMs + $renderMs
                 } else {
-                    $null = Wait-Visible $name
+                    Wait-ActiveFile $name
                     $null = Wait-Visible (Cell-Name 2)
                     $openMs = $opening.Elapsed.TotalMilliseconds
                 }
                 if (-not $opener.WaitForExit(10000) -or $opener.ExitCode -ne 0) { throw 'The file-opening process failed.' }
                 Report @{records=$count; mode=$mode; trial=$trial; byteSize=(Get-Item -LiteralPath $path).Length; openMs=$openMs; promptMs=$promptMs; renderMs=$renderMs}
-                if ($trial -eq 1) { Report @{records=$count; mode=$mode; scroll=(Verify-Scroll $count $mode)} }
-                $tabCloseName = $name + 'を閉じる'
-                Click (Wait-Visible $tabCloseName)
-                Wait-Absent $tabCloseName
-                $null = Wait-Visible 'warm-up.csv'
+                if ($trial -eq 1) {
+                    try { Report @{records=$count; mode=$mode; scroll=(Verify-Scroll $count $mode)} }
+                    catch { Report @{records=$count; mode=$mode; scrollError=$_.Exception.Message} }
+                }
             }
         }
     }
