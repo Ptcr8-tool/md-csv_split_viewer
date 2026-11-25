@@ -142,7 +142,9 @@ test('large CSV can be opened, paged and edited beyond the former limits', async
   await openDocument(page,{name:'large.csv',text});
   await page.getByRole('button',{name:'表示する',exact:true}).click();
   await expect(page.locator('#text-preview tbody tr')).toHaveCount(100);
-  for(let i=0;i<9;i++)await page.getByRole('button',{name:'次の行',exact:true}).click();
+  const nextRows=page.getByRole('button',{name:'次の行',exact:true});
+  for(let i=0;i<18;i++)await nextRows.click();
+  await expect(nextRows).toBeDisabled();
   const cell=page.locator('#text-preview tbody tr').last().locator('td').first();await expect(cell).toHaveText('row1000');
   await cell.dblclick();await cell.locator('textarea').fill('最終🙂');await cell.locator('textarea').press('Enter');
   await expect.poll(()=>rawText(page)).toBe(text.replace('row1000,value','最終🙂,value'));

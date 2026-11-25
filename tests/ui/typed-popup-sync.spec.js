@@ -3,6 +3,11 @@ import {waitForScrollReady,settleScroll} from './scroll-test-helpers.js';
 
 const ready=page=>page.waitForFunction(()=>window.__mdSplit?.openDocument);
 const sourceTop=page=>page.evaluate(()=>window.__mdSplit.editor().scrollDOM.scrollTop);
+const sourceTopRecord=page=>page.evaluate(()=>{
+  const cm=window.__mdSplit.editor(),line=cm.state.doc.lineAt(cm.lineBlockAtHeight(cm.scrollDOM.scrollTop).from);
+  const match=/^record(\d+),/.exec(line.text);
+  return match?Number(match[1]):-1;
+});
 const tableTop=page=>page.locator('#text-preview .text-preview-scroll').evaluate(node=>node.scrollTop);
 async function openPopup(page,side){const opened=page.waitForEvent('popup');await page.locator(`[data-cmd="popout-${side}"]`).click();const child=await opened;await ready(child);return child;}
 async function sourceScroll(page,needle){await waitForScrollReady(page);await page.evaluate(needle=>{const cm=window.__mdSplit.editor(),at=cm.state.doc.toString().indexOf(needle);document.querySelector('#source').dispatchEvent(new WheelEvent('wheel',{bubbles:true}));cm.scrollDOM.scrollTop=cm.lineBlockAt(at).top;},needle);}
@@ -19,9 +24,12 @@ test('CSV popup sync uses its own file kind while owner displays Markdown with d
   await expect(source.locator('[data-cmd="sync"]')).toHaveAttribute('aria-pressed','true');await expect(preview.locator('[data-cmd="sync"]')).toHaveAttribute('aria-pressed','true');
   const ownerTop=await sourceTop(page);
   await sourceScroll(source,'record060');await expect.poll(()=>tableTop(preview)).toBeGreaterThan(500);
-  await tableScroll(preview,141);await expect.poll(()=>sourceTop(source)).toBeGreaterThan(2000);expect(await sourceTop(page)).toBe(ownerTop);
+  // Row 72 is record071 because the first row contains column headings.
+  await tableScroll(preview,72);
+  await expect.poll(async()=>Math.abs(await sourceTopRecord(source)-71)).toBeLessThanOrEqual(1);
+  expect(await sourceTop(page)).toBe(ownerTop);
   await page.getByRole('button',{name:'設定',exact:true}).click();await page.locator('#setting-file-kind').selectOption('csv');await page.locator('#setting-sync').uncheck();await page.getByRole('button',{name:'適用',exact:true}).click();await expect(preview.locator('[data-cmd="sync"]')).toHaveAttribute('aria-pressed','false');
-  await waitForScrollReady(page);const stoppedSource=await sourceTop(source),previousTable=await tableTop(preview);await tableScroll(preview,221);await expect.poll(()=>tableTop(preview)).not.toBe(previousTable);await settleScroll(preview);await settleScroll(source);expect(await sourceTop(source)).toBe(stoppedSource);
+  await waitForScrollReady(page);const stoppedSource=await sourceTop(source),previousTable=await tableTop(preview);await tableScroll(preview,21);await expect.poll(()=>tableTop(preview)).not.toBe(previousTable);await settleScroll(preview);await settleScroll(source);expect(await sourceTop(source)).toBe(stoppedSource);
   await page.locator('[data-cmd="sync"]').click();await expect(page.locator('[data-cmd="sync"]')).toHaveAttribute('aria-pressed','true');await expect(source.locator('[data-cmd="sync"]')).toHaveAttribute('aria-pressed','false');
   await waitForScrollReady(page);const stoppedPreview=await tableTop(preview),previousSource=await sourceTop(source);await sourceScroll(source,'record280');await expect.poll(()=>sourceTop(source)).not.toBe(previousSource);await settleScroll(source);await settleScroll(preview);expect(await tableTop(preview)).toBe(stoppedPreview);
   expect(await source.evaluate(()=>window.__mdSplit.getText())).toBe(text);expect(await preview.evaluate(()=>window.__mdSplit.model().dirty)).toBe(false);expect(await page.evaluate(()=>window.__mdSplit.getText())).toBe('# Owner\n\nunchanged');

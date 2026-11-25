@@ -30,7 +30,7 @@ test('CSV source and grid scroll follow the same quoted record and can be unlink
   })).toBe(true);
   await page.locator('[data-cmd="sync"]').click();await expect(page.locator('[data-cmd="sync"]')).toHaveAttribute('aria-pressed','false');
   const before=await tableTop(page),previousSource=await sourceTop(page);await setSourceTop(page,'record020');await expect.poll(()=>sourceTop(page)).not.toBe(previousSource);await settleScroll(page);expect(await tableTop(page)).toBe(before);
-  const sourceBefore=await sourceTop(page),previousTable=await tableTop(page);await setPreviewTop(page,101);await expect.poll(()=>tableTop(page)).not.toBe(previousTable);await settleScroll(page);expect(await sourceTop(page)).toBe(sourceBefore);
+  const sourceBefore=await sourceTop(page),previousTable=await tableTop(page);await setPreviewTop(page,61);await expect.poll(()=>tableTop(page)).not.toBe(previousTable);await settleScroll(page);expect(await sourceTop(page)).toBe(sourceBefore);
   expect(await rawText(page)).toBe(text);expect(await page.evaluate(()=>window.__mdSplit.model().dirty)).toBe(false);
 });
 
@@ -58,6 +58,7 @@ test('CSV preview popup follows source scrolling and sends grid scrolling back',
   const text='Name,Note\n'+Array.from({length:180},(_,i)=>`record${String(i).padStart(3,'0')},value`).join('\n');await open(page,'popup.csv',text);
   const opened=page.waitForEvent('popup');await page.locator('[data-cmd="popout-preview"]').click();const child=await opened;await ready(child);
   await setSourceTop(page,'record050');await expect.poll(()=>tableTop(child)).toBeGreaterThan(500);
+  await child.getByRole('button',{name:'次の行',exact:true}).click();
   await setPreviewTop(child,101);await expect.poll(()=>sourceTop(page)).toBeGreaterThan(2000);
   expect(await rawText(page)).toBe(text);expect(await rawText(child)).toBe(text);expect(await page.evaluate(()=>window.__mdSplit.model().dirty)).toBe(false);await child.close();
 });
