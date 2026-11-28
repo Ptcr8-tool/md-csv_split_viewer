@@ -26,7 +26,7 @@
     <Content Include="obj/update-verifier/trusted_root.jsonl" TargetPath="update-verifier/trusted_root.jsonl" CopyToPublishDirectory="PreserveNewest" Condition="Exists('obj/update-verifier/trusted_root.jsonl')" />
     <Content Include="obj/update-verifier/LICENSE.txt" TargetPath="update-verifier/LICENSE.txt" CopyToPublishDirectory="PreserveNewest" Condition="Exists('obj/update-verifier/LICENSE.txt')" />
     <Content Include="obj/update-verifier/THIRD_PARTY_LICENSES.txt" TargetPath="update-verifier/THIRD_PARTY_LICENSES.txt" CopyToPublishDirectory="PreserveNewest" Condition="Exists('obj/update-verifier/THIRD_PARTY_LICENSES.txt')" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4370.26" />
     <Content Include="..\dist\**\*" Exclude="..\dist\**\*.map" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="app.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="doc-icons\*.ico" TargetPath="doc-icons-v2\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
